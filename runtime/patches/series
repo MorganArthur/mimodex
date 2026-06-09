@@ -1,2 +1,3 @@
 # 按顺序列出 Mimodex Runtime 补丁文件名。
 0001-add-chat-completions-wire-api.patch
+0002-add-chat-completions-history-encoder.patch

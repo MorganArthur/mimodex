@@ -1,0 +1,715 @@
+diff --git a/codex-rs/codex-api/src/chat_completions.rs b/codex-rs/codex-api/src/chat_completions.rs
+new file mode 100644
+index 0000000..3b1391a
+--- /dev/null
++++ b/codex-rs/codex-api/src/chat_completions.rs
+@@ -0,0 +1,235 @@
++use codex_protocol::models::ContentItem;
++use codex_protocol::models::FunctionCallOutputBody;
++use codex_protocol::models::ReasoningItemContent;
++use codex_protocol::models::ResponseItem;
++use serde::Serialize;
++use thiserror::Error;
++
++#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
++#[serde(tag = "role", rename_all = "lowercase")]
++pub enum ChatMessage {
++    System {
++        content: String,
++    },
++    User {
++        content: String,
++    },
++    Assistant {
++        content: Option<String>,
++        #[serde(skip_serializing_if = "Option::is_none")]
++        reasoning_content: Option<String>,
++        #[serde(skip_serializing_if = "Vec::is_empty")]
++        tool_calls: Vec<ChatToolCall>,
++    },
++    Tool {
++        tool_call_id: String,
++        content: String,
++    },
++}
++
++#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
++pub struct ChatToolCall {
++    pub id: String,
++    #[serde(rename = "type")]
++    pub kind: ChatToolCallType,
++    pub function: ChatFunctionCall,
++}
++
++#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
++#[serde(rename_all = "lowercase")]
++pub enum ChatToolCallType {
++    Function,
++}
++
++#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
++pub struct ChatFunctionCall {
++    pub name: String,
++    pub arguments: String,
++}
++
++#[derive(Debug, Error, PartialEq, Eq)]
++pub enum ChatCompletionsEncodingError {
++    #[error("unsupported chat message role: {0}")]
++    UnsupportedMessageRole(String),
++    #[error("chat completions does not support {content_type} content in {role} messages")]
++    UnsupportedMessageContent {
++        role: String,
++        content_type: &'static str,
++    },
++    #[error("reasoning item has no replayable reasoning content")]
++    MissingReasoningContent,
++    #[error("chat completions does not support namespaced function call: {0}")]
++    NamespacedFunctionCall(String),
++    #[error("chat completions does not support structured function output for call: {0}")]
++    StructuredFunctionOutput(String),
++    #[error("chat completions does not support response item: {0}")]
++    UnsupportedResponseItem(&'static str),
++}
++
++#[derive(Default)]
++struct PendingAssistant {
++    content: Vec<String>,
++    reasoning_content: Vec<String>,
++    tool_calls: Vec<ChatToolCall>,
++}
++
++impl PendingAssistant {
++    fn is_empty(&self) -> bool {
++        self.content.is_empty() && self.reasoning_content.is_empty() && self.tool_calls.is_empty()
++    }
++
++    fn flush_into(&mut self, messages: &mut Vec<ChatMessage>) {
++        if self.is_empty() {
++            return;
++        }
++
++        messages.push(ChatMessage::Assistant {
++            content: (!self.content.is_empty()).then(|| self.content.join("\n")),
++            reasoning_content: (!self.reasoning_content.is_empty())
++                .then(|| self.reasoning_content.concat()),
++            tool_calls: std::mem::take(&mut self.tool_calls),
++        });
++        self.content.clear();
++        self.reasoning_content.clear();
++    }
++}
++
++pub fn encode_chat_messages(
++    instructions: &str,
++    input: &[ResponseItem],
++) -> Result<Vec<ChatMessage>, ChatCompletionsEncodingError> {
++    let mut messages = Vec::new();
++    if !instructions.is_empty() {
++        messages.push(ChatMessage::System {
++            content: instructions.to_string(),
++        });
++    }
++
++    let mut pending_assistant = PendingAssistant::default();
++    for item in input {
++        match item {
++            ResponseItem::Reasoning { content, .. } => {
++                let reasoning_content = content
++                    .as_ref()
++                    .map(|items| {
++                        items
++                            .iter()
++                            .map(|item| match item {
++                                ReasoningItemContent::ReasoningText { text }
++                                | ReasoningItemContent::Text { text } => text.as_str(),
++                            })
++                            .collect::<String>()
++                    })
++                    .filter(|content| !content.is_empty())
++                    .ok_or(ChatCompletionsEncodingError::MissingReasoningContent)?;
++                pending_assistant.reasoning_content.push(reasoning_content);
++            }
++            ResponseItem::Message { role, content, .. } if role == "assistant" => {
++                pending_assistant
++                    .content
++                    .push(encode_message_content(role, content)?);
++            }
++            ResponseItem::FunctionCall {
++                name,
++                namespace,
++                arguments,
++                call_id,
++                ..
++            } => {
++                if namespace.is_some() {
++                    return Err(ChatCompletionsEncodingError::NamespacedFunctionCall(
++                        name.clone(),
++                    ));
++                }
++                pending_assistant.tool_calls.push(ChatToolCall {
++                    id: call_id.clone(),
++                    kind: ChatToolCallType::Function,
++                    function: ChatFunctionCall {
++                        name: name.clone(),
++                        arguments: arguments.clone(),
++                    },
++                });
++            }
++            ResponseItem::Message { role, content, .. }
++                if role == "user" || role == "system" || role == "developer" =>
++            {
++                pending_assistant.flush_into(&mut messages);
++                let content = encode_message_content(role, content)?;
++                if role == "user" {
++                    messages.push(ChatMessage::User { content });
++                } else {
++                    messages.push(ChatMessage::System { content });
++                }
++            }
++            ResponseItem::Message { role, .. } => {
++                return Err(ChatCompletionsEncodingError::UnsupportedMessageRole(
++                    role.clone(),
++                ));
++            }
++            ResponseItem::FunctionCallOutput { call_id, output } => {
++                pending_assistant.flush_into(&mut messages);
++                let FunctionCallOutputBody::Text(content) = &output.body else {
++                    return Err(ChatCompletionsEncodingError::StructuredFunctionOutput(
++                        call_id.clone(),
++                    ));
++                };
++                messages.push(ChatMessage::Tool {
++                    tool_call_id: call_id.clone(),
++                    content: content.clone(),
++                });
++            }
++            item => {
++                return Err(ChatCompletionsEncodingError::UnsupportedResponseItem(
++                    response_item_kind(item),
++                ));
++            }
++        }
++    }
++
++    pending_assistant.flush_into(&mut messages);
++    Ok(messages)
++}
++
++fn encode_message_content(
++    role: &str,
++    content: &[ContentItem],
++) -> Result<String, ChatCompletionsEncodingError> {
++    content
++        .iter()
++        .map(|item| match item {
++            ContentItem::InputText { text } | ContentItem::OutputText { text } => Ok(text.as_str()),
++            ContentItem::InputImage { .. } => {
++                Err(ChatCompletionsEncodingError::UnsupportedMessageContent {
++                    role: role.to_string(),
++                    content_type: "image",
++                })
++            }
++        })
++        .collect::<Result<Vec<_>, _>>()
++        .map(|parts| parts.join("\n"))
++}
++
++fn response_item_kind(item: &ResponseItem) -> &'static str {
++    match item {
++        ResponseItem::Message { .. } => "message",
++        ResponseItem::AgentMessage { .. } => "agent_message",
++        ResponseItem::Reasoning { .. } => "reasoning",
++        ResponseItem::LocalShellCall { .. } => "local_shell_call",
++        ResponseItem::FunctionCall { .. } => "function_call",
++        ResponseItem::ToolSearchCall { .. } => "tool_search_call",
++        ResponseItem::FunctionCallOutput { .. } => "function_call_output",
++        ResponseItem::CustomToolCall { .. } => "custom_tool_call",
++        ResponseItem::CustomToolCallOutput { .. } => "custom_tool_call_output",
++        ResponseItem::ToolSearchOutput { .. } => "tool_search_output",
++        ResponseItem::WebSearchCall { .. } => "web_search_call",
++        ResponseItem::ImageGenerationCall { .. } => "image_generation_call",
++        ResponseItem::Compaction { .. } => "compaction",
++        ResponseItem::CompactionTrigger => "compaction_trigger",
++        ResponseItem::ContextCompaction { .. } => "context_compaction",
++        ResponseItem::Other => "other",
++    }
++}
++
++#[cfg(test)]
++#[path = "chat_completions_tests.rs"]
++mod tests;
+diff --git a/codex-rs/codex-api/src/chat_completions_tests.rs b/codex-rs/codex-api/src/chat_completions_tests.rs
+new file mode 100644
+index 0000000..86b5533
+--- /dev/null
++++ b/codex-rs/codex-api/src/chat_completions_tests.rs
+@@ -0,0 +1,229 @@
++use super::*;
++use codex_protocol::models::FunctionCallOutputPayload;
++use codex_protocol::models::ReasoningItemReasoningSummary;
++use pretty_assertions::assert_eq;
++use serde_json::json;
++
++fn message(role: &str, text: &str) -> ResponseItem {
++    ResponseItem::Message {
++        id: None,
++        role: role.to_string(),
++        content: vec![ContentItem::OutputText {
++            text: text.to_string(),
++        }],
++        phase: None,
++    }
++}
++
++fn reasoning(text: &str) -> ResponseItem {
++    ResponseItem::Reasoning {
++        id: String::new(),
++        summary: vec![ReasoningItemReasoningSummary::SummaryText {
++            text: "summary".to_string(),
++        }],
++        content: Some(vec![ReasoningItemContent::ReasoningText {
++            text: text.to_string(),
++        }]),
++        encrypted_content: None,
++    }
++}
++
++fn function_call(call_id: &str, name: &str, arguments: &str) -> ResponseItem {
++    ResponseItem::FunctionCall {
++        id: None,
++        name: name.to_string(),
++        namespace: None,
++        arguments: arguments.to_string(),
++        call_id: call_id.to_string(),
++    }
++}
++
++fn function_output(call_id: &str, output: &str) -> ResponseItem {
++    ResponseItem::FunctionCallOutput {
++        call_id: call_id.to_string(),
++        output: FunctionCallOutputPayload::from_text(output.to_string()),
++    }
++}
++
++#[test]
++fn encodes_system_user_and_reasoning_assistant_messages() {
++    let messages = encode_chat_messages(
++        "base instructions",
++        &[
++            message("developer", "workspace context"),
++            message("user", "hello"),
++            reasoning("think"),
++            message("assistant", "answer"),
++        ],
++    )
++    .unwrap();
++
++    assert_eq!(
++        serde_json::to_value(messages).unwrap(),
++        json!([
++            {"role": "system", "content": "base instructions"},
++            {"role": "system", "content": "workspace context"},
++            {"role": "user", "content": "hello"},
++            {
++                "role": "assistant",
++                "content": "answer",
++                "reasoning_content": "think"
++            }
++        ])
++    );
++}
++
++#[test]
++fn groups_parallel_tool_calls_and_preserves_call_ids() {
++    let messages = encode_chat_messages(
++        "",
++        &[
++            reasoning("inspect"),
++            function_call("call-1", "read_file", "{\"path\":\"a.rs\"}"),
++            function_call("call-2", "read_file", "{\"path\":\"b.rs\"}"),
++            function_output("call-1", "a"),
++            function_output("call-2", "b"),
++        ],
++    )
++    .unwrap();
++
++    assert_eq!(
++        serde_json::to_value(messages).unwrap(),
++        json!([
++            {
++                "role": "assistant",
++                "content": null,
++                "reasoning_content": "inspect",
++                "tool_calls": [
++                    {
++                        "id": "call-1",
++                        "type": "function",
++                        "function": {
++                            "name": "read_file",
++                            "arguments": "{\"path\":\"a.rs\"}"
++                        }
++                    },
++                    {
++                        "id": "call-2",
++                        "type": "function",
++                        "function": {
++                            "name": "read_file",
++                            "arguments": "{\"path\":\"b.rs\"}"
++                        }
++                    }
++                ]
++            },
++            {"role": "tool", "tool_call_id": "call-1", "content": "a"},
++            {"role": "tool", "tool_call_id": "call-2", "content": "b"}
++        ])
++    );
++}
++
++#[test]
++fn preserves_serial_tool_round_boundaries() {
++    let messages = encode_chat_messages(
++        "",
++        &[
++            reasoning("first"),
++            function_call("call-1", "read_file", "{\"path\":\"a.rs\"}"),
++            function_output("call-1", "a"),
++            reasoning("second"),
++            function_call("call-2", "read_file", "{\"path\":\"b.rs\"}"),
++            function_output("call-2", "b"),
++        ],
++    )
++    .unwrap();
++
++    assert_eq!(
++        serde_json::to_value(messages).unwrap(),
++        json!([
++            {
++                "role": "assistant",
++                "content": null,
++                "reasoning_content": "first",
++                "tool_calls": [{
++                    "id": "call-1",
++                    "type": "function",
++                    "function": {
++                        "name": "read_file",
++                        "arguments": "{\"path\":\"a.rs\"}"
++                    }
++                }]
++            },
++            {"role": "tool", "tool_call_id": "call-1", "content": "a"},
++            {
++                "role": "assistant",
++                "content": null,
++                "reasoning_content": "second",
++                "tool_calls": [{
++                    "id": "call-2",
++                    "type": "function",
++                    "function": {
++                        "name": "read_file",
++                        "arguments": "{\"path\":\"b.rs\"}"
++                    }
++                }]
++            },
++            {"role": "tool", "tool_call_id": "call-2", "content": "b"}
++        ])
++    );
++}
++
++#[test]
++fn rejects_reasoning_without_replayable_content() {
++    let error = encode_chat_messages(
++        "",
++        &[ResponseItem::Reasoning {
++            id: String::new(),
++            summary: Vec::new(),
++            content: None,
++            encrypted_content: Some("encrypted".to_string()),
++        }],
++    )
++    .unwrap_err();
++
++    assert_eq!(
++        error,
++        ChatCompletionsEncodingError::MissingReasoningContent
++    );
++}
++
++#[test]
++fn rejects_unsupported_images_and_namespaced_tools() {
++    let image_error = encode_chat_messages(
++        "",
++        &[ResponseItem::Message {
++            id: None,
++            role: "user".to_string(),
++            content: vec![ContentItem::InputImage {
++                image_url: "data:image/png;base64,AA==".to_string(),
++                detail: None,
++            }],
++            phase: None,
++        }],
++    )
++    .unwrap_err();
++    assert_eq!(
++        image_error,
++        ChatCompletionsEncodingError::UnsupportedMessageContent {
++            role: "user".to_string(),
++            content_type: "image",
++        }
++    );
++
++    let namespaced_error = encode_chat_messages(
++        "",
++        &[ResponseItem::FunctionCall {
++            id: None,
++            name: "read_file".to_string(),
++            namespace: Some("workspace".to_string()),
++            arguments: "{}".to_string(),
++            call_id: "call-1".to_string(),
++        }],
++    )
++    .unwrap_err();
++    assert_eq!(
++        namespaced_error,
++        ChatCompletionsEncodingError::NamespacedFunctionCall("read_file".to_string())
++    );
++}
+diff --git a/codex-rs/codex-api/src/lib.rs b/codex-rs/codex-api/src/lib.rs
+index d2d7679..138f6f3 100644
+--- a/codex-rs/codex-api/src/lib.rs
++++ b/codex-rs/codex-api/src/lib.rs
+@@ -1,5 +1,6 @@
+ pub(crate) mod api_bridge;
+ pub(crate) mod auth;
++pub(crate) mod chat_completions;
+ pub(crate) mod common;
+ pub(crate) mod endpoint;
+ pub(crate) mod error;
+@@ -23,6 +24,12 @@ pub use crate::auth::AuthHeaderTelemetry;
+ pub use crate::auth::AuthProvider;
+ pub use crate::auth::SharedAuthProvider;
+ pub use crate::auth::auth_header_telemetry;
++pub use crate::chat_completions::ChatCompletionsEncodingError;
++pub use crate::chat_completions::ChatFunctionCall;
++pub use crate::chat_completions::ChatMessage;
++pub use crate::chat_completions::ChatToolCall;
++pub use crate::chat_completions::ChatToolCallType;
++pub use crate::chat_completions::encode_chat_messages;
+ pub use crate::common::CompactionInput;
+ pub use crate::common::MemorySummarizeInput;
+ pub use crate::common::MemorySummarizeOutput;
+diff --git a/codex-rs/tools/src/chat_completions.rs b/codex-rs/tools/src/chat_completions.rs
+new file mode 100644
+index 0000000..bc003f7
+--- /dev/null
++++ b/codex-rs/tools/src/chat_completions.rs
+@@ -0,0 +1,112 @@
++use crate::AdditionalProperties;
++use crate::JsonSchema;
++use crate::ToolSpec;
++use serde::Serialize;
++use thiserror::Error;
++
++#[derive(Debug, Clone, Serialize, PartialEq)]
++pub struct ChatCompletionsTool {
++    #[serde(rename = "type")]
++    pub kind: ChatCompletionsToolType,
++    pub function: ChatCompletionsFunctionTool,
++}
++
++#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
++#[serde(rename_all = "lowercase")]
++pub enum ChatCompletionsToolType {
++    Function,
++}
++
++#[derive(Debug, Clone, Serialize, PartialEq)]
++pub struct ChatCompletionsFunctionTool {
++    pub name: String,
++    pub description: String,
++    pub parameters: JsonSchema,
++}
++
++#[derive(Debug, Error, PartialEq, Eq)]
++pub enum ChatCompletionsToolEncodingError {
++    #[error("chat completions does not support tool type: {0}")]
++    UnsupportedToolType(&'static str),
++}
++
++pub fn create_tools_for_chat_completions(
++    tools: &[ToolSpec],
++) -> Result<Vec<ChatCompletionsTool>, ChatCompletionsToolEncodingError> {
++    tools
++        .iter()
++        .map(|tool| match tool {
++            ToolSpec::Function(function) => Ok(ChatCompletionsTool {
++                kind: ChatCompletionsToolType::Function,
++                function: ChatCompletionsFunctionTool {
++                    name: function.name.clone(),
++                    description: function.description.clone(),
++                    parameters: parameters_without_responses_only_fields(&function.parameters),
++                },
++            }),
++            ToolSpec::Namespace(_) => Err(ChatCompletionsToolEncodingError::UnsupportedToolType(
++                "namespace",
++            )),
++            ToolSpec::ToolSearch { .. } => Err(
++                ChatCompletionsToolEncodingError::UnsupportedToolType("tool_search"),
++            ),
++            ToolSpec::ImageGeneration { .. } => Err(
++                ChatCompletionsToolEncodingError::UnsupportedToolType("image_generation"),
++            ),
++            ToolSpec::WebSearch { .. } => Err(
++                ChatCompletionsToolEncodingError::UnsupportedToolType("web_search"),
++            ),
++            ToolSpec::Freeform(_) => Err(ChatCompletionsToolEncodingError::UnsupportedToolType(
++                "custom",
++            )),
++        })
++        .collect()
++}
++
++fn parameters_without_responses_only_fields(parameters: &JsonSchema) -> JsonSchema {
++    let mut parameters = parameters.clone();
++    strip_responses_only_fields(&mut parameters);
++    parameters
++}
++
++fn strip_responses_only_fields(schema: &mut JsonSchema) {
++    schema.encrypted = None;
++
++    if let Some(items) = schema.items.as_mut() {
++        strip_responses_only_fields(items);
++    }
++    if let Some(properties) = schema.properties.as_mut() {
++        for property in properties.values_mut() {
++            strip_responses_only_fields(property);
++        }
++    }
++    if let Some(AdditionalProperties::Schema(additional_properties)) =
++        schema.additional_properties.as_mut()
++    {
++        strip_responses_only_fields(additional_properties);
++    }
++    for variants in [
++        schema.any_of.as_mut(),
++        schema.one_of.as_mut(),
++        schema.all_of.as_mut(),
++    ]
++    .into_iter()
++    .flatten()
++    {
++        for variant in variants {
++            strip_responses_only_fields(variant);
++        }
++    }
++    for definitions in [schema.defs.as_mut(), schema.definitions.as_mut()]
++        .into_iter()
++        .flatten()
++    {
++        for definition in definitions.values_mut() {
++            strip_responses_only_fields(definition);
++        }
++    }
++}
++
++#[cfg(test)]
++#[path = "chat_completions_tests.rs"]
++mod tests;
+diff --git a/codex-rs/tools/src/chat_completions_tests.rs b/codex-rs/tools/src/chat_completions_tests.rs
+new file mode 100644
+index 0000000..337b534
+--- /dev/null
++++ b/codex-rs/tools/src/chat_completions_tests.rs
+@@ -0,0 +1,67 @@
++use super::*;
++use crate::AdditionalProperties;
++use crate::ResponsesApiNamespace;
++use crate::ResponsesApiTool;
++use pretty_assertions::assert_eq;
++use serde_json::json;
++use std::collections::BTreeMap;
++
++fn function_tool() -> ToolSpec {
++    ToolSpec::Function(ResponsesApiTool {
++        name: "read_file".to_string(),
++        description: "Read a file".to_string(),
++        strict: false,
++        defer_loading: None,
++        parameters: JsonSchema::object(
++            BTreeMap::from([(
++                "path".to_string(),
++                JsonSchema::string(None).with_encrypted(),
++            )]),
++            Some(vec!["path".to_string()]),
++            Some(AdditionalProperties::Boolean(false)),
++        ),
++        output_schema: None,
++    })
++}
++
++#[test]
++fn encodes_function_tools_without_responses_only_fields() {
++    let tools = create_tools_for_chat_completions(&[function_tool()]).unwrap();
++
++    assert_eq!(
++        serde_json::to_value(tools).unwrap(),
++        json!([
++            {
++                "type": "function",
++                "function": {
++                    "name": "read_file",
++                    "description": "Read a file",
++                    "parameters": {
++                        "type": "object",
++                        "properties": {
++                            "path": {"type": "string"}
++                        },
++                        "required": ["path"],
++                        "additionalProperties": false
++                    }
++                }
++            }
++        ])
++    );
++}
++
++#[test]
++fn rejects_non_function_tools() {
++    let error =
++        create_tools_for_chat_completions(&[ToolSpec::Namespace(ResponsesApiNamespace {
++            name: "workspace".to_string(),
++            description: "Workspace tools".to_string(),
++            tools: Vec::new(),
++        })])
++        .unwrap_err();
++
++    assert_eq!(
++        error,
++        ChatCompletionsToolEncodingError::UnsupportedToolType("namespace")
++    );
++}
+diff --git a/codex-rs/tools/src/lib.rs b/codex-rs/tools/src/lib.rs
+index 1cee3f7..0421e47 100644
+--- a/codex-rs/tools/src/lib.rs
++++ b/codex-rs/tools/src/lib.rs
+@@ -1,6 +1,7 @@
+ //! Shared tool definitions and Responses API tool primitives that can live
+ //! outside `codex-core`.
+ 
++mod chat_completions;
+ mod code_mode;
+ mod dynamic_tool;
+ mod function_call_error;
+@@ -20,6 +21,11 @@ mod tool_payload;
+ mod tool_search;
+ mod tool_spec;
+ 
++pub use chat_completions::ChatCompletionsFunctionTool;
++pub use chat_completions::ChatCompletionsTool;
++pub use chat_completions::ChatCompletionsToolEncodingError;
++pub use chat_completions::ChatCompletionsToolType;
++pub use chat_completions::create_tools_for_chat_completions;
+ pub use code_mode::augment_tool_spec_for_code_mode;
+ pub use code_mode::code_mode_name_for_tool_name;
+ pub use code_mode::collect_code_mode_exec_prompt_tool_definitions;

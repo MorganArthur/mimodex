@@ -1,14 +1,15 @@
 # MiMo Runtime Adapter 实现计划
 
-- 状态：MIMO-RUNTIME-001 已完成，准备开始 MIMO-RUNTIME-002
+- 状态：MIMO-RUNTIME-002 已实现，等待 Windows Runtime CI 验证
 - 最后更新：2026-06-09
 - 上游基线：`14660c22d14312c28a50c52954dd77dd88f03c26`
 - 构建策略：本地不安装 Rust，GitHub Actions 为权威原生验证环境
 
 ## 1. 当前下一步
 
-Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远程验证。下一步
-实现 `MIMO-RUNTIME-002`：确定性 Chat 历史编码。
+Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远程验证。
+`MIMO-RUNTIME-002` 确定性 Chat 历史编码已实现，下一步由 Windows Runtime CI
+验证格式、单元测试和集成编译。
 
 已完成：
 
@@ -19,10 +20,9 @@ Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远
 
 当前执行顺序：
 
-1. 盘点 `Prompt`、`ResponseItem` 与工具定义到 Chat Completions 消息的映射边界。
-2. 建立脱敏黄金 Fixture 与编码器单元测试。
-3. 实现确定性历史编码并完整保留 `reasoning_content` 与 `tool_call_id`。
-4. 导出为 `0002` 补丁并由 Runtime CI 验证。
+1. 在锁定上游基线的干净工作树应用 `0001` 与 `0002`。
+2. 运行 `codex-api`、`codex-tools` 单元测试和 Runtime 集成编译。
+3. CI 通过后记录验证链接并开始 `MIMO-RUNTIME-003`。
 
 ## 2. 垂直切片
 
@@ -46,10 +46,13 @@ Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远
 
 ### MIMO-RUNTIME-002：确定性 Chat 历史编码
 
+状态：已实现，等待 Windows Runtime CI 验证。
+
 范围：
 
 - 将 `Prompt` 转成 MiMo Chat messages；
 - 正确组合 system、user、assistant、reasoning 和 tool 消息；
+- 将 Codex `developer` 上下文确定性降级为 system 消息；
 - 完整保留 `reasoning_content` 与 `tool_call_id`；
 - 仅允许首版支持的函数工具。
 
