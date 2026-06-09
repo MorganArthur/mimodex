@@ -1,0 +1,914 @@
+diff --git a/codex-rs/codex-api/src/endpoint/chat_completions.rs b/codex-rs/codex-api/src/endpoint/chat_completions.rs
+new file mode 100644
+index 0000000..d515dcb
+--- /dev/null
++++ b/codex-rs/codex-api/src/endpoint/chat_completions.rs
+@@ -0,0 +1,82 @@
++use crate::auth::SharedAuthProvider;
++use crate::common::ResponseStream;
++use crate::endpoint::session::EndpointSession;
++use crate::error::ApiError;
++use crate::provider::Provider;
++use crate::sse::spawn_chat_completions_response_stream;
++use crate::telemetry::SseTelemetry;
++use codex_client::HttpTransport;
++use codex_client::RequestTelemetry;
++use http::HeaderMap;
++use http::HeaderValue;
++use http::Method;
++use serde_json::Value;
++use std::sync::Arc;
++use tracing::instrument;
++
++pub struct ChatCompletionsClient<T: HttpTransport> {
++    session: EndpointSession<T>,
++    sse_telemetry: Option<Arc<dyn SseTelemetry>>,
++}
++
++impl<T: HttpTransport> ChatCompletionsClient<T> {
++    pub fn new(transport: T, provider: Provider, auth: SharedAuthProvider) -> Self {
++        Self {
++            session: EndpointSession::new(transport, provider, auth),
++            sse_telemetry: None,
++        }
++    }
++
++    pub fn with_telemetry(
++        self,
++        request: Option<Arc<dyn RequestTelemetry>>,
++        sse: Option<Arc<dyn SseTelemetry>>,
++    ) -> Self {
++        Self {
++            session: self.session.with_request_telemetry(request),
++            sse_telemetry: sse,
++        }
++    }
++
++    fn path() -> &'static str {
++        "chat/completions"
++    }
++
++    #[instrument(
++        name = "chat_completions.stream",
++        level = "info",
++        skip_all,
++        fields(
++            transport = "chat_completions_http",
++            http.method = "POST",
++            api.path = "chat/completions"
++        )
++    )]
++    pub async fn stream(
++        &self,
++        body: Value,
++        extra_headers: HeaderMap,
++    ) -> Result<ResponseStream, ApiError> {
++        let stream_response = self
++            .session
++            .stream_with(
++                Method::POST,
++                Self::path(),
++                extra_headers,
++                Some(body),
++                |request| {
++                    request.headers.insert(
++                        http::header::ACCEPT,
++                        HeaderValue::from_static("text/event-stream"),
++                    );
++                },
++            )
++            .await?;
++
++        Ok(spawn_chat_completions_response_stream(
++            stream_response,
++            self.session.provider().stream_idle_timeout,
++            self.sse_telemetry.clone(),
++        ))
++    }
++}
+diff --git a/codex-rs/codex-api/src/endpoint/mod.rs b/codex-rs/codex-api/src/endpoint/mod.rs
+index 106c5d7..6e49aa5 100644
+--- a/codex-rs/codex-api/src/endpoint/mod.rs
++++ b/codex-rs/codex-api/src/endpoint/mod.rs
+@@ -1,3 +1,4 @@
++pub(crate) mod chat_completions;
+ pub(crate) mod compact;
+ pub(crate) mod images;
+ pub(crate) mod memories;
+@@ -9,6 +10,7 @@ pub(crate) mod responses_websocket;
+ pub(crate) mod search;
+ mod session;
+ 
++pub use chat_completions::ChatCompletionsClient;
+ pub use compact::CompactClient;
+ pub use images::ImagesClient;
+ pub use memories::MemoriesClient;
+diff --git a/codex-rs/codex-api/src/lib.rs b/codex-rs/codex-api/src/lib.rs
+index 138f6f3..f1386c5 100644
+--- a/codex-rs/codex-api/src/lib.rs
++++ b/codex-rs/codex-api/src/lib.rs
+@@ -48,6 +48,7 @@ pub use crate::common::WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY;
+ pub use crate::common::WS_REQUEST_HEADER_TRACESTATE_CLIENT_METADATA_KEY;
+ pub use crate::common::create_text_param_for_request;
+ pub use crate::common::response_create_client_metadata;
++pub use crate::endpoint::ChatCompletionsClient;
+ pub use crate::endpoint::CompactClient;
+ pub use crate::endpoint::ImagesClient;
+ pub use crate::endpoint::MemoriesClient;
+diff --git a/codex-rs/codex-api/src/sse/chat_completions.rs b/codex-rs/codex-api/src/sse/chat_completions.rs
+new file mode 100644
+index 0000000..a466ed8
+--- /dev/null
++++ b/codex-rs/codex-api/src/sse/chat_completions.rs
+@@ -0,0 +1,458 @@
++use crate::common::ResponseEvent;
++use crate::common::ResponseStream;
++use crate::error::ApiError;
++use crate::telemetry::SseTelemetry;
++use codex_client::ByteStream;
++use codex_client::StreamResponse;
++use codex_protocol::models::ContentItem;
++use codex_protocol::models::ReasoningItemContent;
++use codex_protocol::models::ResponseItem;
++use codex_protocol::protocol::TokenUsage;
++use eventsource_stream::Eventsource;
++use futures::StreamExt;
++use serde::Deserialize;
++use std::collections::BTreeMap;
++use std::sync::Arc;
++use std::time::Duration;
++use tokio::sync::mpsc;
++use tokio::time::Instant;
++use tokio::time::timeout;
++use tracing::debug;
++use tracing::trace;
++
++const REQUEST_ID_HEADER: &str = "x-request-id";
++
++pub fn spawn_chat_completions_response_stream(
++    stream_response: StreamResponse,
++    idle_timeout: Duration,
++    telemetry: Option<Arc<dyn SseTelemetry>>,
++) -> ResponseStream {
++    let upstream_request_id = stream_response
++        .headers
++        .get(REQUEST_ID_HEADER)
++        .and_then(|value| value.to_str().ok())
++        .map(str::to_string);
++    let (tx_event, rx_event) = mpsc::channel::<Result<ResponseEvent, ApiError>>(1600);
++    tokio::spawn(process_chat_completions_sse(
++        stream_response.bytes,
++        tx_event,
++        idle_timeout,
++        telemetry,
++    ));
++
++    ResponseStream {
++        rx_event,
++        upstream_request_id,
++    }
++}
++
++#[derive(Debug, Deserialize)]
++struct ChatCompletionChunk {
++    id: Option<String>,
++    #[serde(default)]
++    choices: Vec<ChatCompletionChoice>,
++    usage: Option<ChatCompletionUsage>,
++}
++
++#[derive(Debug, Deserialize)]
++struct ChatCompletionChoice {
++    index: usize,
++    #[serde(default)]
++    delta: ChatCompletionDelta,
++    finish_reason: Option<String>,
++}
++
++#[derive(Debug, Default, Deserialize)]
++struct ChatCompletionDelta {
++    content: Option<String>,
++    reasoning_content: Option<String>,
++    #[serde(default)]
++    tool_calls: Vec<ChatToolCallDelta>,
++}
++
++#[derive(Debug, Deserialize)]
++struct ChatToolCallDelta {
++    index: usize,
++    id: Option<String>,
++    #[serde(rename = "type")]
++    kind: Option<String>,
++    function: Option<ChatFunctionCallDelta>,
++}
++
++#[derive(Debug, Deserialize)]
++struct ChatFunctionCallDelta {
++    name: Option<String>,
++    arguments: Option<String>,
++}
++
++#[derive(Debug, Deserialize)]
++struct ChatCompletionUsage {
++    #[serde(default)]
++    prompt_tokens: i64,
++    prompt_tokens_details: Option<ChatPromptTokenDetails>,
++    #[serde(default)]
++    completion_tokens: i64,
++    completion_tokens_details: Option<ChatCompletionTokenDetails>,
++    total_tokens: Option<i64>,
++}
++
++#[derive(Debug, Deserialize)]
++struct ChatPromptTokenDetails {
++    #[serde(default)]
++    cached_tokens: i64,
++}
++
++#[derive(Debug, Deserialize)]
++struct ChatCompletionTokenDetails {
++    #[serde(default)]
++    reasoning_tokens: i64,
++}
++
++impl From<ChatCompletionUsage> for TokenUsage {
++    fn from(usage: ChatCompletionUsage) -> Self {
++        let total_tokens = usage
++            .total_tokens
++            .unwrap_or(usage.prompt_tokens + usage.completion_tokens);
++        Self {
++            input_tokens: usage.prompt_tokens,
++            cached_input_tokens: usage
++                .prompt_tokens_details
++                .map(|details| details.cached_tokens)
++                .unwrap_or_default(),
++            output_tokens: usage.completion_tokens,
++            reasoning_output_tokens: usage
++                .completion_tokens_details
++                .map(|details| details.reasoning_tokens)
++                .unwrap_or_default(),
++            total_tokens,
++        }
++    }
++}
++
++#[derive(Default)]
++struct ChatCompletionsAccumulator {
++    response_id: Option<String>,
++    reasoning_content: String,
++    text_content: String,
++    tool_calls: BTreeMap<usize, PendingToolCall>,
++    finish_reason: Option<String>,
++    usage: Option<TokenUsage>,
++    created_emitted: bool,
++    reasoning_started: bool,
++    reasoning_done: bool,
++    text_started: bool,
++}
++
++#[derive(Default)]
++struct PendingToolCall {
++    id: Option<String>,
++    name: String,
++    arguments: String,
++}
++
++impl ChatCompletionsAccumulator {
++    fn consume(
++        &mut self,
++        chunk: ChatCompletionChunk,
++    ) -> Result<Vec<ResponseEvent>, ApiError> {
++        let mut events = Vec::new();
++
++        if let Some(response_id) = chunk.id {
++            match self.response_id.as_deref() {
++                Some(existing) if existing != response_id => {
++                    return Err(ApiError::Stream(format!(
++                        "chat completions response id changed from {existing} to {response_id}"
++                    )));
++                }
++                None => self.response_id = Some(response_id),
++                Some(_) => {}
++            }
++            if !self.created_emitted {
++                self.created_emitted = true;
++                events.push(ResponseEvent::Created);
++            }
++        }
++
++        if let Some(usage) = chunk.usage {
++            self.usage = Some(usage.into());
++        }
++
++        for choice in chunk.choices {
++            if choice.index != 0 {
++                return Err(ApiError::Stream(format!(
++                    "chat completions does not support choice index {}",
++                    choice.index
++                )));
++            }
++
++            if let Some(reasoning) = choice.delta.reasoning_content
++                && !reasoning.is_empty()
++            {
++                if self.text_started {
++                    return Err(ApiError::Stream(
++                        "chat completions emitted reasoning after assistant text".to_string(),
++                    ));
++                }
++                if !self.reasoning_started {
++                    self.reasoning_started = true;
++                    events.push(ResponseEvent::OutputItemAdded(reasoning_item(String::new())));
++                }
++                self.reasoning_content.push_str(&reasoning);
++                events.push(ResponseEvent::ReasoningContentDelta {
++                    delta: reasoning,
++                    content_index: 0,
++                });
++            }
++            if let Some(content) = choice.delta.content
++                && !content.is_empty()
++            {
++                if self.reasoning_started && !self.reasoning_done {
++                    self.reasoning_done = true;
++                    events.push(ResponseEvent::OutputItemDone(reasoning_item(
++                        self.reasoning_content.clone(),
++                    )));
++                }
++                if !self.text_started {
++                    self.text_started = true;
++                    events.push(ResponseEvent::OutputItemAdded(assistant_message(String::new())));
++                }
++                self.text_content.push_str(&content);
++                events.push(ResponseEvent::OutputTextDelta(content));
++            }
++            for tool_delta in choice.delta.tool_calls {
++                self.consume_tool_delta(tool_delta, &mut events)?;
++            }
++            if let Some(finish_reason) = choice.finish_reason {
++                if let Some(existing) = self.finish_reason.as_deref()
++                    && existing != finish_reason
++                {
++                    return Err(ApiError::Stream(format!(
++                        "chat completions finish reason changed from {existing} to {finish_reason}"
++                    )));
++                }
++                self.finish_reason = Some(finish_reason);
++            }
++        }
++
++        Ok(events)
++    }
++
++    fn consume_tool_delta(
++        &mut self,
++        delta: ChatToolCallDelta,
++        events: &mut Vec<ResponseEvent>,
++    ) -> Result<(), ApiError> {
++        if let Some(kind) = delta.kind.as_deref()
++            && kind != "function"
++        {
++            return Err(ApiError::Stream(format!(
++                "chat completions does not support tool call type: {kind}"
++            )));
++        }
++
++        let tool_call = self.tool_calls.entry(delta.index).or_default();
++        if let Some(id) = delta.id {
++            if let Some(existing) = tool_call.id.as_deref()
++                && existing != id
++            {
++                return Err(ApiError::Stream(format!(
++                    "chat completions tool call {} changed id from {existing} to {id}",
++                    delta.index
++                )));
++            }
++            tool_call.id = Some(id);
++        }
++        if let Some(function) = delta.function {
++            if let Some(name) = function.name {
++                tool_call.name.push_str(&name);
++            }
++            if let Some(arguments) = function.arguments
++                && !arguments.is_empty()
++            {
++                let Some(call_id) = tool_call.id.clone() else {
++                    return Err(ApiError::Stream(format!(
++                        "chat completions tool call {} emitted arguments before its id",
++                        delta.index
++                    )));
++                };
++                tool_call.arguments.push_str(&arguments);
++                events.push(ResponseEvent::ToolCallInputDelta {
++                    item_id: call_id.clone(),
++                    call_id: Some(call_id),
++                    delta: arguments,
++                });
++            }
++        }
++
++        Ok(())
++    }
++
++    fn finish(self) -> Result<Vec<ResponseEvent>, ApiError> {
++        let response_id = self.response_id.ok_or_else(|| {
++            ApiError::Stream("chat completions stream completed without a response id".to_string())
++        })?;
++        let finish_reason = self.finish_reason.ok_or_else(|| {
++            ApiError::Stream(
++                "chat completions stream completed without a finish reason".to_string(),
++            )
++        })?;
++        let mut events = Vec::new();
++
++        if self.reasoning_started && !self.reasoning_done {
++            events.push(ResponseEvent::OutputItemDone(reasoning_item(
++                self.reasoning_content,
++            )));
++        }
++
++        for (index, tool_call) in self.tool_calls {
++            let call_id = tool_call.id.ok_or_else(|| {
++                ApiError::Stream(format!(
++                    "chat completions tool call {index} completed without an id"
++                ))
++            })?;
++            if tool_call.name.is_empty() {
++                return Err(ApiError::Stream(format!(
++                    "chat completions tool call {index} completed without a function name"
++                )));
++            }
++            serde_json::from_str::<serde_json::Value>(&tool_call.arguments).map_err(|error| {
++                ApiError::Stream(format!(
++                    "chat completions tool call {index} has invalid JSON arguments: {error}"
++                ))
++            })?;
++            events.push(ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
++                id: None,
++                name: tool_call.name,
++                namespace: None,
++                arguments: tool_call.arguments,
++                call_id,
++            }));
++        }
++
++        if self.text_started {
++            events.push(ResponseEvent::OutputItemDone(assistant_message(
++                self.text_content,
++            )));
++        }
++
++        let end_turn = match finish_reason.as_str() {
++            "stop" => Some(true),
++            "tool_calls" => Some(false),
++            _ => None,
++        };
++        events.push(ResponseEvent::Completed {
++            response_id,
++            token_usage: self.usage,
++            end_turn,
++        });
++        Ok(events)
++    }
++}
++
++fn reasoning_item(text: String) -> ResponseItem {
++    ResponseItem::Reasoning {
++        id: String::new(),
++        summary: Vec::new(),
++        content: (!text.is_empty()).then(|| vec![ReasoningItemContent::ReasoningText { text }]),
++        encrypted_content: None,
++    }
++}
++
++fn assistant_message(text: String) -> ResponseItem {
++    ResponseItem::Message {
++        id: None,
++        role: "assistant".to_string(),
++        content: (!text.is_empty())
++            .then(|| vec![ContentItem::OutputText { text }])
++            .unwrap_or_default(),
++        phase: None,
++    }
++}
++
++pub(crate) async fn process_chat_completions_sse(
++    stream: ByteStream,
++    tx_event: mpsc::Sender<Result<ResponseEvent, ApiError>>,
++    idle_timeout: Duration,
++    telemetry: Option<Arc<dyn SseTelemetry>>,
++) {
++    let mut stream = stream.eventsource();
++    let mut accumulator = ChatCompletionsAccumulator::default();
++
++    loop {
++        let start = Instant::now();
++        let response = timeout(idle_timeout, stream.next()).await;
++        if let Some(telemetry) = telemetry.as_ref() {
++            telemetry.on_sse_poll(&response, start.elapsed());
++        }
++        let sse = match response {
++            Ok(Some(Ok(sse))) => sse,
++            Ok(Some(Err(error))) => {
++                debug!("Chat Completions SSE error: {error:#}");
++                let _ = tx_event.send(Err(ApiError::Stream(error.to_string()))).await;
++                return;
++            }
++            Ok(None) => {
++                let _ = tx_event
++                    .send(Err(ApiError::Stream(
++                        "chat completions stream closed before [DONE]".to_string(),
++                    )))
++                    .await;
++                return;
++            }
++            Err(_) => {
++                let _ = tx_event
++                    .send(Err(ApiError::Stream(
++                        "idle timeout waiting for Chat Completions SSE".to_string(),
++                    )))
++                    .await;
++                return;
++            }
++        };
++
++        trace!("Chat Completions SSE event: {}", &sse.data);
++        if sse.data == "[DONE]" {
++            match accumulator.finish() {
++                Ok(events) => {
++                    for event in events {
++                        if tx_event.send(Ok(event)).await.is_err() {
++                            return;
++                        }
++                    }
++                }
++                Err(error) => {
++                    let _ = tx_event.send(Err(error)).await;
++                }
++            }
++            return;
++        }
++
++        let chunk = match serde_json::from_str::<ChatCompletionChunk>(&sse.data) {
++            Ok(chunk) => chunk,
++            Err(error) => {
++                let _ = tx_event
++                    .send(Err(ApiError::Stream(format!(
++                        "failed to parse Chat Completions SSE chunk: {error}"
++                    ))))
++                    .await;
++                return;
++            }
++        };
++        match accumulator.consume(chunk) {
++            Ok(events) => {
++                for event in events {
++                    if tx_event.send(Ok(event)).await.is_err() {
++                        return;
++                    }
++                }
++            }
++            Err(error) => {
++                let _ = tx_event.send(Err(error)).await;
++                return;
++            }
++        }
++    }
++}
++
++#[cfg(test)]
++#[path = "chat_completions_tests.rs"]
++mod tests;
+diff --git a/codex-rs/codex-api/src/sse/chat_completions_tests.rs b/codex-rs/codex-api/src/sse/chat_completions_tests.rs
+new file mode 100644
+index 0000000..51bb91f
+--- /dev/null
++++ b/codex-rs/codex-api/src/sse/chat_completions_tests.rs
+@@ -0,0 +1,315 @@
++use super::*;
++use assert_matches::assert_matches;
++use bytes::Bytes;
++use codex_client::TransportError;
++use futures::stream;
++use serde_json::json;
++
++fn idle_timeout() -> Duration {
++    Duration::from_secs(1)
++}
++
++async fn collect_events(chunks: Vec<Vec<u8>>) -> Vec<Result<ResponseEvent, ApiError>> {
++    let stream = stream::iter(
++        chunks
++            .into_iter()
++            .map(|chunk| Ok::<Bytes, TransportError>(Bytes::from(chunk))),
++    );
++    let (tx, mut rx) = mpsc::channel(64);
++    tokio::spawn(process_chat_completions_sse(
++        Box::pin(stream),
++        tx,
++        idle_timeout(),
++        None,
++    ));
++
++    let mut events = Vec::new();
++    while let Some(event) = rx.recv().await {
++        events.push(event);
++    }
++    events
++}
++
++fn split_irregularly(value: &str) -> Vec<Vec<u8>> {
++    let bytes = value.as_bytes();
++    let mut chunks = Vec::new();
++    let mut start = 0;
++    let mut width = 1;
++    while start < bytes.len() {
++        let end = (start + width).min(bytes.len());
++        chunks.push(bytes[start..end].to_vec());
++        start = end;
++        width = if width == 7 { 1 } else { width + 1 };
++    }
++    chunks
++}
++
++#[tokio::test]
++async fn parses_irregular_chunks_and_preserves_event_order() {
++    let body = [
++        format!(
++            "data: {}\n\n",
++            json!({
++                "id": "response-1",
++                "choices": [{
++                    "index": 0,
++                    "delta": {
++                        "reasoning_content": "先检查",
++                        "tool_calls": [{
++                            "index": 0,
++                            "id": "call-1",
++                            "type": "function",
++                            "function": {
++                                "name": "read_",
++                                "arguments": "{\"path\":\""
++                            }
++                        }]
++                    },
++                    "finish_reason": null
++                }]
++            })
++        ),
++        format!(
++            "data: {}\n\n",
++            json!({
++                "choices": [{
++                    "index": 0,
++                    "delta": {
++                        "reasoning_content": "文件",
++                        "tool_calls": [{
++                            "index": 0,
++                            "function": {
++                                "name": "fixture_file",
++                                "arguments": "src/math.ts\"}"
++                            }
++                        }]
++                    },
++                    "finish_reason": "tool_calls"
++                }],
++                "usage": {
++                    "prompt_tokens": 20,
++                    "completion_tokens": 22,
++                    "total_tokens": 42,
++                    "completion_tokens_details": {"reasoning_tokens": 12}
++                }
++            })
++        ),
++        "data: [DONE]\n\n".to_string(),
++    ]
++    .concat();
++
++    let events = collect_events(split_irregularly(&body)).await;
++    assert_eq!(events.len(), 9);
++    assert_matches!(events[0], Ok(ResponseEvent::Created));
++    assert_matches!(
++        &events[1],
++        Ok(ResponseEvent::OutputItemAdded(ResponseItem::Reasoning { .. }))
++    );
++    assert_matches!(
++        &events[2],
++        Ok(ResponseEvent::ReasoningContentDelta { delta, content_index: 0 })
++            if delta == "先检查"
++    );
++    assert_matches!(
++        &events[3],
++        Ok(ResponseEvent::ToolCallInputDelta {
++            item_id,
++            call_id: Some(call_id),
++            delta,
++        }) if item_id == "call-1" && call_id == "call-1" && delta == "{\"path\":\""
++    );
++    assert_matches!(
++        &events[4],
++        Ok(ResponseEvent::ReasoningContentDelta { delta, content_index: 0 })
++            if delta == "文件"
++    );
++    assert_matches!(
++        &events[5],
++        Ok(ResponseEvent::ToolCallInputDelta { delta, .. }) if delta == "src/math.ts\"}"
++    );
++    assert_matches!(
++        &events[6],
++        Ok(ResponseEvent::OutputItemDone(ResponseItem::Reasoning { content, .. }))
++            if content.as_ref().is_some_and(|content| content == &vec![
++                ReasoningItemContent::ReasoningText {
++                    text: "先检查文件".to_string(),
++                }
++            ])
++    );
++    assert_matches!(
++        &events[7],
++        Ok(ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
++            name,
++            arguments,
++            call_id,
++            ..
++        })) if name == "read_fixture_file"
++            && arguments == "{\"path\":\"src/math.ts\"}"
++            && call_id == "call-1"
++    );
++    assert_matches!(
++        &events[8],
++        Ok(ResponseEvent::Completed {
++            response_id,
++            token_usage: Some(usage),
++            end_turn: Some(false),
++        }) if response_id == "response-1"
++            && usage.total_tokens == 42
++            && usage.reasoning_output_tokens == 12
++    );
++}
++
++#[tokio::test]
++async fn emits_text_message_before_stop_completion() {
++    let body = [
++        format!(
++            "data: {}\n\n",
++            json!({
++                "id": "response-2",
++                "choices": [{
++                    "index": 0,
++                    "delta": {"content": "完成"},
++                    "finish_reason": "stop"
++                }]
++            })
++        ),
++        "data: [DONE]\n\n".to_string(),
++    ]
++    .concat();
++
++    let events = collect_events(vec![body.into_bytes()]).await;
++    assert_matches!(events[0], Ok(ResponseEvent::Created));
++    assert_matches!(
++        &events[1],
++        Ok(ResponseEvent::OutputItemAdded(ResponseItem::Message { content, .. }))
++            if content.is_empty()
++    );
++    assert_matches!(
++        &events[2],
++        Ok(ResponseEvent::OutputTextDelta(delta)) if delta == "完成"
++    );
++    assert_matches!(
++        &events[3],
++        Ok(ResponseEvent::OutputItemDone(ResponseItem::Message { content, .. }))
++            if content == &vec![ContentItem::OutputText {
++                text: "完成".to_string(),
++            }]
++    );
++    assert_matches!(
++        &events[4],
++        Ok(ResponseEvent::Completed {
++            response_id,
++            end_turn: Some(true),
++            ..
++        }) if response_id == "response-2"
++    );
++}
++
++#[tokio::test]
++async fn finishes_reasoning_before_streaming_assistant_text() {
++    let body = [
++        format!(
++            "data: {}\n\n",
++            json!({
++                "id": "response-3",
++                "choices": [{
++                    "index": 0,
++                    "delta": {"reasoning_content": "思考"},
++                    "finish_reason": null
++                }]
++            })
++        ),
++        format!(
++            "data: {}\n\n",
++            json!({
++                "choices": [{
++                    "index": 0,
++                    "delta": {"content": "回答"},
++                    "finish_reason": "stop"
++                }]
++            })
++        ),
++        "data: [DONE]\n\n".to_string(),
++    ]
++    .concat();
++
++    let events = collect_events(vec![body.into_bytes()]).await;
++    assert_eq!(events.len(), 8);
++    assert_matches!(events[0], Ok(ResponseEvent::Created));
++    assert_matches!(
++        events[1],
++        Ok(ResponseEvent::OutputItemAdded(ResponseItem::Reasoning { .. }))
++    );
++    assert_matches!(events[2], Ok(ResponseEvent::ReasoningContentDelta { .. }));
++    assert_matches!(
++        events[3],
++        Ok(ResponseEvent::OutputItemDone(ResponseItem::Reasoning { .. }))
++    );
++    assert_matches!(
++        events[4],
++        Ok(ResponseEvent::OutputItemAdded(ResponseItem::Message { .. }))
++    );
++    assert_matches!(events[5], Ok(ResponseEvent::OutputTextDelta(_)));
++    assert_matches!(
++        events[6],
++        Ok(ResponseEvent::OutputItemDone(ResponseItem::Message { .. }))
++    );
++    assert_matches!(
++        events[7],
++        Ok(ResponseEvent::Completed {
++            end_turn: Some(true),
++            ..
++        })
++    );
++}
++
++#[tokio::test]
++async fn rejects_invalid_or_incomplete_tool_calls() {
++    let invalid_json = [
++        format!(
++            "data: {}\n\n",
++            json!({
++                "id": "response-3",
++                "choices": [{
++                    "index": 0,
++                    "delta": {
++                        "tool_calls": [{
++                            "index": 0,
++                            "id": "call-1",
++                            "function": {"name": "read_file", "arguments": "{"}
++                        }]
++                    },
++                    "finish_reason": "tool_calls"
++                }]
++            })
++        ),
++        "data: [DONE]\n\n".to_string(),
++    ]
++    .concat();
++    let events = collect_events(vec![invalid_json.into_bytes()]).await;
++    assert_matches!(
++        events.last(),
++        Some(Err(ApiError::Stream(message))) if message.contains("invalid JSON arguments")
++    );
++
++    let arguments_before_id = format!(
++        "data: {}\n\n",
++        json!({
++            "choices": [{
++                "index": 0,
++                "delta": {
++                    "tool_calls": [{
++                        "index": 0,
++                        "function": {"arguments": "{}"}
++                    }]
++                },
++                "finish_reason": null
++            }]
++        })
++    );
++    let events = collect_events(vec![arguments_before_id.into_bytes()]).await;
++    assert_matches!(
++        events.last(),
++        Some(Err(ApiError::Stream(message))) if message.contains("before its id")
++    );
++}
+diff --git a/codex-rs/codex-api/src/sse/mod.rs b/codex-rs/codex-api/src/sse/mod.rs
+index 441078b..863ef67 100644
+--- a/codex-rs/codex-api/src/sse/mod.rs
++++ b/codex-rs/codex-api/src/sse/mod.rs
+@@ -1,5 +1,7 @@
++pub(crate) mod chat_completions;
+ pub(crate) mod responses;
+ 
++pub use chat_completions::spawn_chat_completions_response_stream;
+ pub(crate) use responses::ResponsesStreamEvent;
+ pub(crate) use responses::process_responses_event;
+ pub use responses::spawn_response_stream;

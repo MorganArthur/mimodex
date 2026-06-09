@@ -18,3 +18,10 @@ commit。
    `developer` 上下文降级为 `system`；拒绝首版不支持的消息、工具和结构化工具
    输出，并递归移除 Responses 专属 schema 字段。该补丁加入队列后由 Windows
    Runtime CI 验证。
+
+3. `0003-add-mimo-chat-completions-sse-parser.patch`
+
+   增加 `/chat/completions` 流式端点与 MiMo SSE 累积解析器；在任意网络分块下
+   稳定映射文本、完整推理、碎片化函数参数、完成项、用量、响应 ID 和结束原因；
+   对多 choice、缺失工具 ID/名称、无效 JSON 参数和不完整流返回明确错误。该补丁
+   加入队列后由 Windows Runtime CI 验证。
