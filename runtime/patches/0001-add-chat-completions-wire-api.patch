@@ -33,7 +33,7 @@ index 2ebffe3..4c08408 100644
  use codex_protocol::models::ContentItem;
  use codex_protocol::models::ResponseItem;
  use codex_protocol::openai_models::ModelInfo;
-@@ -61,14 +64,26 @@ use tracing_subscriber::registry::LookupSpan;
+@@ -61,14 +64,29 @@ use tracing_subscriber::registry::LookupSpan;
  use tracing_subscriber::util::SubscriberInitExt;
  
  fn test_model_client(session_source: SessionSource) -> ModelClient {
@@ -41,7 +41,10 @@ index 2ebffe3..4c08408 100644
 +    test_model_client_with_wire_api(session_source, WireApi::Responses)
 +}
 +
-+fn test_model_client_with_wire_api(session_source: SessionSource, wire_api: WireApi) -> ModelClient {
++fn test_model_client_with_wire_api(
++    session_source: SessionSource,
++    wire_api: WireApi,
++) -> ModelClient {
 +    test_model_client_with_parent_and_wire_api(session_source, /*parent_thread_id*/ None, wire_api)
  }
  
@@ -62,7 +65,7 @@ index 2ebffe3..4c08408 100644
      let thread_id = ThreadId::new();
      ModelClient::new(
          /*auth_manager*/ None,
-@@ -86,6 +101,33 @@ fn test_model_client_with_parent(
+@@ -86,6 +104,33 @@ fn test_model_client_with_parent(
      )
  }
  
