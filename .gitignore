@@ -1,0 +1,20 @@
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+coverage/
+
+# Spike output
+spikes/mimo-provider/artifacts/
+spikes/mimo-provider/tmp/
+spikes/codex-runtime/upstream/
+runtime-worktree/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/openai/codex.git",
+  "commit": "14660c22d14312c28a50c52954dd77dd88f03c26",
+  "commitDate": "2026-06-08T21:39:35-07:00",
+  "license": "Apache-2.0",
+  "strategy": "patch-queue"
+}

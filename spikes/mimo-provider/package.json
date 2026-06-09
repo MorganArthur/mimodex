@@ -1,0 +1,19 @@
+{
+  "name": "@mimodex/mimo-provider-spike",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Disposable MiMo Provider protocol probe for Mimodex",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:live": "node --import tsx --test tests/live.test.ts",
+    "probe": "tsx src/cli.ts",
+    "verify": "npm run check && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}

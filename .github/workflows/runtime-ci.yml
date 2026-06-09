@@ -1,0 +1,78 @@
+name: Runtime CI
+
+on:
+  pull_request:
+    paths:
+      - "runtime/**"
+      - ".github/workflows/runtime-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "runtime/**"
+      - ".github/workflows/runtime-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: runtime-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  windows-check:
+    name: Apply patches and verify Runtime on Windows
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - name: Checkout Mimodex
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Checkout locked Codex upstream
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: openai/codex
+          ref: 14660c22d14312c28a50c52954dd77dd88f03c26
+          path: runtime-worktree/upstream
+          sparse-checkout: codex-rs
+          persist-credentials: false
+
+      - name: Verify and apply Mimodex patches
+        shell: pwsh
+        run: >
+          ./runtime/scripts/apply-patches.ps1
+          -UpstreamPath ./runtime-worktree/upstream
+
+      - name: Setup locked Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+          targets: x86_64-pc-windows-msvc
+
+      - name: Check Rust formatting
+        working-directory: runtime-worktree/upstream/codex-rs
+        run: cargo fmt -- --config imports_granularity=Item --check
+
+      - name: Test Provider boundary crates
+        working-directory: runtime-worktree/upstream/codex-rs
+        run: >
+          cargo test --locked
+          -p codex-model-provider-info
+          -p codex-api
+          -p codex-tools
+
+      - name: Check Runtime integration crates
+        working-directory: runtime-worktree/upstream/codex-rs
+        run: >
+          cargo check --locked
+          --target x86_64-pc-windows-msvc
+          -p codex-model-provider
+          -p codex-core
+          -p codex-app-server
