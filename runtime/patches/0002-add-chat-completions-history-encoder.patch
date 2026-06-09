@@ -241,10 +241,10 @@ index 0000000..3b1391a
 +mod tests;
 diff --git a/codex-rs/codex-api/src/chat_completions_tests.rs b/codex-rs/codex-api/src/chat_completions_tests.rs
 new file mode 100644
-index 0000000..86b5533
+index 0000000..c052934
 --- /dev/null
 +++ b/codex-rs/codex-api/src/chat_completions_tests.rs
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,226 @@
 +use super::*;
 +use codex_protocol::models::FunctionCallOutputPayload;
 +use codex_protocol::models::ReasoningItemReasoningSummary;
@@ -429,10 +429,7 @@ index 0000000..86b5533
 +    )
 +    .unwrap_err();
 +
-+    assert_eq!(
-+        error,
-+        ChatCompletionsEncodingError::MissingReasoningContent
-+    );
++    assert_eq!(error, ChatCompletionsEncodingError::MissingReasoningContent);
 +}
 +
 +#[test]
