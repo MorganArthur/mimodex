@@ -2,9 +2,15 @@ name: Provider Spike CI
 
 on:
   pull_request:
+    paths:
+      - "spikes/mimo-provider/**"
+      - ".github/workflows/provider-spike-ci.yml"
   push:
     branches:
       - main
+    paths:
+      - "spikes/mimo-provider/**"
+      - ".github/workflows/provider-spike-ci.yml"
   workflow_dispatch:
 
 concurrency:

@@ -1,26 +1,35 @@
 # MiMo Runtime Adapter 实现计划
 
-- 状态：MIMO-RUNTIME-001 已进入 CI 验证
+- 状态：MIMO-RUNTIME-001 已完成，准备开始 MIMO-RUNTIME-002
 - 最后更新：2026-06-09
 - 上游基线：`14660c22d14312c28a50c52954dd77dd88f03c26`
 - 构建策略：本地不安装 Rust，GitHub Actions 为权威原生验证环境
 
 ## 1. 当前下一步
 
-先完成 Runtime 补丁队列和 Windows CI 的首次远程验证，再实现
-`ChatCompletions` Adapter。这样首个 Rust 修改产生编译错误时，可以确认问题来自
-补丁本身，而不是 CI 基础设施。
+Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远程验证。下一步
+实现 `MIMO-RUNTIME-002`：确定性 Chat 历史编码。
 
-执行顺序：
+已完成：
 
-1. 将当前 Mimodex 仓库关联到 GitHub 仓库。
-2. 提交当前文档、Provider Spike、补丁队列骨架和两个 CI Workflow。
-3. 推送并确认 `Provider Spike CI` 与 `Runtime CI` 均通过。
-4. 补丁 `0001-add-chat-completions-wire-api.patch` 已建立，等待 Runtime CI 验证。
+1. Mimodex 仓库已关联并推送至 GitHub。
+2. `Provider Spike CI` 与空补丁 `Runtime CI` 基线通过。
+3. `0001-add-chat-completions-wire-api.patch` 已通过格式、配置往返、核心分派测试和
+   Windows Runtime/app-server 集成编译。
+
+当前执行顺序：
+
+1. 盘点 `Prompt`、`ResponseItem` 与工具定义到 Chat Completions 消息的映射边界。
+2. 建立脱敏黄金 Fixture 与编码器单元测试。
+3. 实现确定性历史编码并完整保留 `reasoning_content` 与 `tool_call_id`。
+4. 导出为 `0002` 补丁并由 Runtime CI 验证。
 
 ## 2. 垂直切片
 
 ### MIMO-RUNTIME-001：新增 wire API 类型
+
+状态：已完成。验证记录：
+[Runtime CI #27196469523](https://github.com/MorganArthur/mimodex/actions/runs/27196469523)。
 
 范围：
 

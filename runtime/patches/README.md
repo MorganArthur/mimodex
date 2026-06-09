@@ -9,4 +9,4 @@ commit。
 
 该补丁增加 `ChatCompletions` wire API 类型、配置解析与最小分派入口，并保持
 Responses 行为不变。首阶段调用会返回明确的未实现能力错误，MiMo 请求编码和 SSE
-解析将在后续独立补丁中实现。
+解析将在后续独立补丁中实现。该补丁已通过 Windows Runtime CI。
