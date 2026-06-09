@@ -117,7 +117,7 @@ index 138f6f3..f1386c5 100644
  pub use crate::endpoint::MemoriesClient;
 diff --git a/codex-rs/codex-api/src/sse/chat_completions.rs b/codex-rs/codex-api/src/sse/chat_completions.rs
 new file mode 100644
-index 0000000..e323c63
+index 0000000..b93c96d
 --- /dev/null
 +++ b/codex-rs/codex-api/src/sse/chat_completions.rs
 @@ -0,0 +1,461 @@
@@ -315,9 +315,9 @@ index 0000000..e323c63
 +                }
 +                if !self.reasoning_started {
 +                    self.reasoning_started = true;
-+                    events.push(ResponseEvent::OutputItemAdded(reasoning_item(
-+                        String::new(),
-+                    )));
++                    events.push(ResponseEvent::OutputItemAdded(
++                        reasoning_item(String::new()),
++                    ));
 +                }
 +                self.reasoning_content.push_str(&reasoning);
 +                events.push(ResponseEvent::ReasoningContentDelta {
