@@ -618,10 +618,10 @@ index 0000000..bc003f7
 +mod tests;
 diff --git a/codex-rs/tools/src/chat_completions_tests.rs b/codex-rs/tools/src/chat_completions_tests.rs
 new file mode 100644
-index 0000000..337b534
+index 0000000..d0581a2
 --- /dev/null
 +++ b/codex-rs/tools/src/chat_completions_tests.rs
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,66 @@
 +use super::*;
 +use crate::AdditionalProperties;
 +use crate::ResponsesApiNamespace;
@@ -676,13 +676,12 @@ index 0000000..337b534
 +
 +#[test]
 +fn rejects_non_function_tools() {
-+    let error =
-+        create_tools_for_chat_completions(&[ToolSpec::Namespace(ResponsesApiNamespace {
-+            name: "workspace".to_string(),
-+            description: "Workspace tools".to_string(),
-+            tools: Vec::new(),
-+        })])
-+        .unwrap_err();
++    let error = create_tools_for_chat_completions(&[ToolSpec::Namespace(ResponsesApiNamespace {
++        name: "workspace".to_string(),
++        description: "Workspace tools".to_string(),
++        tools: Vec::new(),
++    })])
++    .unwrap_err();
 +
 +    assert_eq!(
 +        error,
