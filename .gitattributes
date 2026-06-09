@@ -8,3 +8,4 @@
 *.yml text eol=lf
 
 runtime/patches/series text eol=lf
+runtime/patches/*.patch text eol=lf -whitespace

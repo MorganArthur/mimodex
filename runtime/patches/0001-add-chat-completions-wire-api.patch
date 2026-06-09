@@ -1,0 +1,161 @@
+diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+index 02d231c..ab4778a 100644
+--- a/codex-rs/core/src/client.rs
++++ b/codex-rs/core/src/client.rs
+@@ -1662,6 +1662,9 @@ impl ModelClientSession {
+                 )
+                 .await
+             }
++            WireApi::ChatCompletions => Err(CodexErr::UnsupportedOperation(
++                "wire_api = \"chat_completions\" is not implemented yet".to_string(),
++            )),
+         }
+     }
+ 
+diff --git a/codex-rs/core/src/client_tests.rs b/codex-rs/core/src/client_tests.rs
+index 2ebffe3..4c08408 100644
+--- a/codex-rs/core/src/client_tests.rs
++++ b/codex-rs/core/src/client_tests.rs
+@@ -10,6 +10,7 @@ use super::X_OPENAI_SUBAGENT_HEADER;
+ use crate::AttestationContext;
+ use crate::AttestationProvider;
+ use crate::GenerateAttestationFuture;
++use crate::client_common::Prompt;
+ use codex_api::ApiError;
+ use codex_api::ResponseEvent;
+ use codex_app_server_protocol::AuthMode;
+@@ -23,6 +24,8 @@ use codex_model_provider_info::create_oss_provider_with_base_url;
+ use codex_otel::SessionTelemetry;
+ use codex_protocol::SessionId;
+ use codex_protocol::ThreadId;
++use codex_protocol::config_types::ReasoningSummary;
++use codex_protocol::error::CodexErr;
+ use codex_protocol::models::ContentItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::openai_models::ModelInfo;
+@@ -61,14 +64,26 @@ use tracing_subscriber::registry::LookupSpan;
+ use tracing_subscriber::util::SubscriberInitExt;
+ 
+ fn test_model_client(session_source: SessionSource) -> ModelClient {
+-    test_model_client_with_parent(session_source, /*parent_thread_id*/ None)
++    test_model_client_with_wire_api(session_source, WireApi::Responses)
++}
++
++fn test_model_client_with_wire_api(session_source: SessionSource, wire_api: WireApi) -> ModelClient {
++    test_model_client_with_parent_and_wire_api(session_source, /*parent_thread_id*/ None, wire_api)
+ }
+ 
+ fn test_model_client_with_parent(
+     session_source: SessionSource,
+     parent_thread_id: Option<ThreadId>,
+ ) -> ModelClient {
+-    let provider = create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses);
++    test_model_client_with_parent_and_wire_api(session_source, parent_thread_id, WireApi::Responses)
++}
++
++fn test_model_client_with_parent_and_wire_api(
++    session_source: SessionSource,
++    parent_thread_id: Option<ThreadId>,
++    wire_api: WireApi,
++) -> ModelClient {
++    let provider = create_oss_provider_with_base_url("https://example.com/v1", wire_api);
+     let thread_id = ThreadId::new();
+     ModelClient::new(
+         /*auth_manager*/ None,
+@@ -86,6 +101,33 @@ fn test_model_client_with_parent(
+     )
+ }
+ 
++#[tokio::test]
++async fn chat_completions_wire_api_returns_clear_not_implemented_error() {
++    let client = test_model_client_with_wire_api(SessionSource::Exec, WireApi::ChatCompletions);
++    let mut session = client.new_session();
++
++    let result = session
++        .stream(
++            &Prompt::default(),
++            &test_model_info(),
++            &test_session_telemetry(),
++            /*effort*/ None,
++            ReasoningSummary::Auto,
++            /*service_tier*/ None,
++            /*turn_metadata_header*/ None,
++            &InferenceTraceContext::disabled(),
++        )
++        .await;
++
++    let Err(CodexErr::UnsupportedOperation(message)) = result else {
++        panic!("chat_completions should return an unsupported operation error");
++    };
++    assert_eq!(
++        message,
++        "wire_api = \"chat_completions\" is not implemented yet"
++    );
++}
++
+ fn test_model_info() -> ModelInfo {
+     serde_json::from_value(json!({
+         "slug": "gpt-test",
+diff --git a/codex-rs/model-provider-info/src/lib.rs b/codex-rs/model-provider-info/src/lib.rs
+index 5f0f840..9220f09 100644
+--- a/codex-rs/model-provider-info/src/lib.rs
++++ b/codex-rs/model-provider-info/src/lib.rs
+@@ -54,12 +54,16 @@ pub enum WireApi {
+     /// The Responses API exposed by OpenAI at `/v1/responses`.
+     #[default]
+     Responses,
++    /// The Chat Completions API exposed at `/v1/chat/completions`.
++    #[serde(rename = "chat_completions")]
++    ChatCompletions,
+ }
+ 
+ impl fmt::Display for WireApi {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         let value = match self {
+             Self::Responses => "responses",
++            Self::ChatCompletions => "chat_completions",
+         };
+         f.write_str(value)
+     }
+@@ -73,8 +77,12 @@ impl<'de> Deserialize<'de> for WireApi {
+         let value = String::deserialize(deserializer)?;
+         match value.as_str() {
+             "responses" => Ok(Self::Responses),
++            "chat_completions" => Ok(Self::ChatCompletions),
+             "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
+-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
++            _ => Err(serde::de::Error::unknown_variant(
++                &value,
++                &["responses", "chat_completions"],
++            )),
+         }
+     }
+ }
+diff --git a/codex-rs/model-provider-info/src/model_provider_info_tests.rs b/codex-rs/model-provider-info/src/model_provider_info_tests.rs
+index a303050..a0eecf5 100644
+--- a/codex-rs/model-provider-info/src/model_provider_info_tests.rs
++++ b/codex-rs/model-provider-info/src/model_provider_info_tests.rs
+@@ -119,6 +119,23 @@ wire_api = "chat"
+     assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
+ }
+ 
++#[test]
++fn test_chat_completions_wire_api_round_trips() {
++    let provider_toml = r#"
++name = "MiMo"
++base_url = "https://api.xiaomimimo.com/v1"
++env_key = "MIMO_API_KEY"
++wire_api = "chat_completions"
++        "#;
++
++    let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
++    assert_eq!(provider.wire_api, WireApi::ChatCompletions);
++    assert_eq!(provider.wire_api.to_string(), "chat_completions");
++
++    let serialized = toml::to_string(&provider).unwrap();
++    assert!(serialized.contains("wire_api = \"chat_completions\""));
++}
++
+ #[test]
+ fn test_deserialize_websocket_connect_timeout() {
+     let provider_toml = r#"

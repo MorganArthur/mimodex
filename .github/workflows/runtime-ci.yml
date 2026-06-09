@@ -68,6 +68,13 @@ jobs:
           -p codex-api
           -p codex-tools
 
+      - name: Test Chat Completions dispatch boundary
+        working-directory: runtime-worktree/upstream/codex-rs
+        run: >
+          cargo test --locked
+          -p codex-core
+          chat_completions_wire_api_returns_clear_not_implemented_error
+
       - name: Check Runtime integration crates
         working-directory: runtime-worktree/upstream/codex-rs
         run: >

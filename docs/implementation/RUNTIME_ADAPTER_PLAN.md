@@ -1,6 +1,6 @@
 # MiMo Runtime Adapter 实现计划
 
-- 状态：准备开始
+- 状态：MIMO-RUNTIME-001 已进入 CI 验证
 - 最后更新：2026-06-09
 - 上游基线：`14660c22d14312c28a50c52954dd77dd88f03c26`
 - 构建策略：本地不安装 Rust，GitHub Actions 为权威原生验证环境
@@ -16,7 +16,7 @@
 1. 将当前 Mimodex 仓库关联到 GitHub 仓库。
 2. 提交当前文档、Provider Spike、补丁队列骨架和两个 CI Workflow。
 3. 推送并确认 `Provider Spike CI` 与 `Runtime CI` 均通过。
-4. 开始补丁 `0001-add-chat-completions-wire-api.patch`。
+4. 补丁 `0001-add-chat-completions-wire-api.patch` 已建立，等待 Runtime CI 验证。
 
 ## 2. 垂直切片
 
