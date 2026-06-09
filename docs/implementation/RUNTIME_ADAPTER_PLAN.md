@@ -1,15 +1,14 @@
 # MiMo Runtime Adapter 实现计划
 
-- 状态：MIMO-RUNTIME-002 已实现，等待 Windows Runtime CI 验证
+- 状态：MIMO-RUNTIME-002 已完成，准备开始 MIMO-RUNTIME-003
 - 最后更新：2026-06-09
 - 上游基线：`14660c22d14312c28a50c52954dd77dd88f03c26`
 - 构建策略：本地不安装 Rust，GitHub Actions 为权威原生验证环境
 
 ## 1. 当前下一步
 
-Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远程验证。
-`MIMO-RUNTIME-002` 确定性 Chat 历史编码已实现，下一步由 Windows Runtime CI
-验证格式、单元测试和集成编译。
+Runtime 补丁队列、Wire API 边界与确定性 Chat 历史编码均已通过远程验证。下一步
+实现 `MIMO-RUNTIME-003`：MiMo SSE 解析。
 
 已完成：
 
@@ -17,12 +16,15 @@ Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远
 2. `Provider Spike CI` 与空补丁 `Runtime CI` 基线通过。
 3. `0001-add-chat-completions-wire-api.patch` 已通过格式、配置往返、核心分派测试和
    Windows Runtime/app-server 集成编译。
+4. `0002-add-chat-completions-history-encoder.patch` 已通过黄金测试、边界 crate
+   测试和 Windows Runtime/app-server 集成编译。
 
 当前执行顺序：
 
-1. 在锁定上游基线的干净工作树应用 `0001` 与 `0002`。
-2. 运行 `codex-api`、`codex-tools` 单元测试和 Runtime 集成编译。
-3. CI 通过后记录验证链接并开始 `MIMO-RUNTIME-003`。
+1. 基于 Provider Spike 脱敏 Fixture 定义 MiMo SSE 事件映射。
+2. 实现任意网络分块下的文本、推理和工具参数累积。
+3. 映射结束原因、用量与响应 ID，并输出既有 `ResponseEvent`。
+4. 导出为 `0003` 补丁并由 Runtime CI 验证。
 
 ## 2. 垂直切片
 
@@ -46,7 +48,8 @@ Runtime 补丁队列、Windows CI 基线和首个 Wire API 补丁均已通过远
 
 ### MIMO-RUNTIME-002：确定性 Chat 历史编码
 
-状态：已实现，等待 Windows Runtime CI 验证。
+状态：已完成。验证记录：
+[Runtime CI #27199629111](https://github.com/MorganArthur/mimodex/actions/runs/27199629111)。
 
 范围：
 
