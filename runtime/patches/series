@@ -2,3 +2,4 @@
 0001-add-chat-completions-wire-api.patch
 0002-add-chat-completions-history-encoder.patch
 0003-add-mimo-chat-completions-sse-parser.patch
+0004-add-mimo-core-basic-model-flow.patch

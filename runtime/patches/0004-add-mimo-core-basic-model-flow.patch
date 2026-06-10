@@ -1,0 +1,841 @@
+diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+index ab4778a..a98d8a6 100644
+--- a/codex-rs/core/src/client.rs
++++ b/codex-rs/core/src/client.rs
+@@ -33,6 +33,7 @@ use std::sync::atomic::Ordering;
+ 
+ use codex_api::ApiError;
+ use codex_api::AuthProvider;
++use codex_api::ChatCompletionsClient as ApiChatCompletionsClient;
+ use codex_api::CompactClient as ApiCompactClient;
+ use codex_api::CompactionInput as ApiCompactionInput;
+ use codex_api::Compression;
+@@ -61,6 +62,7 @@ use codex_api::WebsocketTelemetry;
+ use codex_api::auth_header_telemetry;
+ use codex_api::build_session_headers;
+ use codex_api::create_text_param_for_request;
++use codex_api::encode_chat_messages;
+ use codex_api::response_create_client_metadata;
+ use codex_app_server_protocol::AuthMode;
+ use codex_login::AuthManager;
+@@ -86,6 +88,7 @@ use codex_rollout_trace::CompactionTraceContext;
+ use codex_rollout_trace::InferenceTraceAttempt;
+ use codex_rollout_trace::InferenceTraceContext;
+ use codex_tools::create_tools_json_for_responses_api;
++use codex_tools::create_tools_for_chat_completions;
+ use eventsource_stream::Event;
+ use eventsource_stream::EventStreamError;
+ use futures::StreamExt;
+@@ -93,6 +96,7 @@ use http::HeaderMap as ApiHeaderMap;
+ use http::HeaderValue;
+ use http::StatusCode as HttpStatusCode;
+ use reqwest::StatusCode;
++use serde_json::json;
+ use std::time::Duration;
+ use std::time::Instant;
+ use tokio::sync::mpsc;
+@@ -149,6 +153,7 @@ const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=20
+ const X_OPENAI_INTERNAL_CODEX_RESPONSES_LITE_HEADER: &str =
+     "x-openai-internal-codex-responses-lite";
+ const RESPONSES_ENDPOINT: &str = "/responses";
++const CHAT_COMPLETIONS_ENDPOINT: &str = "/chat/completions";
+ const RESPONSES_COMPACT_ENDPOINT: &str = "/responses/compact";
+ // `/responses/compact` is unary, so the timeout covers the full response rather than one idle
+ // period between stream events.
+@@ -816,6 +821,42 @@ impl ModelClient {
+         Ok(request)
+     }
+ 
++    fn build_chat_completions_request(
++        &self,
++        prompt: &Prompt,
++        model_info: &ModelInfo,
++        service_tier: Option<String>,
++    ) -> Result<serde_json::Value> {
++        if prompt.output_schema.is_some() {
++            return Err(CodexErr::UnsupportedOperation(
++                "chat completions does not support structured output yet".to_string(),
++            ));
++        }
++        if service_tier.is_some() {
++            return Err(CodexErr::UnsupportedOperation(
++                "chat completions does not support service tiers".to_string(),
++            ));
++        }
++
++        let messages = encode_chat_messages(&prompt.base_instructions.text, &prompt.input)
++            .map_err(|error| CodexErr::UnsupportedOperation(error.to_string()))?;
++        let tools = create_tools_for_chat_completions(&prompt.tools)
++            .map_err(|error| CodexErr::UnsupportedOperation(error.to_string()))?;
++        let mut request = json!({
++            "model": model_info.slug,
++            "messages": messages,
++            "stream": true,
++            "stream_options": {
++                "include_usage": true
++            }
++        });
++        if !tools.is_empty() {
++            request["tools"] = json!(tools);
++            request["tool_choice"] = json!("auto");
++        }
++        Ok(request)
++    }
++
+     /// Returns whether the Responses-over-WebSocket transport is active for this session.
+     ///
+     /// WebSocket use is controlled by provider capability and session-scoped fallback state.
+@@ -1357,6 +1398,108 @@ impl ModelClientSession {
+         }
+     }
+ 
++    /// Streams a basic turn via an OpenAI-compatible Chat Completions endpoint.
++    #[allow(clippy::too_many_arguments)]
++    #[instrument(
++        name = "model_client.stream_chat_completions_api",
++        level = "info",
++        skip_all,
++        fields(
++            model = %model_info.slug,
++            wire_api = %self.client.state.provider.info().wire_api,
++            transport = "chat_completions_http",
++            http.method = "POST",
++            api.path = "chat/completions"
++        )
++    )]
++    async fn stream_chat_completions_api(
++        &self,
++        prompt: &Prompt,
++        model_info: &ModelInfo,
++        session_telemetry: &SessionTelemetry,
++        service_tier: Option<String>,
++        inference_trace: &InferenceTraceContext,
++    ) -> Result<ResponseStream> {
++        let auth_manager = self.client.state.provider.auth_manager();
++        let mut auth_recovery = auth_manager
++            .as_ref()
++            .map(AuthManager::unauthorized_recovery);
++        let mut pending_retry = PendingUnauthorizedRetry::default();
++        loop {
++            let client_setup = self.client.current_client_setup().await?;
++            let transport = ReqwestTransport::new(build_reqwest_client());
++            let request_auth_context = AuthRequestTelemetryContext::new(
++                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
++                client_setup.api_auth.as_ref(),
++                pending_retry,
++            );
++            let (request_telemetry, sse_telemetry) = Self::build_streaming_telemetry(
++                session_telemetry,
++                request_auth_context,
++                RequestRouteTelemetry::for_endpoint(CHAT_COMPLETIONS_ENDPOINT),
++                self.client.state.auth_env_telemetry.clone(),
++            );
++            let request = self.client.build_chat_completions_request(
++                prompt,
++                model_info,
++                service_tier.clone(),
++            )?;
++            let inference_trace_attempt = inference_trace.start_attempt();
++            let mut extra_headers = ApiHeaderMap::new();
++            inference_trace_attempt.add_request_headers(&mut extra_headers);
++            inference_trace_attempt.record_started(&request);
++            let client = ApiChatCompletionsClient::new(
++                transport,
++                client_setup.api_provider,
++                client_setup.api_auth,
++            )
++            .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
++            let stream_result = client.stream(request, extra_headers).await;
++
++            match stream_result {
++                Ok(stream) => {
++                    let (stream, _) = map_response_stream(
++                        stream,
++                        session_telemetry.clone(),
++                        inference_trace_attempt,
++                    );
++                    return Ok(stream);
++                }
++                Err(ApiError::Transport(
++                    unauthorized_transport @ TransportError::Http { status, .. },
++                )) if status == StatusCode::UNAUTHORIZED => {
++                    let response_debug_context =
++                        extract_response_debug_context(&unauthorized_transport);
++                    inference_trace_attempt.record_failed(
++                        &unauthorized_transport,
++                        response_debug_context.request_id.as_deref(),
++                        /*output_items*/ &[],
++                    );
++                    pending_retry = PendingUnauthorizedRetry::from_recovery(
++                        handle_unauthorized(
++                            unauthorized_transport,
++                            &mut auth_recovery,
++                            session_telemetry,
++                        )
++                        .await?,
++                    );
++                    continue;
++                }
++                Err(err) => {
++                    let response_debug_context =
++                        extract_response_debug_context_from_api_error(&err);
++                    let err = map_api_error(err);
++                    inference_trace_attempt.record_failed(
++                        &err,
++                        response_debug_context.request_id.as_deref(),
++                        /*output_items*/ &[],
++                    );
++                    return Err(err);
++                }
++            }
++        }
++    }
++
+     /// Streams a turn via the Responses API over WebSocket transport.
+     #[allow(clippy::too_many_arguments)]
+     #[instrument(
+@@ -1662,9 +1805,16 @@ impl ModelClientSession {
+                 )
+                 .await
+             }
+-            WireApi::ChatCompletions => Err(CodexErr::UnsupportedOperation(
+-                "wire_api = \"chat_completions\" is not implemented yet".to_string(),
+-            )),
++            WireApi::ChatCompletions => {
++                self.stream_chat_completions_api(
++                    prompt,
++                    model_info,
++                    session_telemetry,
++                    service_tier,
++                    inference_trace,
++                )
++                .await
++            }
+         }
+     }
+ 
+diff --git a/codex-rs/core/src/client_tests.rs b/codex-rs/core/src/client_tests.rs
+index b8b1027..a219e36 100644
+--- a/codex-rs/core/src/client_tests.rs
++++ b/codex-rs/core/src/client_tests.rs
+@@ -26,6 +26,7 @@ use codex_protocol::SessionId;
+ use codex_protocol::ThreadId;
+ use codex_protocol::config_types::ReasoningSummary;
+ use codex_protocol::error::CodexErr;
++use codex_protocol::models::BaseInstructions;
+ use codex_protocol::models::ContentItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::openai_models::ModelInfo;
+@@ -62,6 +63,11 @@ use tracing_subscriber::layer::Context as LayerContext;
+ use tracing_subscriber::layer::SubscriberExt;
+ use tracing_subscriber::registry::LookupSpan;
+ use tracing_subscriber::util::SubscriberInitExt;
++use wiremock::Mock;
++use wiremock::MockServer;
++use wiremock::ResponseTemplate;
++use wiremock::matchers::method;
++use wiremock::matchers::path;
+ 
+ fn test_model_client(session_source: SessionSource) -> ModelClient {
+     test_model_client_with_wire_api(session_source, WireApi::Responses)
+@@ -90,7 +96,21 @@ fn test_model_client_with_parent_and_wire_api(
+     parent_thread_id: Option<ThreadId>,
+     wire_api: WireApi,
+ ) -> ModelClient {
+-    let provider = create_oss_provider_with_base_url("https://example.com/v1", wire_api);
++    test_model_client_with_base_url_and_wire_api(
++        session_source,
++        parent_thread_id,
++        "https://example.com/v1",
++        wire_api,
++    )
++}
++
++fn test_model_client_with_base_url_and_wire_api(
++    session_source: SessionSource,
++    parent_thread_id: Option<ThreadId>,
++    base_url: &str,
++    wire_api: WireApi,
++) -> ModelClient {
++    let provider = create_oss_provider_with_base_url(base_url, wire_api);
+     let thread_id = ThreadId::new();
+     ModelClient::new(
+         /*auth_manager*/ None,
+@@ -109,13 +129,74 @@ fn test_model_client_with_parent_and_wire_api(
+ }
+ 
+ #[tokio::test]
+-async fn chat_completions_wire_api_returns_clear_not_implemented_error() {
+-    let client = test_model_client_with_wire_api(SessionSource::Exec, WireApi::ChatCompletions);
++async fn chat_completions_wire_api_streams_basic_turn() {
++    let server = MockServer::start().await;
++    let sse_body = [
++        format!(
++            "data: {}\n\n",
++            json!({
++                "id": "chat-response-1",
++                "choices": [{
++                    "index": 0,
++                    "delta": {"reasoning_content": "先思考"},
++                    "finish_reason": null
++                }]
++            })
++        ),
++        format!(
++            "data: {}\n\n",
++            json!({
++                "choices": [{
++                    "index": 0,
++                    "delta": {"content": "基础轮次完成"},
++                    "finish_reason": "stop"
++                }],
++                "usage": {
++                    "prompt_tokens": 10,
++                    "completion_tokens": 5,
++                    "total_tokens": 15
++                }
++            })
++        ),
++        "data: [DONE]\n\n".to_string(),
++    ]
++    .concat();
++    Mock::given(method("POST"))
++        .and(path("/v1/chat/completions"))
++        .respond_with(
++            ResponseTemplate::new(200)
++                .insert_header("content-type", "text/event-stream")
++                .set_body_raw(sse_body, "text/event-stream"),
++        )
++        .expect(1)
++        .mount(&server)
++        .await;
++
++    let client = test_model_client_with_base_url_and_wire_api(
++        SessionSource::Exec,
++        /*parent_thread_id*/ None,
++        &format!("{}/v1", server.uri()),
++        WireApi::ChatCompletions,
++    );
+     let mut session = client.new_session();
++    let prompt = Prompt {
++        input: vec![ResponseItem::Message {
++            id: None,
++            role: "user".to_string(),
++            content: vec![ContentItem::InputText {
++                text: "请完成基础轮次".to_string(),
++            }],
++            phase: None,
++        }],
++        base_instructions: BaseInstructions {
++            text: "你是 Mimodex。".to_string(),
++        },
++        ..Prompt::default()
++    };
+ 
+-    let result = session
++    let mut stream = session
+         .stream(
+-            &Prompt::default(),
++            &prompt,
+             &test_model_info(),
+             &test_session_telemetry(),
+             /*effort*/ None,
+@@ -124,14 +205,76 @@ async fn chat_completions_wire_api_returns_clear_not_implemented_error() {
+             /*turn_metadata_header*/ None,
+             &InferenceTraceContext::disabled(),
+         )
+-        .await;
++        .await
++        .expect("chat completions stream should start");
++    let mut events = Vec::new();
++    while let Some(event) = stream.next().await {
++        events.push(event.expect("chat completions event should parse"));
++    }
++
++    assert!(events.iter().any(
++        |event| matches!(event, ResponseEvent::ReasoningContentDelta { delta, .. } if delta == "先思考")
++    ));
++    assert!(events.iter().any(
++        |event| matches!(event, ResponseEvent::OutputTextDelta(delta) if delta == "基础轮次完成")
++    ));
++    assert!(events.iter().any(
++        |event| matches!(event, ResponseEvent::Completed { token_usage: Some(usage), end_turn: Some(true), .. } if usage.total_tokens == 15)
++    ));
++
++    let requests = server
++        .received_requests()
++        .await
++        .expect("mock server should expose requests");
++    assert_eq!(requests.len(), 1);
++    let body: serde_json::Value =
++        serde_json::from_slice(&requests[0].body).expect("request body should be JSON");
++    assert_eq!(
++        body,
++        json!({
++            "model": "gpt-test",
++            "messages": [
++                {"role": "system", "content": "你是 Mimodex。"},
++                {"role": "user", "content": "请完成基础轮次"}
++            ],
++            "stream": true,
++            "stream_options": {"include_usage": true}
++        })
++    );
++}
+ 
+-    let Err(CodexErr::UnsupportedOperation(message)) = result else {
+-        panic!("chat_completions should return an unsupported operation error");
++#[test]
++fn chat_completions_rejects_unverified_request_capabilities() {
++    let client = test_model_client_with_wire_api(SessionSource::Exec, WireApi::ChatCompletions);
++    let prompt = Prompt {
++        output_schema: Some(json!({"type": "object"})),
++        ..Prompt::default()
++    };
++
++    let structured_output_error = client
++        .build_chat_completions_request(&prompt, &test_model_info(), /*service_tier*/ None)
++        .expect_err("structured output should be rejected");
++    let CodexErr::UnsupportedOperation(structured_output_message) = structured_output_error else {
++        panic!("structured output should return unsupported operation");
++    };
++    assert_eq!(
++        structured_output_message,
++        "chat completions does not support structured output yet"
++    );
++
++    let service_tier_error = client
++        .build_chat_completions_request(
++            &Prompt::default(),
++            &test_model_info(),
++            Some("priority".to_string()),
++        )
++        .expect_err("service tier should be rejected");
++    let CodexErr::UnsupportedOperation(service_tier_message) = service_tier_error else {
++        panic!("service tier should return unsupported operation");
+     };
+     assert_eq!(
+-        message,
+-        "wire_api = \"chat_completions\" is not implemented yet"
++        service_tier_message,
++        "chat completions does not support service tiers"
+     );
+ }
+ 
+diff --git a/codex-rs/model-provider-info/src/lib.rs b/codex-rs/model-provider-info/src/lib.rs
+index 9220f09..5b43db0 100644
+--- a/codex-rs/model-provider-info/src/lib.rs
++++ b/codex-rs/model-provider-info/src/lib.rs
+@@ -35,6 +35,10 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
+ const OPENAI_PROVIDER_NAME: &str = "OpenAI";
+ pub const OPENAI_PROVIDER_ID: &str = "openai";
+ pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
++const MIMO_PROVIDER_NAME: &str = "MiMo";
++pub const MIMO_PROVIDER_ID: &str = "mimo";
++pub const MIMO_DEFAULT_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
++pub const MIMO_API_KEY_ENV_VAR: &str = "MIMO_API_KEY";
+ const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
+ pub const AMAZON_BEDROCK_PROVIDER_ID: &str = "amazon-bedrock";
+ pub const AMAZON_BEDROCK_GPT_5_5_MODEL_ID: &str = "openai.gpt-5.5";
+@@ -396,6 +400,31 @@ impl ModelProviderInfo {
+         }
+     }
+ 
++    pub fn create_mimo_provider() -> ModelProviderInfo {
++        ModelProviderInfo {
++            name: MIMO_PROVIDER_NAME.into(),
++            base_url: Some(MIMO_DEFAULT_BASE_URL.into()),
++            env_key: None,
++            env_key_instructions: None,
++            experimental_bearer_token: None,
++            auth: None,
++            aws: None,
++            wire_api: WireApi::ChatCompletions,
++            query_params: None,
++            http_headers: None,
++            env_http_headers: Some(HashMap::from([(
++                "api-key".to_string(),
++                MIMO_API_KEY_ENV_VAR.to_string(),
++            )])),
++            request_max_retries: None,
++            stream_max_retries: None,
++            stream_idle_timeout_ms: None,
++            websocket_connect_timeout_ms: None,
++            requires_openai_auth: false,
++            supports_websockets: false,
++        }
++    }
++
+     pub fn is_openai(&self) -> bool {
+         self.name == OPENAI_PROVIDER_NAME
+     }
+@@ -404,6 +433,10 @@ impl ModelProviderInfo {
+         self.name == AMAZON_BEDROCK_PROVIDER_NAME
+     }
+ 
++    pub fn is_mimo(&self) -> bool {
++        self.name == MIMO_PROVIDER_NAME
++    }
++
+     pub fn supports_remote_compaction(&self) -> bool {
+         self.is_openai() || is_azure_responses_provider(&self.name, self.base_url.as_deref())
+     }
+@@ -426,14 +459,14 @@ pub fn built_in_model_providers(
+     use ModelProviderInfo as P;
+     let openai_provider = P::create_openai_provider(openai_base_url);
+     let amazon_bedrock_provider = P::create_amazon_bedrock_provider(/*aws*/ None);
++    let mimo_provider = P::create_mimo_provider();
+ 
+-    // We do not want to be in the business of adjucating which third-party
+-    // providers are bundled with Codex CLI, so we only include the OpenAI and
+-    // open source ("oss") providers by default. Users are encouraged to add to
+-    // `model_providers` in config.toml to add their own providers.
++    // Mimodex adds MiMo to the upstream OpenAI, Amazon Bedrock, and local OSS
++    // providers so the desktop app can select it without writing config.toml.
+     [
+         (OPENAI_PROVIDER_ID, openai_provider),
+         (AMAZON_BEDROCK_PROVIDER_ID, amazon_bedrock_provider),
++        (MIMO_PROVIDER_ID, mimo_provider),
+         (
+             OLLAMA_OSS_PROVIDER_ID,
+             create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
+diff --git a/codex-rs/model-provider-info/src/model_provider_info_tests.rs b/codex-rs/model-provider-info/src/model_provider_info_tests.rs
+index a0eecf5..e5a16a0 100644
+--- a/codex-rs/model-provider-info/src/model_provider_info_tests.rs
++++ b/codex-rs/model-provider-info/src/model_provider_info_tests.rs
+@@ -324,6 +324,28 @@ fn test_built_in_model_providers_include_amazon_bedrock() {
+     );
+ }
+ 
++#[test]
++fn test_built_in_model_providers_include_mimo_chat_completions() {
++    let providers = built_in_model_providers(/*openai_base_url*/ None);
++    let mimo = providers
++        .get(MIMO_PROVIDER_ID)
++        .expect("MiMo provider should be built in");
++
++    assert!(mimo.is_mimo());
++    assert_eq!(mimo.base_url.as_deref(), Some(MIMO_DEFAULT_BASE_URL));
++    assert_eq!(mimo.wire_api, WireApi::ChatCompletions);
++    assert_eq!(mimo.env_key, None);
++    assert_eq!(
++        mimo.env_http_headers,
++        Some(std::collections::HashMap::from([(
++            "api-key".to_string(),
++            MIMO_API_KEY_ENV_VAR.to_string(),
++        )]))
++    );
++    assert!(!mimo.requires_openai_auth);
++    assert!(!mimo.supports_websockets);
++}
++
+ #[test]
+ fn test_merge_configured_model_providers_adds_custom_provider() {
+     let custom_provider = ModelProviderInfo {
+diff --git a/codex-rs/model-provider/src/lib.rs b/codex-rs/model-provider/src/lib.rs
+index 4e46608..bd979f9 100644
+--- a/codex-rs/model-provider/src/lib.rs
++++ b/codex-rs/model-provider/src/lib.rs
+@@ -1,6 +1,7 @@
+ mod amazon_bedrock;
+ mod auth;
+ mod bearer_auth_provider;
++mod mimo;
+ mod models_endpoint;
+ mod provider;
+ 
+diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provider/src/mimo/catalog.rs
+new file mode 100644
+index 0000000..bfe8ebe
+--- /dev/null
++++ b/codex-rs/model-provider/src/mimo/catalog.rs
+@@ -0,0 +1,125 @@
++use codex_models_manager::bundled_models_response;
++use codex_models_manager::model_info::BASE_INSTRUCTIONS;
++use codex_protocol::openai_models::ConfigShellToolType;
++use codex_protocol::openai_models::InputModality;
++use codex_protocol::openai_models::ModelInfo;
++use codex_protocol::openai_models::ModelVisibility;
++use codex_protocol::openai_models::ModelsResponse;
++
++pub(crate) const MIMO_DEFAULT_MODEL_ID: &str = "mimo-v2.5";
++pub(crate) const MIMO_PRO_MODEL_ID: &str = "mimo-v2.5-pro";
++const BASE_MODEL_ID: &str = "gpt-5.4";
++
++pub(crate) fn static_model_catalog() -> ModelsResponse {
++    ModelsResponse {
++        models: vec![
++            mimo_model(
++                MIMO_DEFAULT_MODEL_ID,
++                "MiMo v2.5",
++                "Default Mimodex model",
++                ModelVisibility::List,
++                /*priority*/ 0,
++            ),
++            mimo_model(
++                MIMO_PRO_MODEL_ID,
++                "MiMo v2.5 Pro",
++                "Advanced Mimodex model",
++                ModelVisibility::Hide,
++                /*priority*/ 1,
++            ),
++        ],
++    }
++}
++
++pub(crate) fn with_mimo_capabilities(mut catalog: ModelsResponse) -> ModelsResponse {
++    for model in &mut catalog.models {
++        apply_mimo_capabilities(model);
++    }
++    catalog
++}
++
++fn mimo_model(
++    slug: &str,
++    display_name: &str,
++    description: &str,
++    visibility: ModelVisibility,
++    priority: i32,
++) -> ModelInfo {
++    let mut model = bundled_models_response()
++        .unwrap_or_else(|error| panic!("bundled models.json should parse: {error}"))
++        .models
++        .into_iter()
++        .find(|model| model.slug == BASE_MODEL_ID)
++        .unwrap_or_else(|| panic!("bundled models.json should include {BASE_MODEL_ID}"));
++    model.slug = slug.to_string();
++    model.display_name = display_name.to_string();
++    model.description = Some(description.to_string());
++    model.visibility = visibility;
++    model.priority = priority;
++    apply_mimo_capabilities(&mut model);
++    model
++}
++
++fn apply_mimo_capabilities(model: &mut ModelInfo) {
++    model.default_reasoning_level = None;
++    model.supported_reasoning_levels.clear();
++    model.shell_type = ConfigShellToolType::Disabled;
++    model.additional_speed_tiers.clear();
++    model.service_tiers.clear();
++    model.default_service_tier = None;
++    model.base_instructions = BASE_INSTRUCTIONS.to_string();
++    model.model_messages = None;
++    model.supports_reasoning_summaries = false;
++    model.support_verbosity = false;
++    model.default_verbosity = None;
++    model.apply_patch_tool_type = None;
++    model.supports_parallel_tool_calls = false;
++    model.supports_image_detail_original = false;
++    model.context_window = None;
++    model.max_context_window = None;
++    model.auto_compact_token_limit = None;
++    model.experimental_supported_tools.clear();
++    model.input_modalities = vec![InputModality::Text];
++    model.supports_search_tool = false;
++    model.use_responses_lite = false;
++    model.auto_review_model_override = None;
++    model.tool_mode = None;
++    model.multi_agent_version = None;
++}
++
++#[cfg(test)]
++mod tests {
++    use codex_models_manager::manager::ModelsManager;
++    use codex_models_manager::manager::RefreshStrategy;
++    use codex_models_manager::manager::StaticModelsManager;
++    use pretty_assertions::assert_eq;
++
++    use super::*;
++
++    #[tokio::test]
++    async fn catalog_defaults_to_mimo_v2_5_and_hides_pro_from_normal_picker() {
++        let manager = StaticModelsManager::new(/*auth_manager*/ None, static_model_catalog());
++        let models = manager.list_models(RefreshStrategy::Offline).await;
++
++        assert_eq!(models.len(), 2);
++        assert_eq!(models[0].model, MIMO_DEFAULT_MODEL_ID);
++        assert!(models[0].is_default);
++        assert!(models[0].show_in_picker);
++        assert_eq!(models[1].model, MIMO_PRO_MODEL_ID);
++        assert!(!models[1].is_default);
++        assert!(!models[1].show_in_picker);
++    }
++
++    #[test]
++    fn catalog_disables_unverified_capabilities() {
++        for model in static_model_catalog().models {
++            assert_eq!(model.shell_type, ConfigShellToolType::Disabled);
++            assert!(!model.supports_reasoning_summaries);
++            assert!(!model.supports_parallel_tool_calls);
++            assert_eq!(model.input_modalities, vec![InputModality::Text]);
++            assert!(model.service_tiers.is_empty());
++            assert!(model.context_window.is_none());
++            assert_eq!(model.base_instructions, BASE_INSTRUCTIONS);
++        }
++    }
++}
+diff --git a/codex-rs/model-provider/src/mimo/mod.rs b/codex-rs/model-provider/src/mimo/mod.rs
+new file mode 100644
+index 0000000..a39f26b
+--- /dev/null
++++ b/codex-rs/model-provider/src/mimo/mod.rs
+@@ -0,0 +1,96 @@
++mod catalog;
++
++use std::path::PathBuf;
++use std::sync::Arc;
++
++use codex_login::AuthManager;
++use codex_login::CodexAuth;
++use codex_model_provider_info::ModelProviderInfo;
++use codex_models_manager::manager::SharedModelsManager;
++use codex_models_manager::manager::StaticModelsManager;
++use codex_protocol::openai_models::ModelsResponse;
++
++use crate::provider::ModelProvider;
++use crate::provider::ProviderAccountResult;
++use crate::provider::ProviderAccountState;
++use crate::provider::ProviderCapabilities;
++use catalog::MIMO_DEFAULT_MODEL_ID;
++use catalog::static_model_catalog;
++use catalog::with_mimo_capabilities;
++
++#[derive(Clone, Debug)]
++pub(crate) struct MimoModelProvider {
++    info: ModelProviderInfo,
++}
++
++impl MimoModelProvider {
++    pub(crate) fn new(info: ModelProviderInfo) -> Self {
++        Self { info }
++    }
++}
++
++#[async_trait::async_trait]
++impl ModelProvider for MimoModelProvider {
++    fn info(&self) -> &ModelProviderInfo {
++        &self.info
++    }
++
++    fn capabilities(&self) -> ProviderCapabilities {
++        ProviderCapabilities {
++            namespace_tools: false,
++            image_generation: false,
++            web_search: false,
++        }
++    }
++
++    fn approval_review_preferred_model(&self) -> &'static str {
++        MIMO_DEFAULT_MODEL_ID
++    }
++
++    fn auth_manager(&self) -> Option<Arc<AuthManager>> {
++        None
++    }
++
++    async fn auth(&self) -> Option<CodexAuth> {
++        None
++    }
++
++    fn account_state(&self) -> ProviderAccountResult {
++        Ok(ProviderAccountState {
++            account: None,
++            requires_openai_auth: false,
++        })
++    }
++
++    fn models_manager(
++        &self,
++        _codex_home: PathBuf,
++        config_model_catalog: Option<ModelsResponse>,
++    ) -> SharedModelsManager {
++        Arc::new(StaticModelsManager::new(
++            /*auth_manager*/ None,
++            config_model_catalog.map_or_else(static_model_catalog, with_mimo_capabilities),
++        ))
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use pretty_assertions::assert_eq;
++
++    use super::*;
++
++    #[test]
++    fn capabilities_disable_unverified_hosted_tools() {
++        let provider = MimoModelProvider::new(ModelProviderInfo::create_mimo_provider());
++
++        assert_eq!(
++            provider.capabilities(),
++            ProviderCapabilities {
++                namespace_tools: false,
++                image_generation: false,
++                web_search: false,
++            }
++        );
++    }
++}
+diff --git a/codex-rs/model-provider/src/provider.rs b/codex-rs/model-provider/src/provider.rs
+index afd0706..55cebe0 100644
+--- a/codex-rs/model-provider/src/provider.rs
++++ b/codex-rs/model-provider/src/provider.rs
+@@ -16,6 +16,7 @@ use codex_protocol::openai_models::ModelsResponse;
+ use crate::amazon_bedrock::AmazonBedrockModelProvider;
+ use crate::auth::auth_manager_for_provider;
+ use crate::auth::resolve_provider_auth;
++use crate::mimo::MimoModelProvider;
+ use crate::models_endpoint::OpenAiModelsEndpoint;
+ 
+ /// Optional provider-backed features that Codex may expose at runtime.
+@@ -151,6 +152,8 @@ pub fn create_model_provider(
+ ) -> SharedModelProvider {
+     if provider_info.is_amazon_bedrock() {
+         Arc::new(AmazonBedrockModelProvider::new(provider_info))
++    } else if provider_info.is_mimo() {
++        Arc::new(MimoModelProvider::new(provider_info))
+     } else {
+         Arc::new(ConfiguredModelProvider::new(provider_info, auth_manager))
+     }
+@@ -535,6 +538,40 @@ mod tests {
+         assert_eq!(default_model.model, "openai.gpt-5.5");
+     }
+ 
++    #[tokio::test]
++    async fn mimo_provider_creates_static_models_manager() {
++        let provider = create_model_provider(
++            ModelProviderInfo::create_mimo_provider(),
++            /*auth_manager*/ None,
++        );
++        let manager =
++            provider.models_manager(test_codex_home(), /*config_model_catalog*/ None);
++
++        let catalog = manager.raw_model_catalog(RefreshStrategy::Online).await;
++        let model_ids = catalog
++            .models
++            .iter()
++            .map(|model| model.slug.as_str())
++            .collect::<Vec<_>>();
++        assert_eq!(model_ids, vec!["mimo-v2.5", "mimo-v2.5-pro"]);
++
++        let models = manager.list_models(RefreshStrategy::Online).await;
++        assert_eq!(
++            models
++                .iter()
++                .find(|model| model.is_default)
++                .map(|model| model.model.as_str()),
++            Some("mimo-v2.5")
++        );
++        assert_eq!(
++            models
++                .iter()
++                .find(|model| model.model == "mimo-v2.5-pro")
++                .map(|model| model.show_in_picker),
++            Some(false)
++        );
++    }
++
+     #[tokio::test]
+     async fn configured_bedrock_catalog_only_allows_default_service_tier() {
+         let configured_model = codex_models_manager::bundled_models_response()

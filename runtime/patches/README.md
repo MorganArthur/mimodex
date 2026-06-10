@@ -25,3 +25,12 @@ commit。
    稳定映射文本、完整推理、碎片化函数参数、完成项、用量、响应 ID 和结束原因；
    对多 choice、缺失工具 ID/名称、无效 JSON 参数和不完整流返回明确错误。该补丁
    加入队列后由 Windows Runtime CI 验证。
+
+4. `0004-add-mimo-core-basic-model-flow.patch`
+
+   将 Core 的 `ChatCompletions` 分派接到 `/chat/completions` 流式端点，构建
+   确定性 Chat 请求并拒绝尚未验证的结构化输出与服务等级；注册使用 `api-key`
+   Header 的内置 MiMo Provider 和专属静态模型目录。目录默认展示
+   `mimo-v2.5`，将 `mimo-v2.5-pro` 标记为高级隐藏候选，并关闭首阶段未验证的
+   图片、搜索、并行工具、服务等级和上下文窗口声明。该补丁等待 Windows Runtime
+   CI 验证。
