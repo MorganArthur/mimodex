@@ -6,6 +6,8 @@
 # Node
 node_modules/
 coverage/
+dist/
+.vite-*.log
 
 # Spike output
 spikes/mimo-provider/artifacts/

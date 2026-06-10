@@ -6,6 +6,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "tsconfig.base.json"
+      - "apps/**"
       - "packages/**"
       - ".github/workflows/desktop-ci.yml"
   push:
@@ -15,6 +16,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "tsconfig.base.json"
+      - "apps/**"
       - "packages/**"
       - ".github/workflows/desktop-ci.yml"
   workflow_dispatch:
@@ -28,7 +30,7 @@ permissions:
 
 jobs:
   verify:
-    name: Verify Desktop TypeScript on Windows
+    name: Verify Desktop Shell on Windows
     runs-on: windows-2025
     timeout-minutes: 15
     steps:

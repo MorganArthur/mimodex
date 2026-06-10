@@ -81,12 +81,13 @@ Runtime 退出时，客户端会先处理标准输出中最后一条未带换行
 - 完整初始化握手及首批线程、轮次 API 映射；
 - 进程 transport 的按行写入与监听器释放。
 
-## 7. 下一阶段
+## 7. 后续接入进展
 
-下一阶段在 Tauri 桌面工程中实现 `RuntimeProcessPort`：
+桌面应用服务和首个 React 交互壳已经实现，详情见
+[桌面应用服务与交互壳实现说明](DESKTOP_APP_SHELL_PLAN.md)。下一阶段在 Tauri
+桌面工程中实现 `RuntimeProcessPort`：
 
 1. 由 Tauri 启动打包后的 Mimodex Runtime sidecar。
 2. 将 sidecar 标准输出、标准错误和退出事件适配到 Runtime 客户端。
-3. 建立桌面应用服务，统一管理一个 Runtime 进程和多个线程。
-4. 用最小 React 页面验证启动、发消息、流式事件、审批和中断闭环。
-5. 在 GitHub Actions 中增加 Tauri Windows 编译与安装包冒烟。
+3. 用真实 Runtime 替换当前可替换的演示连接。
+4. 在 GitHub Actions 中增加 Tauri Windows 编译与安装包冒烟。

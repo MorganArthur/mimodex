@@ -91,6 +91,10 @@ export class MimodexRuntimeClient {
     return this.#rpc.onStderr(listener);
   }
 
+  onExit(listener: Parameters<JsonRpcClient["onExit"]>[0]): () => void {
+    return this.#rpc.onExit(listener);
+  }
+
   respond(
     id: ServerRequest["id"],
     result: Parameters<JsonRpcClient["respond"]>[1] = {},

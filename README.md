@@ -30,6 +30,7 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 - [Windows 11 CI 构建与发布方案](docs/delivery/WINDOWS_CI_RELEASE.md)
 - [MiMo Runtime Adapter 实现计划](docs/implementation/RUNTIME_ADAPTER_PLAN.md)
 - [桌面 Runtime 客户端接入计划](docs/implementation/DESKTOP_RUNTIME_CLIENT_PLAN.md)
+- [桌面应用服务与交互壳实现说明](docs/implementation/DESKTOP_APP_SHELL_PLAN.md)
 - [MiMo Provider 技术验证清单](docs/validation/MIMO_PROVIDER_SPIKE.md)
 - [MiMo Provider Spike 当前状态](docs/validation/MIMO_PROVIDER_SPIKE_STATUS.md)
 - [默认模型真实基础流式探针证据](docs/validation/evidence/2026-06-09-mimo-v2.5-baseline.md)
