@@ -1,8 +1,9 @@
 # 桌面应用服务与交互壳实现说明
 
-- 状态：首个 React 交互切片已实现，等待 Desktop CI 远程验证
+- 状态：首个 React 交互切片已实现并通过 Desktop CI
 - 最后更新：2026-06-10
 - 对应目录：`apps/desktop`、`packages/desktop-core`
+- 首次远程验证：[Desktop CI #27253481256](https://github.com/MorganArthur/mimodex/actions/runs/27253481256)
 
 ## 1. 当前目标
 
