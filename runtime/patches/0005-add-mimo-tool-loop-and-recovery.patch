@@ -1,9 +1,9 @@
 diff --git a/codex-rs/app-server/tests/suite/v2/mimo_chat_completions.rs b/codex-rs/app-server/tests/suite/v2/mimo_chat_completions.rs
 new file mode 100644
-index 0000000..3e7d364
+index 0000000..9397287
 --- /dev/null
 +++ b/codex-rs/app-server/tests/suite/v2/mimo_chat_completions.rs
-@@ -0,0 +1,355 @@
+@@ -0,0 +1,357 @@
 +use std::path::Path;
 +use std::sync::atomic::AtomicUsize;
 +use std::sync::atomic::Ordering;
@@ -206,17 +206,19 @@ index 0000000..3e7d364
 +    let second = requests[1]
 +        .body_json::<Value>()
 +        .context("second request should be JSON")?;
-+    assert!(second["messages"]
-+        .as_array()
-+        .context("messages should be an array")?
-+        .iter()
-+        .any(|message| {
-+            message["role"] == "tool"
-+                && message["tool_call_id"] == "call-app-server"
-+                && message["content"]
-+                    .as_str()
-+                    .is_some_and(|content| content.contains("mimo-app-server-ok"))
-+        }));
++    assert!(
++        second["messages"]
++            .as_array()
++            .context("messages should be an array")?
++            .iter()
++            .any(|message| {
++                message["role"] == "tool"
++                    && message["tool_call_id"] == "call-app-server"
++                    && message["content"]
++                        .as_str()
++                        .is_some_and(|content| content.contains("mimo-app-server-ok"))
++            })
++    );
 +
 +    Ok(())
 +}
@@ -373,10 +375,10 @@ index 9aef40a..f172d8d 100644
  mod output_schema;
 diff --git a/codex-rs/core/tests/suite/chat_completions.rs b/codex-rs/core/tests/suite/chat_completions.rs
 new file mode 100644
-index 0000000..d18a440
+index 0000000..eca67a2
 --- /dev/null
 +++ b/codex-rs/core/tests/suite/chat_completions.rs
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,231 @@
 +use std::sync::atomic::AtomicUsize;
 +use std::sync::atomic::Ordering;
 +
@@ -600,9 +602,11 @@ index 0000000..d18a440
 +    assert!(messages.iter().any(|message| {
 +        message["role"] == "assistant" && message["content"] == "初始轮次完成"
 +    }));
-+    assert!(messages
-+        .iter()
-+        .any(|message| { message["role"] == "user" && message["content"] == "继续处理" }));
++    assert!(
++        messages
++            .iter()
++            .any(|message| { message["role"] == "user" && message["content"] == "继续处理" })
++    );
 +
 +    Ok(())
 +}
