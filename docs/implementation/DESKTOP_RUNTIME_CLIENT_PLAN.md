@@ -1,8 +1,9 @@
 # 桌面 Runtime 客户端接入计划
 
-- 状态：首个 TypeScript 协议切片已实现，等待 Tauri sidecar 接入
+- 状态：首个 TypeScript 协议切片已实现并通过 Desktop CI，等待 Tauri sidecar 接入
 - 最后更新：2026-06-10
 - 对应包：`packages/runtime-client`
+- 首次远程验证：[Desktop CI #27252463625](https://github.com/MorganArthur/mimodex/actions/runs/27252463625)
 
 ## 1. 目标
 

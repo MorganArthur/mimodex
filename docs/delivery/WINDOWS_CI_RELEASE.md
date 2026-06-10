@@ -45,7 +45,9 @@ GitHub 托管 Runner，不要求安装在本地机器。
 
 Runtime CI 已基于固定上游 commit 与补丁队列建立。桌面 Workflow 已先接入纯
 TypeScript Runtime 客户端验证；Tauri 源码和锁文件进入仓库后，再扩展原生编译与
-安装包冒烟步骤。
+安装包冒烟步骤。桌面 TypeScript 基线已在
+[Desktop CI #27252463625](https://github.com/MorganArthur/mimodex/actions/runs/27252463625)
+首次通过。
 
 ## 4. PR 合并门槛
 
