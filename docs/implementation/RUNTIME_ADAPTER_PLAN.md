@@ -1,6 +1,6 @@
 # MiMo Runtime Adapter 实现计划
 
-- 状态：MIMO-RUNTIME-004 已实现，等待 Runtime CI 验证
+- 状态：MIMO-RUNTIME-004 已完成，准备开始 MIMO-RUNTIME-005
 - 最后更新：2026-06-10
 - 上游基线：`14660c22d14312c28a50c52954dd77dd88f03c26`
 - 构建策略：本地不安装 Rust，GitHub Actions 为权威原生验证环境
@@ -9,7 +9,7 @@
 
 Runtime 补丁队列、Wire API 边界、确定性 Chat 历史编码与 MiMo SSE 解析均已通过
 远程验证。`MIMO-RUNTIME-004` 的 Core 基础模型流、内置 MiMo Provider 与静态模型
-目录已经实现，下一步由 Windows Runtime CI 完成权威验证。
+目录也已通过 Windows Runtime CI 权威验证。
 
 已完成：
 
@@ -21,15 +21,15 @@ Runtime 补丁队列、Wire API 边界、确定性 Chat 历史编码与 MiMo SSE
    测试和 Windows Runtime/app-server 集成编译。
 5. `0003-add-mimo-chat-completions-sse-parser.patch` 已通过任意网络分块、流式事件、
    工具参数失败边界测试和 Windows Runtime/app-server 集成编译。
-6. `0004-add-mimo-core-basic-model-flow.patch` 已生成，等待 Windows Runtime CI
-   验证基础流、Provider 注册、默认/高级模型目录和集成编译。
+6. `0004-add-mimo-core-basic-model-flow.patch` 已通过基础流、Provider 注册、
+   默认/高级模型目录和 Windows Runtime/app-server 集成编译。
 
 当前执行顺序：
 
-1. 验证四个 Runtime 补丁能在锁定上游 commit 上按顺序应用。
-2. 运行 Provider 边界、Chat 基础流和 Windows Runtime/app-server 集成验证。
-3. CI 通过后更新 `MIMO-RUNTIME-004` 验证记录。
-4. 开始 `MIMO-RUNTIME-005`：工具循环、持久化与恢复。
+1. 开始 `MIMO-RUNTIME-005`：接通标准函数工具请求与执行闭环。
+2. 验证并行、连续、拒绝、失败和取消。
+3. 验证 rollout 持久化、进程重启恢复和推理内容重放。
+4. 增加 app-server MiMo thread/start、turn/start 与 turn/interrupt 集成测试。
 
 ## 2. 垂直切片
 
@@ -90,7 +90,8 @@ Runtime 补丁队列、Wire API 边界、确定性 Chat 历史编码与 MiMo SSE
 
 ### MIMO-RUNTIME-004：Core 基础模型流
 
-状态：已实现，等待 Windows Runtime CI 验证。
+状态：已完成。验证记录：
+[Runtime CI #27245545541](https://github.com/MorganArthur/mimodex/actions/runs/27245545541)。
 
 范围：
 

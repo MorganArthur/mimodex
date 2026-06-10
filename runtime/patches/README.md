@@ -32,5 +32,6 @@ commit。
    确定性 Chat 请求并拒绝尚未验证的结构化输出与服务等级；注册使用 `api-key`
    Header 的内置 MiMo Provider 和专属静态模型目录。目录默认展示
    `mimo-v2.5`，将 `mimo-v2.5-pro` 标记为高级隐藏候选，并关闭首阶段未验证的
-   图片、搜索、并行工具、服务等级和上下文窗口声明。该补丁等待 Windows Runtime
-   CI 验证。
+   图片、搜索、并行工具、服务等级和上下文窗口声明。该补丁已通过 Windows Runtime
+   CI 验证。验证记录：
+   [Runtime CI #27245545541](https://github.com/MorganArthur/mimodex/actions/runs/27245545541)。
