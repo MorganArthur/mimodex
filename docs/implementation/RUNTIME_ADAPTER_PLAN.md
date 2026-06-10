@@ -23,13 +23,14 @@ Runtime 补丁队列、Wire API 边界、确定性 Chat 历史编码与 MiMo SSE
    工具参数失败边界测试和 Windows Runtime/app-server 集成编译。
 6. `0004-add-mimo-core-basic-model-flow.patch` 已通过基础流、Provider 注册、
    默认/高级模型目录和 Windows Runtime/app-server 集成编译。
+7. `0005-add-mimo-tool-loop-and-recovery.patch` 已完成实现，当前等待 Windows
+   Runtime CI 验证。
 
 当前执行顺序：
 
-1. 开始 `MIMO-RUNTIME-005`：接通标准函数工具请求与执行闭环。
-2. 验证并行、连续、拒绝、失败和取消。
-3. 验证 rollout 持久化、进程重启恢复和推理内容重放。
-4. 增加 app-server MiMo thread/start、turn/start 与 turn/interrupt 集成测试。
+1. 通过 Windows Runtime CI 验证 `MIMO-RUNTIME-005`。
+2. 根据 CI 结果修复格式、编译或跨平台生命周期问题。
+3. 验证通过后冻结工具循环与恢复边界，进入桌面端 Runtime 接入。
 
 ## 2. 垂直切片
 
@@ -107,6 +108,8 @@ Runtime 补丁队列、Wire API 边界、确定性 Chat 历史编码与 MiMo SSE
 - 取消模型流后线程可继续使用。
 
 ### MIMO-RUNTIME-005：工具循环与恢复
+
+状态：实现完成，等待 Windows Runtime CI 验证。
 
 范围：
 

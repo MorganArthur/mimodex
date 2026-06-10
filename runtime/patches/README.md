@@ -35,3 +35,10 @@ commit。
    图片、搜索、并行工具、服务等级和上下文窗口声明。该补丁已通过 Windows Runtime
    CI 验证。验证记录：
    [Runtime CI #27245545541](https://github.com/MorganArthur/mimodex/actions/runs/27245545541)。
+
+5. `0005-add-mimo-tool-loop-and-recovery.patch`
+
+   为 MiMo 模型目录开启已验证的标准函数工具与并行工具能力；增加真实
+   `shell_command` 执行闭环、推理与工具结果历史重放、rollout 恢复继续，以及
+   app-server `thread/start`、`turn/start`、`turn/interrupt` 生命周期测试。
+   当前等待 Windows Runtime CI 权威验证。

@@ -75,6 +75,13 @@ jobs:
           -p codex-core
           chat_completions_
 
+      - name: Test MiMo app-server lifecycle
+        working-directory: runtime-worktree/upstream/codex-rs
+        run: >
+          cargo test --locked
+          -p codex-app-server
+          mimo_chat_completions_
+
       - name: Check Runtime integration crates
         working-directory: runtime-worktree/upstream/codex-rs
         run: >

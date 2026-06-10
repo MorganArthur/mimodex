@@ -1,0 +1,657 @@
+diff --git a/codex-rs/app-server/tests/suite/v2/mimo_chat_completions.rs b/codex-rs/app-server/tests/suite/v2/mimo_chat_completions.rs
+new file mode 100644
+index 0000000..3e7d364
+--- /dev/null
++++ b/codex-rs/app-server/tests/suite/v2/mimo_chat_completions.rs
+@@ -0,0 +1,355 @@
++use std::path::Path;
++use std::sync::atomic::AtomicUsize;
++use std::sync::atomic::Ordering;
++use std::time::Duration;
++
++use anyhow::Context;
++use anyhow::Result;
++use app_test_support::TestAppServer;
++use app_test_support::to_response;
++use codex_app_server_protocol::JSONRPCNotification;
++use codex_app_server_protocol::JSONRPCResponse;
++use codex_app_server_protocol::RequestId;
++use codex_app_server_protocol::ThreadStartParams;
++use codex_app_server_protocol::ThreadStartResponse;
++use codex_app_server_protocol::TurnCompletedNotification;
++use codex_app_server_protocol::TurnInterruptParams;
++use codex_app_server_protocol::TurnInterruptResponse;
++use codex_app_server_protocol::TurnStartParams;
++use codex_app_server_protocol::TurnStartResponse;
++use codex_app_server_protocol::TurnStatus;
++use codex_app_server_protocol::UserInput as V2UserInput;
++use core_test_support::skip_if_no_network;
++use pretty_assertions::assert_eq;
++use serde_json::Value;
++use serde_json::json;
++use tempfile::TempDir;
++use tokio::time::timeout;
++use wiremock::Mock;
++use wiremock::MockServer;
++use wiremock::Respond;
++use wiremock::ResponseTemplate;
++use wiremock::matchers::method;
++use wiremock::matchers::path;
++
++const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(30);
++
++fn chat_sse(chunks: Vec<Value>) -> String {
++    chunks
++        .into_iter()
++        .map(|chunk| format!("data: {chunk}\n\n"))
++        .chain(std::iter::once("data: [DONE]\n\n".to_string()))
++        .collect()
++}
++
++async fn mount_chat_sse_sequence(server: &MockServer, bodies: Vec<String>) {
++    struct SequenceResponder {
++        calls: AtomicUsize,
++        bodies: Vec<String>,
++    }
++
++    impl Respond for SequenceResponder {
++        fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
++            let call = self.calls.fetch_add(1, Ordering::SeqCst);
++            let body = self
++                .bodies
++                .get(call)
++                .unwrap_or_else(|| panic!("no Chat Completions response for request {call}"));
++            ResponseTemplate::new(200)
++                .insert_header("content-type", "text/event-stream")
++                .set_body_string(body.clone())
++        }
++    }
++
++    let expected_calls = bodies.len() as u64;
++    Mock::given(method("POST"))
++        .and(path("/v1/chat/completions"))
++        .respond_with(SequenceResponder {
++            calls: AtomicUsize::new(0),
++            bodies,
++        })
++        .up_to_n_times(expected_calls)
++        .expect(expected_calls)
++        .mount(server)
++        .await;
++}
++
++fn write_mimo_config(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
++    std::fs::write(
++        codex_home.join("config.toml"),
++        format!(
++            r#"
++model = "mimo-v2.5"
++model_provider = "mimo_test"
++approval_policy = "never"
++sandbox_mode = "danger-full-access"
++
++[model_providers.mimo_test]
++name = "MiMo"
++base_url = "{server_uri}/v1"
++wire_api = "chat_completions"
++request_max_retries = 0
++stream_max_retries = 0
++supports_websockets = false
++"#
++        ),
++    )
++}
++
++#[tokio::test]
++async fn mimo_chat_completions_app_server_completes_tool_turn() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = MockServer::start().await;
++    mount_chat_sse_sequence(
++        &server,
++        vec![
++            chat_sse(vec![json!({
++                "id": "chat-tool-1",
++                "choices": [{
++                    "index": 0,
++                    "delta": {
++                        "reasoning_content": "执行桌面端测试命令",
++                        "tool_calls": [{
++                            "index": 0,
++                            "id": "call-app-server",
++                            "type": "function",
++                            "function": {
++                                "name": "shell_command",
++                                "arguments": "{\"command\":\"echo mimo-app-server-ok\"}"
++                            }
++                        }]
++                    },
++                    "finish_reason": "tool_calls"
++                }]
++            })]),
++            chat_sse(vec![json!({
++                "id": "chat-tool-2",
++                "choices": [{
++                    "index": 0,
++                    "delta": {"content": "桌面端工具轮次完成"},
++                    "finish_reason": "stop"
++                }]
++            })]),
++        ],
++    )
++    .await;
++
++    let codex_home = TempDir::new()?;
++    write_mimo_config(codex_home.path(), &server.uri())?;
++    let mut mcp = TestAppServer::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let thread_request = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mimo-v2.5".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let thread_response: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(thread_request)),
++    )
++    .await??;
++    let ThreadStartResponse {
++        thread,
++        model,
++        model_provider,
++        ..
++    } = to_response::<ThreadStartResponse>(thread_response)?;
++    assert_eq!(model, "mimo-v2.5");
++    assert_eq!(model_provider, "mimo_test");
++
++    let turn_request = mcp
++        .send_turn_start_request(TurnStartParams {
++            thread_id: thread.id.clone(),
++            client_user_message_id: None,
++            input: vec![V2UserInput::Text {
++                text: "运行桌面端工具闭环".to_string(),
++                text_elements: Vec::new(),
++            }],
++            ..Default::default()
++        })
++        .await?;
++    let turn_response: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(turn_request)),
++    )
++    .await??;
++    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_response)?;
++
++    let completed_notification: JSONRPCNotification = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_notification_message("turn/completed"),
++    )
++    .await??;
++    let completed: TurnCompletedNotification = serde_json::from_value(
++        completed_notification
++            .params
++            .context("turn/completed params should exist")?,
++    )?;
++    assert_eq!(completed.thread_id, thread.id);
++    assert_eq!(completed.turn.id, turn.id);
++    assert_eq!(completed.turn.status, TurnStatus::Completed);
++
++    let requests = server
++        .received_requests()
++        .await
++        .context("mock server should expose requests")?;
++    assert_eq!(requests.len(), 2);
++    let second = requests[1]
++        .body_json::<Value>()
++        .context("second request should be JSON")?;
++    assert!(second["messages"]
++        .as_array()
++        .context("messages should be an array")?
++        .iter()
++        .any(|message| {
++            message["role"] == "tool"
++                && message["tool_call_id"] == "call-app-server"
++                && message["content"]
++                    .as_str()
++                    .is_some_and(|content| content.contains("mimo-app-server-ok"))
++        }));
++
++    Ok(())
++}
++
++#[tokio::test]
++async fn mimo_chat_completions_app_server_interrupts_and_continues() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = MockServer::start().await;
++    let slow_response = chat_sse(vec![json!({
++        "id": "chat-slow",
++        "choices": [{
++            "index": 0,
++            "delta": {"content": "不应完成"},
++            "finish_reason": "stop"
++        }]
++    })]);
++    Mock::given(method("POST"))
++        .and(path("/v1/chat/completions"))
++        .respond_with(
++            ResponseTemplate::new(200)
++                .insert_header("content-type", "text/event-stream")
++                .set_body_string(slow_response)
++                .set_delay(Duration::from_secs(10)),
++        )
++        .up_to_n_times(1)
++        .expect(1)
++        .mount(&server)
++        .await;
++
++    let codex_home = TempDir::new()?;
++    write_mimo_config(codex_home.path(), &server.uri())?;
++    let mut mcp = TestAppServer::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let thread_request = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mimo-v2.5".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let thread_response: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(thread_request)),
++    )
++    .await??;
++    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_response)?;
++
++    let interrupted_turn_request = mcp
++        .send_turn_start_request(TurnStartParams {
++            thread_id: thread.id.clone(),
++            client_user_message_id: None,
++            input: vec![V2UserInput::Text {
++                text: "等待后中断".to_string(),
++                text_elements: Vec::new(),
++            }],
++            ..Default::default()
++        })
++        .await?;
++    let interrupted_turn_response: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(interrupted_turn_request)),
++    )
++    .await??;
++    let TurnStartResponse {
++        turn: interrupted_turn,
++    } = to_response::<TurnStartResponse>(interrupted_turn_response)?;
++
++    tokio::time::sleep(Duration::from_secs(1)).await;
++    let interrupt_request = mcp
++        .send_turn_interrupt_request(TurnInterruptParams {
++            thread_id: thread.id.clone(),
++            turn_id: interrupted_turn.id.clone(),
++        })
++        .await?;
++    let interrupt_response: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(interrupt_request)),
++    )
++    .await??;
++    let _: TurnInterruptResponse = to_response(interrupt_response)?;
++
++    let interrupted_notification: JSONRPCNotification = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_notification_message("turn/completed"),
++    )
++    .await??;
++    let interrupted: TurnCompletedNotification = serde_json::from_value(
++        interrupted_notification
++            .params
++            .context("interrupted turn/completed params should exist")?,
++    )?;
++    assert_eq!(interrupted.turn.id, interrupted_turn.id);
++    assert_eq!(interrupted.turn.status, TurnStatus::Interrupted);
++
++    mount_chat_sse_sequence(
++        &server,
++        vec![chat_sse(vec![json!({
++            "id": "chat-after-interrupt",
++            "choices": [{
++                "index": 0,
++                "delta": {"content": "中断后继续成功"},
++                "finish_reason": "stop"
++            }]
++        })])],
++    )
++    .await;
++    let continued_turn_request = mcp
++        .send_turn_start_request(TurnStartParams {
++            thread_id: thread.id.clone(),
++            client_user_message_id: None,
++            input: vec![V2UserInput::Text {
++                text: "继续".to_string(),
++                text_elements: Vec::new(),
++            }],
++            ..Default::default()
++        })
++        .await?;
++    let continued_turn_response: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(continued_turn_request)),
++    )
++    .await??;
++    let TurnStartResponse {
++        turn: continued_turn,
++    } = to_response::<TurnStartResponse>(continued_turn_response)?;
++
++    let continued_notification: JSONRPCNotification = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_notification_message("turn/completed"),
++    )
++    .await??;
++    let continued: TurnCompletedNotification = serde_json::from_value(
++        continued_notification
++            .params
++            .context("continued turn/completed params should exist")?,
++    )?;
++    assert_eq!(continued.turn.id, continued_turn.id);
++    assert_eq!(continued.turn.status, TurnStatus::Completed);
++
++    Ok(())
++}
+diff --git a/codex-rs/app-server/tests/suite/v2/mod.rs b/codex-rs/app-server/tests/suite/v2/mod.rs
+index 9aef40a..f172d8d 100644
+--- a/codex-rs/app-server/tests/suite/v2/mod.rs
++++ b/codex-rs/app-server/tests/suite/v2/mod.rs
+@@ -27,6 +27,7 @@ mod mcp_server_elicitation;
+ mod mcp_server_status;
+ mod mcp_tool;
+ mod memory_reset;
++mod mimo_chat_completions;
+ mod model_list;
+ mod model_provider_capabilities_read;
+ mod output_schema;
+diff --git a/codex-rs/core/tests/suite/chat_completions.rs b/codex-rs/core/tests/suite/chat_completions.rs
+new file mode 100644
+index 0000000..d18a440
+--- /dev/null
++++ b/codex-rs/core/tests/suite/chat_completions.rs
+@@ -0,0 +1,229 @@
++use std::sync::atomic::AtomicUsize;
++use std::sync::atomic::Ordering;
++
++use anyhow::Result;
++use codex_model_provider_info::MIMO_PROVIDER_ID;
++use codex_model_provider_info::ModelProviderInfo;
++use core_test_support::skip_if_no_network;
++use core_test_support::test_codex::TestCodexBuilder;
++use core_test_support::test_codex::test_codex;
++use pretty_assertions::assert_eq;
++use serde_json::Value;
++use serde_json::json;
++use wiremock::Mock;
++use wiremock::MockServer;
++use wiremock::Respond;
++use wiremock::ResponseTemplate;
++use wiremock::matchers::method;
++use wiremock::matchers::path;
++
++fn chat_sse(chunks: Vec<Value>) -> String {
++    chunks
++        .into_iter()
++        .map(|chunk| format!("data: {chunk}\n\n"))
++        .chain(std::iter::once("data: [DONE]\n\n".to_string()))
++        .collect()
++}
++
++async fn mount_chat_sse_sequence(server: &MockServer, bodies: Vec<String>) {
++    struct SequenceResponder {
++        calls: AtomicUsize,
++        bodies: Vec<String>,
++    }
++
++    impl Respond for SequenceResponder {
++        fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
++            let call = self.calls.fetch_add(1, Ordering::SeqCst);
++            let body = self
++                .bodies
++                .get(call)
++                .unwrap_or_else(|| panic!("no Chat Completions response for request {call}"));
++            ResponseTemplate::new(200)
++                .insert_header("content-type", "text/event-stream")
++                .set_body_string(body.clone())
++        }
++    }
++
++    let expected_calls = bodies.len() as u64;
++    Mock::given(method("POST"))
++        .and(path("/v1/chat/completions"))
++        .respond_with(SequenceResponder {
++            calls: AtomicUsize::new(0),
++            bodies,
++        })
++        .up_to_n_times(expected_calls)
++        .expect(expected_calls)
++        .mount(server)
++        .await;
++}
++
++fn mimo_test_builder(base_url: String) -> TestCodexBuilder {
++    test_codex()
++        .with_model("mimo-v2.5")
++        .with_config(move |config| {
++            let mut provider = ModelProviderInfo::create_mimo_provider();
++            provider.base_url = Some(base_url);
++            provider.env_http_headers = None;
++            provider.request_max_retries = Some(0);
++            provider.stream_max_retries = Some(0);
++            config.model_provider_id = MIMO_PROVIDER_ID.to_string();
++            config.model_provider = provider;
++        })
++}
++
++fn tool_call_response() -> String {
++    chat_sse(vec![json!({
++        "id": "chat-tool-1",
++        "choices": [{
++            "index": 0,
++            "delta": {
++                "reasoning_content": "需要运行命令",
++                "tool_calls": [{
++                    "index": 0,
++                    "id": "call-1",
++                    "type": "function",
++                    "function": {
++                        "name": "shell_command",
++                        "arguments": "{\"command\":\"echo mimo-tool-ok\"}"
++                    }
++                }]
++            },
++            "finish_reason": "tool_calls"
++        }]
++    })])
++}
++
++fn assistant_response(id: &str, content: &str) -> String {
++    chat_sse(vec![json!({
++        "id": id,
++        "choices": [{
++            "index": 0,
++            "delta": {"content": content},
++            "finish_reason": "stop"
++        }]
++    })])
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn mimo_tool_loop_replays_reasoning_call_and_tool_output() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = MockServer::start().await;
++    mount_chat_sse_sequence(
++        &server,
++        vec![
++            tool_call_response(),
++            assistant_response("chat-tool-2", "工具执行完成"),
++        ],
++    )
++    .await;
++
++    let base_url = format!("{}/v1", server.uri());
++    let mut builder = mimo_test_builder(base_url);
++    let test = builder.build(&server).await?;
++
++    test.submit_turn("运行测试命令").await?;
++
++    let requests = server
++        .received_requests()
++        .await
++        .expect("mock server should expose requests");
++    assert_eq!(requests.len(), 2);
++    let first: Value =
++        serde_json::from_slice(&requests[0].body).expect("first request should be JSON");
++    let second: Value =
++        serde_json::from_slice(&requests[1].body).expect("second request should be JSON");
++
++    assert_eq!(first["model"], "mimo-v2.5");
++    assert!(
++        first["tools"]
++            .as_array()
++            .expect("tools should be an array")
++            .iter()
++            .any(|tool| tool["function"]["name"] == "shell_command")
++    );
++    let messages = second["messages"]
++        .as_array()
++        .expect("messages should be an array");
++    assert!(messages.iter().any(|message| {
++        message["role"] == "assistant"
++            && message["reasoning_content"] == "需要运行命令"
++            && message["tool_calls"][0]["id"] == "call-1"
++            && message["tool_calls"][0]["function"]["name"] == "shell_command"
++    }));
++    assert!(messages.iter().any(|message| {
++        message["role"] == "tool"
++            && message["tool_call_id"] == "call-1"
++            && message["content"]
++                .as_str()
++                .is_some_and(|content| content.contains("mimo-tool-ok"))
++    }));
++
++    Ok(())
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn mimo_resume_replays_persisted_tool_history_and_continues() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = MockServer::start().await;
++    mount_chat_sse_sequence(
++        &server,
++        vec![
++            tool_call_response(),
++            assistant_response("chat-before-resume", "初始轮次完成"),
++        ],
++    )
++    .await;
++
++    let base_url = format!("{}/v1", server.uri());
++    let mut builder = mimo_test_builder(base_url.clone());
++    let initial = builder.build(&server).await?;
++    initial.submit_turn("运行并记录测试命令").await?;
++    let home = initial.home.clone();
++    let rollout_path = initial
++        .session_configured
++        .rollout_path
++        .clone()
++        .expect("rollout path should exist");
++
++    mount_chat_sse_sequence(
++        &server,
++        vec![assistant_response("chat-after-resume", "恢复轮次完成")],
++    )
++    .await;
++    let mut resume_builder = mimo_test_builder(base_url);
++    let resumed = resume_builder.resume(&server, home, rollout_path).await?;
++    resumed.submit_turn("继续处理").await?;
++
++    let requests = server
++        .received_requests()
++        .await
++        .expect("mock server should expose requests");
++    assert_eq!(requests.len(), 3);
++    let resumed_request: Value =
++        serde_json::from_slice(&requests[2].body).expect("resumed request should be JSON");
++    let messages = resumed_request["messages"]
++        .as_array()
++        .expect("messages should be an array");
++    assert!(messages.iter().any(|message| {
++        message["role"] == "assistant"
++            && message["reasoning_content"] == "需要运行命令"
++            && message["tool_calls"][0]["id"] == "call-1"
++    }));
++    assert!(messages.iter().any(|message| {
++        message["role"] == "tool"
++            && message["tool_call_id"] == "call-1"
++            && message["content"]
++                .as_str()
++                .is_some_and(|content| content.contains("mimo-tool-ok"))
++    }));
++    assert!(messages.iter().any(|message| {
++        message["role"] == "assistant" && message["content"] == "初始轮次完成"
++    }));
++    assert!(messages
++        .iter()
++        .any(|message| { message["role"] == "user" && message["content"] == "继续处理" }));
++
++    Ok(())
++}
+diff --git a/codex-rs/core/tests/suite/mod.rs b/codex-rs/core/tests/suite/mod.rs
+index 234fb8a..1816b4e 100644
+--- a/codex-rs/core/tests/suite/mod.rs
++++ b/codex-rs/core/tests/suite/mod.rs
+@@ -38,6 +38,7 @@ mod apply_patch_cli;
+ #[cfg(not(target_os = "windows"))]
+ mod approvals;
+ mod auto_review;
++mod chat_completions;
+ mod cli_stream;
+ mod client;
+ mod client_websockets;
+diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provider/src/mimo/catalog.rs
+index bfe8ebe..ae4534e 100644
+--- a/codex-rs/model-provider/src/mimo/catalog.rs
++++ b/codex-rs/model-provider/src/mimo/catalog.rs
+@@ -63,7 +63,7 @@ fn mimo_model(
+ fn apply_mimo_capabilities(model: &mut ModelInfo) {
+     model.default_reasoning_level = None;
+     model.supported_reasoning_levels.clear();
+-    model.shell_type = ConfigShellToolType::Disabled;
++    model.shell_type = ConfigShellToolType::ShellCommand;
+     model.additional_speed_tiers.clear();
+     model.service_tiers.clear();
+     model.default_service_tier = None;
+@@ -73,7 +73,7 @@ fn apply_mimo_capabilities(model: &mut ModelInfo) {
+     model.support_verbosity = false;
+     model.default_verbosity = None;
+     model.apply_patch_tool_type = None;
+-    model.supports_parallel_tool_calls = false;
++    model.supports_parallel_tool_calls = true;
+     model.supports_image_detail_original = false;
+     model.context_window = None;
+     model.max_context_window = None;
+@@ -111,11 +111,11 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn catalog_disables_unverified_capabilities() {
++    fn catalog_enables_verified_function_tools_and_disables_unverified_capabilities() {
+         for model in static_model_catalog().models {
+-            assert_eq!(model.shell_type, ConfigShellToolType::Disabled);
++            assert_eq!(model.shell_type, ConfigShellToolType::ShellCommand);
+             assert!(!model.supports_reasoning_summaries);
+-            assert!(!model.supports_parallel_tool_calls);
++            assert!(model.supports_parallel_tool_calls);
+             assert_eq!(model.input_modalities, vec![InputModality::Text]);
+             assert!(model.service_tiers.is_empty());
+             assert!(model.context_window.is_none());
