@@ -2,7 +2,7 @@
 
 Mimodex 是一款由 MiMo v2.5 与 MiMo v2.5 Pro API 驱动的本地优先桌面编程 Agent。
 
-项目当前处于产品定义与技术验证阶段，尚未开始正式功能开发。
+项目已完成产品定义、MiMo Provider 验证和首批 Runtime 接入，当前正在开发桌面端 MVP。
 
 ## 产品方向
 
@@ -29,6 +29,7 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 - [ADR-0006：本地只编辑源码，原生构建与 Windows 打包由 GitHub Actions 完成](docs/architecture/decisions/ADR-0006-ci-only-native-builds.md)
 - [Windows 11 CI 构建与发布方案](docs/delivery/WINDOWS_CI_RELEASE.md)
 - [MiMo Runtime Adapter 实现计划](docs/implementation/RUNTIME_ADAPTER_PLAN.md)
+- [桌面 Runtime 客户端接入计划](docs/implementation/DESKTOP_RUNTIME_CLIENT_PLAN.md)
 - [MiMo Provider 技术验证清单](docs/validation/MIMO_PROVIDER_SPIKE.md)
 - [MiMo Provider Spike 当前状态](docs/validation/MIMO_PROVIDER_SPIKE_STATUS.md)
 - [默认模型真实基础流式探针证据](docs/validation/evidence/2026-06-09-mimo-v2.5-baseline.md)
@@ -56,7 +57,7 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 - Windows 首版安装包优化目标不超过 `100 MiB`，发布硬上限为 `120 MiB`，安装后
   文件总量不超过 `350 MiB`。
 
-## 开发启动门槛
+## 当前开发阶段
 
-只有在 [MiMo Provider 技术验证清单](docs/validation/MIMO_PROVIDER_SPIKE.md)
-中的强制退出条件全部通过后，才开始桌面端 MVP 的正式开发。
+MiMo Provider 技术验证清单中的强制退出条件已经通过。当前工作重点是连接桌面界面、
+Tauri sidecar 和已验证的 Mimodex Runtime，形成首个可交互的本地 Agent 闭环。
