@@ -1,8 +1,9 @@
 # 本地项目管理实现说明
 
-- 状态：首个真实项目管理切片已实现，等待 Windows Preview 权威构建
+- 状态：首个真实项目管理切片已通过 Windows Preview 权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src/projects.ts`、`apps/desktop/src-tauri/src/main.rs`
+- 权威构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
 
 ## 1. 本阶段目标
 
@@ -63,5 +64,5 @@ git -C <project> status --porcelain=v1 --untracked-files=normal
 - [x] 展示 Git 分支和工作区变更数量；
 - [x] 文件夹不可用时禁止启动任务；
 - [x] React 类型检查和交互测试通过；
-- [ ] Tauri Rust 后端格式检查与编译通过；
+- [x] Tauri Rust 后端格式检查与编译通过；
 - [ ] Windows 11 安装后完成真实文件夹选择和重启恢复验收。
