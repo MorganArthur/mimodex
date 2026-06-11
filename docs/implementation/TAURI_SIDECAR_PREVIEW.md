@@ -6,7 +6,7 @@
 - 对应工作流：`.github/workflows/windows-preview.yml`
 - 首次成功构建：[Windows Preview #27319183630](https://github.com/MorganArthur/mimodex/actions/runs/27319183630)
 - Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
-- 当前可用构建：[Windows Preview #27327273086](https://github.com/MorganArthur/mimodex/actions/runs/27327273086)
+- 当前可用构建：[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)
 
 ## 1. 本阶段目标
 
@@ -52,11 +52,11 @@ Rust 工具链、Cargo 缓存、Codex 源码、测试产物和调试符号不会
 `3B3EC46CC40F146DC057E82ECB03A1F55A4C48FF176EAEE6BF03CAE1CEC3C0B8`。
 
 当前凭据设置版 Artifact：
-[mimodex-windows-preview-1548820e6fefbbbd03687ce24513e584c8533b58](https://github.com/MorganArthur/mimodex/actions/runs/27327273086/artifacts/7557107931)。
+[mimodex-windows-preview-94c0d08fed6f4952ed58f3c51cc04dab94d5c447](https://github.com/MorganArthur/mimodex/actions/runs/27330345759/artifacts/7558340455)。
 该构建增加首次设置、Windows 凭据管理器安全存储、替换与删除凭据功能，并通过
 Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包大小为
-`56.01 MiB`，SHA256 为
-`89C82F3310B2527C06912C664E9C9F37C7935EDCC51E392FE5889436841B7FD2`。
+`56.02 MiB`，SHA256 为
+`97C255C1A83FF101C8D3768D922D4E2F66D81F3F89E44CF405297AA03BF517B9`。
 
 ## 4. 当前使用限制
 

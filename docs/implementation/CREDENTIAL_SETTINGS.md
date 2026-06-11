@@ -67,9 +67,9 @@ Windows 凭据条目使用：
 - [ ] 使用安全存储凭据完成一次真实 MiMo 任务。
 
 Windows CI 构建：
-[Windows Preview #27327273086](https://github.com/MorganArthur/mimodex/actions/runs/27327273086)。
+[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)。
 对应 Artifact：
-[mimodex-windows-preview-1548820e6fefbbbd03687ce24513e584c8533b58](https://github.com/MorganArthur/mimodex/actions/runs/27327273086/artifacts/7557107931)。
+[mimodex-windows-preview-94c0d08fed6f4952ed58f3c51cc04dab94d5c447](https://github.com/MorganArthur/mimodex/actions/runs/27330345759/artifacts/7558340455)。
 
-安装包大小为 `56.01 MiB`，SHA256 为
-`89C82F3310B2527C06912C664E9C9F37C7935EDCC51E392FE5889436841B7FD2`。
+安装包大小为 `56.02 MiB`，SHA256 为
+`97C255C1A83FF101C8D3768D922D4E2F66D81F3F89E44CF405297AA03BF517B9`。
