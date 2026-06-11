@@ -8,17 +8,23 @@ import {
   type TimelineEntry,
 } from "@mimodex/desktop-core";
 import type { ProjectSummary } from "./projects.js";
+import type { ThreadRecord } from "./threads.js";
 
 export type AppProps = {
   currentProject: ProjectSummary | null;
   onAddProject: () => void | Promise<void>;
-  session: DesktopSessionController;
+  onNewThread: () => void | Promise<void>;
   onOpenSettings?: () => void;
   onRefreshProject: () => void | Promise<void>;
   onSelectProject: (projectId: string) => void | Promise<void>;
+  onSelectThread: (threadId: string) => void | Promise<void>;
   projectBusy: boolean;
   projectError: string | null;
   projects: ProjectSummary[];
+  session: DesktopSessionController;
+  threadBusy: boolean;
+  threadError: string | null;
+  threads: ThreadRecord[];
 };
 
 const statusLabels: Record<SessionState["connection"], string> = {
@@ -42,13 +48,18 @@ const entryLabels: Record<TimelineEntry["kind"], string> = {
 export function App({
   currentProject,
   onAddProject,
-  session,
+  onNewThread,
   onOpenSettings = () => undefined,
   onRefreshProject,
   onSelectProject,
+  onSelectThread,
   projectBusy,
   projectError,
   projects,
+  session,
+  threadBusy,
+  threadError,
+  threads,
 }: AppProps) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [model, setModel] = useState<"mimo-v2.5" | "mimo-v2.5-pro">("mimo-v2.5");
@@ -61,6 +72,13 @@ export function App({
   useEffect(() => {
     void session.connect().catch(() => undefined);
   }, [session]);
+
+  useEffect(() => {
+    if (state.threadId) {
+      setModel(state.model === "mimo-v2.5-pro" ? "mimo-v2.5-pro" : "mimo-v2.5");
+      setSandbox(state.sandbox);
+    }
+  }, [state.model, state.sandbox, state.threadId]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -87,7 +105,17 @@ export function App({
           </div>
         </div>
 
-        <button className="new-thread" type="button">
+        <button
+          className="new-thread"
+          disabled={
+            !currentProject?.available ||
+            projectBusy ||
+            threadBusy ||
+            state.turnStatus === "inProgress"
+          }
+          type="button"
+          onClick={() => void onNewThread()}
+        >
           <span>+</span>
           新建线程
         </button>
@@ -95,16 +123,28 @@ export function App({
         <div className="sidebar-section">
           <div className="section-heading">
             <span>项目</span>
-            <button disabled={projectBusy} type="button" aria-label="添加项目" onClick={() => void onAddProject()}>+</button>
+            <button
+              disabled={projectBusy || state.turnStatus === "inProgress"}
+              type="button"
+              aria-label="添加项目"
+              onClick={() => void onAddProject()}
+            >
+              +
+            </button>
           </div>
           {projects.length === 0 ? (
-            <button className="empty-projects" type="button" onClick={() => void onAddProject()}>
+            <button
+              className="empty-projects"
+              disabled={state.turnStatus === "inProgress"}
+              type="button"
+              onClick={() => void onAddProject()}
+            >
               添加本地项目文件夹
             </button>
           ) : projects.map((project) => (
             <button
               className={`project-row ${project.id === currentProject?.id ? "active" : ""}`}
-              disabled={projectBusy}
+              disabled={projectBusy || state.turnStatus === "inProgress"}
               key={project.id}
               title={project.path}
               type="button"
@@ -125,20 +165,32 @@ export function App({
           <div className="section-heading">
             <span>最近线程</span>
           </div>
-          <button className="thread-row active" type="button">
-            <span className="thread-state running" />
-            <div>
-              <strong>桌面 Runtime 接入</strong>
-              <span>{state.turnStatus === "inProgress" ? "正在执行" : "刚刚更新"}</span>
-            </div>
-          </button>
-          <button className="thread-row" type="button">
-            <span className="thread-state" />
-            <div>
-              <strong>MiMo Provider 验证</strong>
-              <span>昨天</span>
-            </div>
-          </button>
+          {threads.length === 0 ? (
+            <p className="empty-threads">这个项目还没有线程。</p>
+          ) : (
+            threads.map((thread) => (
+              <button
+                className={`thread-row ${thread.id === state.threadId ? "active" : ""}`}
+                disabled={
+                  projectBusy ||
+                  threadBusy ||
+                  state.turnStatus === "inProgress" ||
+                  !currentProject?.available
+                }
+                key={thread.id}
+                title={thread.title}
+                type="button"
+                onClick={() => void onSelectThread(thread.id)}
+              >
+                <span className={`thread-state ${threadStatusClass(thread.turnStatus)}`} />
+                <div>
+                  <strong>{thread.title}</strong>
+                  <span>{threadSubtitle(thread)}</span>
+                </div>
+              </button>
+            ))
+          )}
+          {threadError && <p className="sidebar-error">{threadError}</p>}
         </div>
 
         <div className="sidebar-footer">
@@ -161,7 +213,7 @@ export function App({
             {currentProject && (
               <button
                 className="refresh-project"
-                disabled={projectBusy}
+                disabled={projectBusy || state.turnStatus === "inProgress"}
                 type="button"
                 onClick={() => void onRefreshProject()}
               >
@@ -386,6 +438,38 @@ function projectSummary(project: ProjectSummary): string {
   return changes > 0
     ? `${project.git.branch ?? "Detached HEAD"}，工作区有 ${changes} 项变更。`
     : `${project.git.branch ?? "Detached HEAD"}，工作区干净。`;
+}
+
+function threadStatusClass(status: ThreadRecord["turnStatus"]): string {
+  return status === "inProgress" ? "running" : status;
+}
+
+function threadSubtitle(thread: ThreadRecord): string {
+  const status =
+    thread.turnStatus === "inProgress"
+      ? "正在执行"
+      : thread.turnStatus === "failed"
+        ? "执行失败"
+        : thread.turnStatus === "interrupted"
+          ? "已中断"
+          : thread.turnStatus === "completed"
+            ? "已完成"
+            : "待开始";
+  return `${status} · ${relativeTime(thread.updatedAt)}`;
+}
+
+function relativeTime(timestamp: number): string {
+  const elapsed = Math.max(0, Date.now() - timestamp);
+  if (elapsed < 60_000) {
+    return "刚刚";
+  }
+  if (elapsed < 3_600_000) {
+    return `${Math.floor(elapsed / 60_000)} 分钟前`;
+  }
+  if (elapsed < 86_400_000) {
+    return `${Math.floor(elapsed / 3_600_000)} 小时前`;
+  }
+  return `${Math.floor(elapsed / 86_400_000)} 天前`;
 }
 
 function Timeline({ entries }: { entries: readonly TimelineEntry[] }) {

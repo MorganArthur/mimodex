@@ -342,6 +342,13 @@ button {
   font-size: 19px;
 }
 
+.new-thread:disabled,
+.project-row:disabled,
+.thread-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .sidebar-section {
   margin-top: 25px;
 }
@@ -444,6 +451,18 @@ button {
   box-shadow: 0 0 0 4px rgba(198, 236, 139, 0.08);
 }
 
+.thread-state.completed {
+  background: #83a56e;
+}
+
+.thread-state.failed {
+  background: #e48076;
+}
+
+.thread-state.interrupted {
+  background: #d4ad5a;
+}
+
 .project-row i.dirty {
   background: #e4b95a;
 }
@@ -457,6 +476,13 @@ button {
   border-radius: 9px;
   font-size: 10px;
   text-align: left;
+}
+
+.empty-threads {
+  margin: 8px 9px;
+  color: #838b80;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .sidebar-error {

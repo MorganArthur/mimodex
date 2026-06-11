@@ -1,17 +1,24 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { DesktopSessionController } from "@mimodex/desktop-core";
+import type { DesktopSessionController, SessionState } from "@mimodex/desktop-core";
 import { App } from "./App.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
 import type { ProjectService, ProjectState } from "./projects.js";
+import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
 
 export type DesktopRootProps = {
   credentialService: CredentialService;
   createSession: () => DesktopSessionController;
   projectService: ProjectService;
+  threadService: ThreadService;
 };
 
-export function DesktopRoot({ credentialService, createSession, projectService }: DesktopRootProps) {
+export function DesktopRoot({
+  credentialService,
+  createSession,
+  projectService,
+  threadService,
+}: DesktopRootProps) {
   const [credentialStatus, setCredentialStatus] = useState<CredentialStatus | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [session, setSession] = useState<DesktopSessionController | null>(null);
@@ -19,6 +26,9 @@ export function DesktopRoot({ credentialService, createSession, projectService }
   const [projectState, setProjectState] = useState<ProjectState | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projectBusy, setProjectBusy] = useState(false);
+  const [threadState, setThreadState] = useState<ThreadState | null>(null);
+  const [threadError, setThreadError] = useState<string | null>(null);
+  const [threadBusy, setThreadBusy] = useState(false);
 
   useEffect(() => {
     void credentialService
@@ -49,6 +59,60 @@ export function DesktopRoot({ credentialService, createSession, projectService }
       .catch((error) => setProjectError(errorMessage(error)));
   }, [credentialStatus?.configured, projectService]);
 
+  useEffect(() => {
+    if (!credentialStatus?.configured) {
+      return;
+    }
+    void threadService
+      .list()
+      .then(setThreadState)
+      .catch((error) => setThreadError(errorMessage(error)));
+  }, [credentialStatus?.configured, threadService]);
+
+  useEffect(() => {
+    if (!session || !projectState) {
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    const persist = () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => {
+        const state = session.getSnapshot();
+        const project = projectState.projects.find((candidate) =>
+          sameProjectPath(candidate.path, state.projectPath),
+        );
+        if (!state.threadId || !project) {
+          return;
+        }
+        void threadService
+          .upsert(threadRecordFromSession(state, project.id))
+          .then((nextState) => {
+            if (!disposed) {
+              setThreadState(nextState);
+              setThreadError(null);
+            }
+          })
+          .catch((error) => {
+            if (!disposed) {
+              setThreadError(errorMessage(error));
+            }
+          });
+      }, 250);
+    };
+    const unsubscribe = session.subscribe(persist);
+    persist();
+    return () => {
+      disposed = true;
+      unsubscribe();
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [projectState, session, threadService]);
+
   const saveCredential = async (apiKey: string) => {
     const status = await credentialService.save(apiKey);
     await credentialService.restart();
@@ -67,7 +131,13 @@ export function DesktopRoot({ credentialService, createSession, projectService }
     try {
       const path = await projectService.pickDirectory();
       if (path) {
-        setProjectState(await projectService.add(path));
+        const nextState = await projectService.add(path);
+        setProjectState(nextState);
+        const project =
+          nextState.projects.find((candidate) => candidate.id === nextState.selectedProjectId) ??
+          null;
+        session?.newThread(project?.path ?? null);
+        setThreadState(await threadService.select(null));
       }
     } catch (error) {
       setProjectError(errorMessage(error));
@@ -77,14 +147,68 @@ export function DesktopRoot({ credentialService, createSession, projectService }
   };
 
   const selectProject = async (projectId: string) => {
+    if (projectState?.selectedProjectId === projectId) {
+      return;
+    }
     setProjectBusy(true);
     setProjectError(null);
     try {
-      setProjectState(await projectService.select(projectId));
+      const nextState = await projectService.select(projectId);
+      setProjectState(nextState);
+      const project = nextState.projects.find((candidate) => candidate.id === projectId) ?? null;
+      session?.newThread(project?.path ?? null);
+      setThreadState(await threadService.select(null));
     } catch (error) {
       setProjectError(errorMessage(error));
     } finally {
       setProjectBusy(false);
+    }
+  };
+
+  const newThread = async () => {
+    if (!session) {
+      return;
+    }
+    setThreadBusy(true);
+    setThreadError(null);
+    try {
+      const project =
+        projectState?.projects.find((candidate) => candidate.id === projectState.selectedProjectId) ??
+        null;
+      session.newThread(project?.path ?? null);
+      setThreadState(await threadService.select(null));
+    } catch (error) {
+      setThreadError(errorMessage(error));
+    } finally {
+      setThreadBusy(false);
+    }
+  };
+
+  const selectThread = async (threadId: string) => {
+    if (!session || !threadState) {
+      return;
+    }
+    const thread = threadState.threads.find((candidate) => candidate.id === threadId);
+    if (!thread || thread.projectId !== projectState?.selectedProjectId) {
+      return;
+    }
+    setThreadBusy(true);
+    setThreadError(null);
+    try {
+      await session.resumeThread({
+        threadId: thread.id,
+        projectPath: thread.projectPath,
+        model: thread.model,
+        sandbox: thread.sandbox,
+        turnStatus: thread.turnStatus,
+        timeline: thread.timeline,
+        diff: thread.diff,
+      });
+      setThreadState(await threadService.select(threadId));
+    } catch (error) {
+      setThreadError(errorMessage(error));
+    } finally {
+      setThreadBusy(false);
     }
   };
 
@@ -112,25 +236,33 @@ export function DesktopRoot({ credentialService, createSession, projectService }
   if (!credentialStatus.configured) {
     return <CredentialSetup status={credentialStatus} onSave={saveCredential} />;
   }
-  if (!session || !projectState) {
+  if (!session || !projectState || !threadState) {
     return <LoadingPanel />;
   }
 
   const currentProject =
     projectState.projects.find((project) => project.id === projectState.selectedProjectId) ?? null;
+  const projectThreads = currentProject
+    ? threadState.threads.filter((thread) => thread.projectId === currentProject.id)
+    : [];
 
   return (
     <>
       <App
         currentProject={currentProject}
         onAddProject={addProject}
+        onNewThread={newThread}
         onOpenSettings={() => setSettingsOpen(true)}
         onRefreshProject={refreshProject}
         onSelectProject={selectProject}
+        onSelectThread={selectThread}
         projectBusy={projectBusy}
         projectError={projectError}
         projects={projectState.projects}
         session={session}
+        threadBusy={threadBusy}
+        threadError={threadError}
+        threads={projectThreads}
       />
       {settingsOpen && (
         <CredentialSettings
@@ -142,6 +274,35 @@ export function DesktopRoot({ credentialService, createSession, projectService }
       )}
     </>
   );
+}
+
+function threadRecordFromSession(state: SessionState, projectId: string): ThreadRecord {
+  const now = Date.now();
+  const firstUserMessage = state.timeline.find((entry) => entry.kind === "user")?.content.trim();
+  return {
+    id: state.threadId ?? "",
+    projectId,
+    projectPath: state.projectPath ?? "",
+    title: compactTitle(firstUserMessage || "未命名线程"),
+    model: state.model === "mimo-v2.5-pro" ? "mimo-v2.5-pro" : "mimo-v2.5",
+    sandbox: state.sandbox,
+    turnStatus: state.turnStatus,
+    timeline: state.timeline.slice(-500).map((entry) => ({
+      ...entry,
+      content: entry.content.slice(-30_000),
+    })),
+    diff: state.diff.slice(-100_000),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function compactTitle(value: string): string {
+  return value.replace(/\s+/g, " ").slice(0, 60);
+}
+
+function sameProjectPath(left: string, right: string | null): boolean {
+  return right !== null && left.toLocaleLowerCase() === right.toLocaleLowerCase();
 }
 
 function CredentialSetup({

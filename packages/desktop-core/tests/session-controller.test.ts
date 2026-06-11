@@ -133,3 +133,58 @@ test("单条协议诊断不会立即锁死已连接会话", async () => {
   assert.equal(session.getSnapshot().connection, "ready");
   assert.equal(session.getSnapshot().timeline.at(-1)?.title, "Runtime 协议异常");
 });
+
+test("恢复历史线程后继续使用同一个 Runtime 线程", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  await session.connect();
+
+  await session.resumeThread({
+    threadId: "thread-history",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5-pro",
+    sandbox: "read-only",
+    turnStatus: "completed",
+    timeline: [
+      { id: "user-history", kind: "user", title: "你", content: "检查历史", status: null },
+    ],
+    diff: "+ restored",
+  });
+
+  assert.deepEqual(runtime.threadResumes, [{ threadId: "thread-history" }]);
+  assert.equal(session.getSnapshot().threadId, "thread-history");
+  assert.equal(session.getSnapshot().sandbox, "read-only");
+  assert.equal(session.getSnapshot().timeline[0]?.content, "检查历史");
+
+  await session.startTask({
+    text: "继续处理",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5-pro",
+    sandbox: "read-only",
+  });
+
+  assert.equal(runtime.threadStarts.length, 0);
+  assert.equal(runtime.turnStarts.at(-1)?.threadId, "thread-history");
+});
+
+test("新建线程会清空当前投影但保留项目上下文", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  await session.connect();
+  await session.startTask({
+    text: "第一个任务",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+  });
+
+  runtime.emitNotification({
+    method: "turn/completed",
+    params: { turn: { id: "turn-1", status: "completed" } },
+  });
+  session.newThread("D:\\project");
+
+  assert.equal(session.getSnapshot().threadId, null);
+  assert.equal(session.getSnapshot().projectPath, "D:\\project");
+  assert.deepEqual(session.getSnapshot().timeline, []);
+});

@@ -5,6 +5,8 @@ import type {
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
+  ThreadResumeParams,
+  ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
   TurnInterruptParams,
@@ -44,6 +46,16 @@ export class DemoRuntimeClient implements RuntimeClientPort {
       model: params.model ?? "mimo-v2.5",
       modelProvider: "mimo",
       cwd: params.cwd ?? "D:\\project",
+    };
+  }
+
+  async resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
+    this.#threadId = params.threadId;
+    return {
+      thread: { id: this.#threadId },
+      model: "mimo-v2.5",
+      modelProvider: "mimo",
+      cwd: "D:\\0WORKSPACE\\mimodex",
     };
   }
 

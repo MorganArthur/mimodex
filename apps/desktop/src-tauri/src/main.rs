@@ -57,6 +57,46 @@ struct ProjectState {
     selected_project_id: Option<String>,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TimelineEntry {
+    id: String,
+    kind: String,
+    title: String,
+    content: String,
+    status: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadRecord {
+    id: String,
+    project_id: String,
+    project_path: String,
+    title: String,
+    model: String,
+    sandbox: String,
+    turn_status: String,
+    timeline: Vec<TimelineEntry>,
+    diff: String,
+    created_at: u64,
+    updated_at: u64,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadStore {
+    threads: Vec<ThreadRecord>,
+    selected_thread_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadState {
+    threads: Vec<ThreadRecord>,
+    selected_thread_id: Option<String>,
+}
+
 #[tauri::command]
 fn get_mimo_credential_status() -> Result<CredentialStatus, String> {
     if stored_api_key()?.is_some() {
@@ -172,6 +212,62 @@ fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectState, S
     Ok(project_state(store))
 }
 
+#[tauri::command]
+fn list_threads(app: AppHandle) -> Result<ThreadState, String> {
+    let mut store = load_thread_store(&app)?;
+    let mut changed = false;
+    for thread in &mut store.threads {
+        if thread.turn_status == "inProgress" {
+            thread.turn_status = "interrupted".to_string();
+            thread.updated_at = unix_timestamp_ms();
+            changed = true;
+        }
+    }
+    sort_threads(&mut store.threads);
+    if changed {
+        save_thread_store(&app, &store)?;
+    }
+    Ok(thread_state(store))
+}
+
+#[tauri::command]
+fn upsert_thread(app: AppHandle, mut thread: ThreadRecord) -> Result<ThreadState, String> {
+    validate_thread(&thread)?;
+    let mut store = load_thread_store(&app)?;
+    let selected_thread_id = thread.id.clone();
+    if let Some(existing) = store
+        .threads
+        .iter_mut()
+        .find(|candidate| candidate.id == thread.id)
+    {
+        thread.created_at = existing.created_at;
+        *existing = thread;
+    } else {
+        store.threads.push(thread);
+    }
+    store.selected_thread_id = Some(selected_thread_id);
+    sort_threads(&mut store.threads);
+    save_thread_store(&app, &store)?;
+    Ok(thread_state(store))
+}
+
+#[tauri::command]
+fn select_thread(app: AppHandle, thread_id: Option<String>) -> Result<ThreadState, String> {
+    let mut store = load_thread_store(&app)?;
+    if let Some(id) = &thread_id {
+        let thread = store
+            .threads
+            .iter_mut()
+            .find(|thread| &thread.id == id)
+            .ok_or_else(|| "线程记录不存在。".to_string())?;
+        thread.updated_at = unix_timestamp_ms();
+    }
+    store.selected_thread_id = thread_id;
+    sort_threads(&mut store.threads);
+    save_thread_store(&app, &store)?;
+    Ok(thread_state(store))
+}
+
 fn main() {
     let _ = initialize_credential_store();
     configure_runtime_credential();
@@ -185,9 +281,12 @@ fn main() {
             delete_mimo_credential,
             get_mimo_credential_status,
             list_projects,
+            list_threads,
             refresh_project,
             save_mimo_credential,
-            select_project
+            select_project,
+            select_thread,
+            upsert_thread
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Mimodex desktop application");
@@ -197,6 +296,13 @@ fn project_state(store: ProjectStore) -> ProjectState {
     ProjectState {
         projects: store.projects,
         selected_project_id: store.selected_project_id,
+    }
+}
+
+fn thread_state(store: ThreadStore) -> ThreadState {
+    ThreadState {
+        threads: store.threads,
+        selected_thread_id: store.selected_thread_id,
     }
 }
 
@@ -225,6 +331,56 @@ fn save_project_store(app: &AppHandle, store: &ProjectStore) -> Result<(), Strin
     let contents =
         serde_json::to_string_pretty(store).map_err(|_| "无法序列化项目记录。".to_string())?;
     fs::write(path, contents).map_err(|_| "无法保存项目记录。".to_string())
+}
+
+fn thread_store_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join("threads.json"))
+        .map_err(|_| "无法确定 Mimodex 应用数据目录。".to_string())
+}
+
+fn load_thread_store(app: &AppHandle) -> Result<ThreadStore, String> {
+    let path = thread_store_path(app)?;
+    if !path.exists() {
+        return Ok(ThreadStore::default());
+    }
+    let contents = fs::read_to_string(path).map_err(|_| "无法读取线程记录。".to_string())?;
+    serde_json::from_str(&contents).map_err(|_| "线程记录格式无效。".to_string())
+}
+
+fn save_thread_store(app: &AppHandle, store: &ThreadStore) -> Result<(), String> {
+    let path = thread_store_path(app)?;
+    let directory = path
+        .parent()
+        .ok_or_else(|| "线程记录路径无效。".to_string())?;
+    fs::create_dir_all(directory).map_err(|_| "无法创建 Mimodex 应用数据目录。".to_string())?;
+    let contents =
+        serde_json::to_string_pretty(store).map_err(|_| "无法序列化线程记录。".to_string())?;
+    fs::write(path, contents).map_err(|_| "无法保存线程记录。".to_string())
+}
+
+fn validate_thread(thread: &ThreadRecord) -> Result<(), String> {
+    if thread.id.trim().is_empty()
+        || thread.project_id.trim().is_empty()
+        || thread.project_path.trim().is_empty()
+    {
+        return Err("线程记录缺少必要字段。".to_string());
+    }
+    if thread.id.len() > 512
+        || thread.project_id.len() > 32_768
+        || thread.project_path.len() > 32_768
+        || thread.title.len() > 1_024
+        || thread.timeline.len() > 500
+        || thread.diff.len() > 500_000
+        || thread
+            .timeline
+            .iter()
+            .any(|entry| entry.content.len() > 400_000)
+    {
+        return Err("线程记录超过本地投影限制。".to_string());
+    }
+    Ok(())
 }
 
 fn normalize_project_path(path: &str) -> Result<PathBuf, String> {
@@ -336,6 +492,10 @@ fn hide_command_window(_command: &mut Command) {}
 
 fn sort_projects(projects: &mut [ProjectSummary]) {
     projects.sort_by(|left, right| right.last_opened_at.cmp(&left.last_opened_at));
+}
+
+fn sort_threads(threads: &mut [ThreadRecord]) {
+    threads.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
 }
 
 fn unix_timestamp_ms() -> u64 {

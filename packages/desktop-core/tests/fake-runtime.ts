@@ -5,6 +5,8 @@ import type {
   RequestId,
   ServerNotification,
   ServerRequest,
+  ThreadResumeParams,
+  ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
   TurnInterruptParams,
@@ -16,6 +18,7 @@ import type { RuntimeClientPort } from "../src/index.js";
 
 export class FakeRuntimeClient implements RuntimeClientPort {
   readonly threadStarts: ThreadStartParams[] = [];
+  readonly threadResumes: ThreadResumeParams[] = [];
   readonly turnStarts: TurnStartParams[] = [];
   readonly interrupts: TurnInterruptParams[] = [];
   readonly responses: Array<{ id: RequestId; result: JsonValue | undefined }> = [];
@@ -42,6 +45,16 @@ export class FakeRuntimeClient implements RuntimeClientPort {
       model: params.model ?? "mimo-v2.5",
       modelProvider: "mimo",
       cwd: params.cwd ?? "D:\\project",
+    };
+  }
+
+  async resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
+    this.threadResumes.push(params);
+    return {
+      thread: { id: params.threadId },
+      model: "mimo-v2.5-pro",
+      modelProvider: "mimo",
+      cwd: "D:\\project",
     };
   }
 

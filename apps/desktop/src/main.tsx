@@ -5,6 +5,7 @@ import { createCredentialService } from "./credentials.js";
 import { DesktopRoot } from "./DesktopRoot.js";
 import { createProjectService } from "./projects.js";
 import { createDesktopRuntimeClient } from "./runtime/create-runtime.js";
+import { createThreadService } from "./threads.js";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -14,11 +15,13 @@ if (!root) {
 
 const credentialService = createCredentialService();
 const projectService = createProjectService();
+const threadService = createThreadService();
 const createSession = () => new DesktopSessionController(createDesktopRuntimeClient());
 createRoot(root).render(
   <DesktopRoot
     credentialService={credentialService}
     createSession={createSession}
     projectService={projectService}
+    threadService={threadService}
   />,
 );

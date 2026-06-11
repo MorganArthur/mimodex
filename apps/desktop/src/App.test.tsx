@@ -10,6 +10,8 @@ import type {
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
+  ThreadResumeParams,
+  ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
   TurnInterruptParams,
@@ -22,6 +24,7 @@ import { App } from "./App.js";
 import { DesktopRoot } from "./DesktopRoot.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
 import type { ProjectService, ProjectState, ProjectSummary } from "./projects.js";
+import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
 
 afterEach(cleanup);
 
@@ -72,6 +75,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={credentials}
         createSession={createSession}
         projectService={new FakeProjectService()}
+        threadService={new FakeThreadService()}
       />,
     );
 
@@ -96,6 +100,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={credentials}
         createSession={createSession}
         projectService={new FakeProjectService()}
+        threadService={new FakeThreadService()}
       />,
     );
 
@@ -116,6 +121,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={credentials}
         createSession={() => new DesktopSessionController(runtime)}
         projectService={projects}
+        threadService={new FakeThreadService([])}
       />,
     );
 
@@ -139,6 +145,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={new FakeCredentialService(true)}
         createSession={() => new DesktopSessionController(runtime)}
         projectService={projectService}
+        threadService={new FakeThreadService([])}
       />,
     );
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
@@ -164,6 +171,26 @@ describe("Mimodex 桌面壳", () => {
     );
     expect(runtime.threadStarts).toHaveLength(0);
   });
+
+  it("从真实最近线程列表恢复 Runtime 线程与本地投影", async () => {
+    const runtime = new UiRuntime();
+    const thread = fixtureThread();
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtime)}
+        projectService={new FakeProjectService()}
+        threadService={new FakeThreadService([thread])}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("button", { name: /修复历史测试/ }));
+
+    await waitFor(() => expect(runtime.threadResumes).toEqual([{ threadId: "thread-history" }]));
+    expect(await screen.findByText("已恢复的历史回复")).toBeTruthy();
+  });
 });
 
 function renderApp(
@@ -175,12 +202,17 @@ function renderApp(
     <App
       currentProject={currentProject}
       onAddProject={() => undefined}
+      onNewThread={() => undefined}
       onRefreshProject={() => undefined}
       onSelectProject={() => undefined}
+      onSelectThread={() => undefined}
       projectBusy={false}
       projectError={null}
       projects={projects}
       session={new DesktopSessionController(runtime)}
+      threadBusy={false}
+      threadError={null}
+      threads={[]}
     />,
   );
 }
@@ -188,6 +220,7 @@ function renderApp(
 class UiRuntime implements RuntimeClientPort {
   initializeCount = 0;
   readonly threadStarts: ThreadStartParams[] = [];
+  readonly threadResumes: ThreadResumeParams[] = [];
   readonly turnStarts: TurnStartParams[] = [];
   readonly responses: Array<{ id: RequestId; result: JsonValue | undefined }> = [];
   readonly #notifications = new Set<(notification: ServerNotification) => void>();
@@ -210,6 +243,16 @@ class UiRuntime implements RuntimeClientPort {
       model: params.model ?? "mimo-v2.5",
       modelProvider: "mimo",
       cwd: params.cwd ?? "D:\\project",
+    };
+  }
+
+  async resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
+    this.threadResumes.push(params);
+    return {
+      thread: { id: params.threadId },
+      model: "mimo-v2.5",
+      modelProvider: "mimo",
+      cwd: "D:\\projects\\fixture",
     };
   }
 
@@ -320,6 +363,31 @@ class FakeProjectService implements ProjectService {
   }
 }
 
+class FakeThreadService implements ThreadService {
+  #state: ThreadState;
+
+  constructor(threads: ThreadRecord[] = []) {
+    this.#state = { threads, selectedThreadId: null };
+  }
+
+  async list(): Promise<ThreadState> {
+    return this.#state;
+  }
+
+  async upsert(thread: ThreadRecord): Promise<ThreadState> {
+    this.#state = {
+      threads: [thread, ...this.#state.threads.filter((candidate) => candidate.id !== thread.id)],
+      selectedThreadId: thread.id,
+    };
+    return this.#state;
+  }
+
+  async select(threadId: string | null): Promise<ThreadState> {
+    this.#state = { ...this.#state, selectedThreadId: threadId };
+    return this.#state;
+  }
+}
+
 function fixtureProject(): ProjectSummary {
   return {
     id: "d:\\projects\\fixture",
@@ -346,5 +414,30 @@ function secondProject(): ProjectSummary {
     name: "second",
     git: { ...fixtureProject().git, branch: "feature/project-management", dirty: true, changedFiles: 2 },
     lastOpenedAt: 1,
+  };
+}
+
+function fixtureThread(): ThreadRecord {
+  return {
+    id: "thread-history",
+    projectId: fixtureProject().id,
+    projectPath: fixtureProject().path,
+    title: "修复历史测试",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+    turnStatus: "completed",
+    timeline: [
+      { id: "history-user", kind: "user", title: "你", content: "修复历史测试", status: null },
+      {
+        id: "history-assistant",
+        kind: "assistant",
+        title: "MiMo",
+        content: "已恢复的历史回复",
+        status: "completed",
+      },
+    ],
+    diff: "",
+    createdAt: 1,
+    updatedAt: 2,
   };
 }

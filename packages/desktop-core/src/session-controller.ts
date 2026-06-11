@@ -5,6 +5,8 @@ import type {
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
+  ThreadResumeParams,
+  ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
   TurnInterruptParams,
@@ -25,6 +27,8 @@ export type TimelineKind =
   | "status"
   | "user";
 export type ApprovalDecision = "accept" | "acceptForSession" | "cancel" | "decline";
+export type ModelId = "mimo-v2.5" | "mimo-v2.5-pro";
+export type SandboxMode = "danger-full-access" | "read-only" | "workspace-write";
 
 export type TimelineEntry = {
   id: string;
@@ -48,6 +52,7 @@ export type SessionState = {
   platform: string | null;
   projectPath: string | null;
   model: string;
+  sandbox: SandboxMode;
   threadId: string | null;
   turnId: string | null;
   turnStatus: TurnStatus;
@@ -60,12 +65,23 @@ export type SessionState = {
 export type StartTaskInput = {
   text: string;
   projectPath: string;
-  model: "mimo-v2.5" | "mimo-v2.5-pro";
-  sandbox: "danger-full-access" | "read-only" | "workspace-write";
+  model: ModelId;
+  sandbox: SandboxMode;
+};
+
+export type ResumeThreadInput = {
+  threadId: string;
+  projectPath: string;
+  model: ModelId;
+  sandbox: SandboxMode;
+  turnStatus: TurnStatus;
+  timeline: readonly TimelineEntry[];
+  diff: string;
 };
 
 export interface RuntimeClientPort {
   initialize(): Promise<InitializeResponse>;
+  resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse>;
   startThread(params: ThreadStartParams): Promise<ThreadStartResponse>;
   startTurn(params: TurnStartParams): Promise<TurnStartResponse>;
   interruptTurn(params: TurnInterruptParams): Promise<TurnInterruptResponse>;
@@ -84,6 +100,7 @@ const initialState: SessionState = {
   platform: null,
   projectPath: null,
   model: "mimo-v2.5",
+  sandbox: "workspace-write",
   threadId: null,
   turnId: null,
   turnStatus: "idle",
@@ -158,6 +175,7 @@ export class DesktopSessionController {
     this.#publish({
       projectPath: input.projectPath,
       model: input.model,
+      sandbox: input.sandbox,
       threadId: existingThreadId,
       turnStatus: "inProgress",
       error: null,
@@ -190,6 +208,45 @@ export class DesktopSessionController {
       this.#recordError(errorMessage(error));
       throw error;
     }
+  }
+
+  newThread(projectPath: string | null): void {
+    if (this.#state.turnStatus === "inProgress") {
+      throw new Error("已有任务正在执行");
+    }
+    this.#publish({
+      projectPath,
+      threadId: null,
+      turnId: null,
+      turnStatus: "idle",
+      timeline: [],
+      approvals: [],
+      diff: "",
+      error: null,
+    });
+  }
+
+  async resumeThread(input: ResumeThreadInput): Promise<void> {
+    if (this.#state.connection !== "ready") {
+      throw new Error("Runtime 尚未连接");
+    }
+    if (this.#state.turnStatus === "inProgress") {
+      throw new Error("已有任务正在执行");
+    }
+
+    const response = await this.#runtime.resumeThread({ threadId: input.threadId });
+    this.#publish({
+      projectPath: response.cwd || input.projectPath,
+      model: input.model,
+      sandbox: input.sandbox,
+      threadId: response.thread.id,
+      turnId: null,
+      turnStatus: input.turnStatus === "inProgress" ? "interrupted" : input.turnStatus,
+      timeline: input.timeline,
+      approvals: [],
+      diff: input.diff,
+      error: null,
+    });
   }
 
   async stop(): Promise<void> {
