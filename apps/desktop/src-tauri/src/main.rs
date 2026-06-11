@@ -278,8 +278,11 @@ fn inspect_git_status(path: &Path) -> GitStatus {
 
     let branch = run_git(path, &["branch", "--show-current"]).filter(|value| !value.is_empty());
     let head = run_git(path, &["rev-parse", "--short", "HEAD"]).filter(|value| !value.is_empty());
-    let status = run_git(path, &["status", "--porcelain=v1", "--untracked-files=normal"])
-        .unwrap_or_default();
+    let status = run_git(
+        path,
+        &["status", "--porcelain=v1", "--untracked-files=normal"],
+    )
+    .unwrap_or_default();
     let mut changed_files = 0;
     let mut untracked_files = 0;
     for line in status.lines().filter(|line| !line.trim().is_empty()) {
