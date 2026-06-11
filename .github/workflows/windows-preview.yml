@@ -98,6 +98,14 @@ jobs:
           --
           --check
 
+      - name: Stage placeholder sidecar for Tauri check
+        shell: pwsh
+        run: |
+          $binaries = New-Item -ItemType Directory -Force -Path "./apps/desktop/src-tauri/binaries"
+          New-Item -ItemType File -Force `
+            -Path (Join-Path $binaries.FullName "mimodex-runtime-${{ env.RUNTIME_TARGET }}.exe") |
+            Out-Null
+
       - name: Check Tauri Rust backend
         run: >
           cargo check
