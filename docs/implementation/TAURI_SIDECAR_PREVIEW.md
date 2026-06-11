@@ -1,6 +1,6 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：应用内安全凭据设置版 Windows 技术预览已通过权威构建
+- 状态：真实项目管理版正在等待 Windows 技术预览权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
@@ -62,14 +62,14 @@ Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。
 
 - 首个安装包用于验证真实 Runtime 连接、线程、轮次、审批、中断和文件修改闭环；
 - Runtime IPC 修复版仍需通过应用内凭据设置与 Windows 凭据管理器的真实安装验收；
+- 真实项目管理版新增文件夹选择、项目持久化、Git 摘要和项目切换，仍需完成安装验收；
 - 尚未提供连接诊断、自定义 API Base URL 和正式代码签名；
 - CI 会执行 Runtime `initialize` 握手，但正式发布前仍需执行真实 Windows 11 安装、
   启动、Agent 闭环和卸载验收。
 
 ## 5. 下一阶段
 
-1. 在真实 Windows 11 环境完成安装与 Runtime 握手；
-2. 验证默认模型、高级模型、审批、停止和工作区 Diff；
-3. 验证应用内 MiMo 凭据设置、重启加载和删除；
-4. 增加连接诊断与自定义 API Base URL；
-5. 为签名发布工作流补齐安装、启动和卸载冒烟测试。
+1. 在真实 Windows 11 环境验证文件夹选择、重启恢复、Git 摘要和项目切换；
+2. 实现本地线程持久化，并按项目展示真实最近线程；
+3. 增加连接诊断与自定义 API Base URL；
+4. 为签名发布工作流补齐安装、启动和卸载冒烟测试。

@@ -3,17 +3,22 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { DesktopSessionController } from "@mimodex/desktop-core";
 import { App } from "./App.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
+import type { ProjectService, ProjectState } from "./projects.js";
 
 export type DesktopRootProps = {
   credentialService: CredentialService;
   createSession: () => DesktopSessionController;
+  projectService: ProjectService;
 };
 
-export function DesktopRoot({ credentialService, createSession }: DesktopRootProps) {
+export function DesktopRoot({ credentialService, createSession, projectService }: DesktopRootProps) {
   const [credentialStatus, setCredentialStatus] = useState<CredentialStatus | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [session, setSession] = useState<DesktopSessionController | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectState, setProjectState] = useState<ProjectState | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false);
 
   useEffect(() => {
     void credentialService
@@ -34,6 +39,16 @@ export function DesktopRoot({ credentialService, createSession }: DesktopRootPro
     };
   }, [createSession, credentialStatus?.configured]);
 
+  useEffect(() => {
+    if (!credentialStatus?.configured) {
+      return;
+    }
+    void projectService
+      .list()
+      .then(setProjectState)
+      .catch((error) => setProjectError(errorMessage(error)));
+  }, [credentialStatus?.configured, projectService]);
+
   const saveCredential = async (apiKey: string) => {
     const status = await credentialService.save(apiKey);
     await credentialService.restart();
@@ -46,6 +61,48 @@ export function DesktopRoot({ credentialService, createSession }: DesktopRootPro
     setCredentialStatus(status);
   };
 
+  const addProject = async () => {
+    setProjectBusy(true);
+    setProjectError(null);
+    try {
+      const path = await projectService.pickDirectory();
+      if (path) {
+        setProjectState(await projectService.add(path));
+      }
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const selectProject = async (projectId: string) => {
+    setProjectBusy(true);
+    setProjectError(null);
+    try {
+      setProjectState(await projectService.select(projectId));
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const refreshProject = async () => {
+    if (!projectState?.selectedProjectId) {
+      return;
+    }
+    setProjectBusy(true);
+    setProjectError(null);
+    try {
+      setProjectState(await projectService.refresh(projectState.selectedProjectId));
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
   if (credentialError) {
     return <CredentialErrorPanel message={credentialError} />;
   }
@@ -55,13 +112,26 @@ export function DesktopRoot({ credentialService, createSession }: DesktopRootPro
   if (!credentialStatus.configured) {
     return <CredentialSetup status={credentialStatus} onSave={saveCredential} />;
   }
-  if (!session) {
+  if (!session || !projectState) {
     return <LoadingPanel />;
   }
 
+  const currentProject =
+    projectState.projects.find((project) => project.id === projectState.selectedProjectId) ?? null;
+
   return (
     <>
-      <App session={session} onOpenSettings={() => setSettingsOpen(true)} />
+      <App
+        currentProject={currentProject}
+        onAddProject={addProject}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onRefreshProject={refreshProject}
+        onSelectProject={selectProject}
+        projectBusy={projectBusy}
+        projectError={projectError}
+        projects={projectState.projects}
+        session={session}
+      />
       {settingsOpen && (
         <CredentialSettings
           status={credentialStatus}

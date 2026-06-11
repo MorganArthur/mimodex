@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { DesktopSessionController } from "@mimodex/desktop-core";
 import { createCredentialService } from "./credentials.js";
 import { DesktopRoot } from "./DesktopRoot.js";
+import { createProjectService } from "./projects.js";
 import { createDesktopRuntimeClient } from "./runtime/create-runtime.js";
 import "./styles.css";
 
@@ -12,7 +13,12 @@ if (!root) {
 }
 
 const credentialService = createCredentialService();
+const projectService = createProjectService();
 const createSession = () => new DesktopSessionController(createDesktopRuntimeClient());
 createRoot(root).render(
-  <DesktopRoot credentialService={credentialService} createSession={createSession} />,
+  <DesktopRoot
+    credentialService={credentialService}
+    createSession={createSession}
+    projectService={projectService}
+  />,
 );

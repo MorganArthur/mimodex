@@ -7,10 +7,18 @@ import {
   type SessionState,
   type TimelineEntry,
 } from "@mimodex/desktop-core";
+import type { ProjectSummary } from "./projects.js";
 
 export type AppProps = {
+  currentProject: ProjectSummary | null;
+  onAddProject: () => void | Promise<void>;
   session: DesktopSessionController;
   onOpenSettings?: () => void;
+  onRefreshProject: () => void | Promise<void>;
+  onSelectProject: (projectId: string) => void | Promise<void>;
+  projectBusy: boolean;
+  projectError: string | null;
+  projects: ProjectSummary[];
 };
 
 const statusLabels: Record<SessionState["connection"], string> = {
@@ -31,9 +39,18 @@ const entryLabels: Record<TimelineEntry["kind"], string> = {
   user: "YOU",
 };
 
-export function App({ session, onOpenSettings = () => undefined }: AppProps) {
+export function App({
+  currentProject,
+  onAddProject,
+  session,
+  onOpenSettings = () => undefined,
+  onRefreshProject,
+  onSelectProject,
+  projectBusy,
+  projectError,
+  projects,
+}: AppProps) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
-  const [projectPath, setProjectPath] = useState("D:\\0WORKSPACE\\mimodex");
   const [model, setModel] = useState<"mimo-v2.5" | "mimo-v2.5-pro">("mimo-v2.5");
   const [sandbox, setSandbox] = useState<"danger-full-access" | "read-only" | "workspace-write">(
     "workspace-write",
@@ -47,12 +64,12 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!message.trim() || submitting) {
+    if (!message.trim() || !currentProject?.available || submitting) {
       return;
     }
     setSubmitting(true);
     try {
-      await session.startTask({ text: message, projectPath, model, sandbox });
+      await session.startTask({ text: message, projectPath: currentProject.path, model, sandbox });
       setMessage("");
     } finally {
       setSubmitting(false);
@@ -78,16 +95,30 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
         <div className="sidebar-section">
           <div className="section-heading">
             <span>项目</span>
-            <button type="button" aria-label="添加项目">+</button>
+            <button disabled={projectBusy} type="button" aria-label="添加项目" onClick={() => void onAddProject()}>+</button>
           </div>
-          <div className="project-row active">
-            <span className="project-icon">MD</span>
-            <div>
-              <strong>mimodex</strong>
-              <span>main</span>
-            </div>
-            <i />
-          </div>
+          {projects.length === 0 ? (
+            <button className="empty-projects" type="button" onClick={() => void onAddProject()}>
+              添加本地项目文件夹
+            </button>
+          ) : projects.map((project) => (
+            <button
+              className={`project-row ${project.id === currentProject?.id ? "active" : ""}`}
+              disabled={projectBusy}
+              key={project.id}
+              title={project.path}
+              type="button"
+              onClick={() => void onSelectProject(project.id)}
+            >
+              <span className="project-icon">{projectInitials(project.name)}</span>
+              <div>
+                <strong>{project.name}</strong>
+                <span>{projectSubtitle(project)}</span>
+              </div>
+              <i className={project.git.dirty ? "dirty" : ""} />
+            </button>
+          ))}
+          {projectError && <p className="sidebar-error">{projectError}</p>}
         </div>
 
         <div className="sidebar-section threads">
@@ -123,10 +154,20 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
       <main className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">mimodex / main</p>
-            <h1>桌面 Runtime 接入</h1>
+            <p className="eyebrow">{currentProject ? projectBreadcrumb(currentProject) : "尚未选择项目"}</p>
+            <h1>{currentProject?.name ?? "添加一个本地项目"}</h1>
           </div>
           <div className="topbar-actions">
+            {currentProject && (
+              <button
+                className="refresh-project"
+                disabled={projectBusy}
+                type="button"
+                onClick={() => void onRefreshProject()}
+              >
+                {projectBusy ? "刷新中" : "刷新 Git"}
+              </button>
+            )}
             <span className="model-pill">{model}</span>
             <span className={`run-status ${state.turnStatus}`}>
               {state.turnStatus === "inProgress" ? "执行中" : "就绪"}
@@ -140,8 +181,12 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
         </header>
 
         <section className="conversation">
-          {state.timeline.length === 0 ? (
-            <WelcomePanel onSelect={setMessage} />
+          {!currentProject ? (
+            <ProjectWelcome onAdd={() => void onAddProject()} />
+          ) : !currentProject.available ? (
+            <UnavailableProject project={currentProject} onAdd={() => void onAddProject()} />
+          ) : state.timeline.length === 0 ? (
+            <WelcomePanel onSelect={setMessage} project={currentProject} />
           ) : (
             <Timeline entries={state.timeline} />
           )}
@@ -166,11 +211,9 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
             <div className="composer-options">
               <label>
                 <span>项目路径</span>
-                <input
-                  aria-label="项目路径"
-                  value={projectPath}
-                  onChange={(event) => setProjectPath(event.target.value)}
-                />
+                <strong className="selected-project-path" title={currentProject?.path}>
+                  {currentProject?.path ?? "请先添加项目"}
+                </strong>
               </label>
               <label>
                 <span>权限</span>
@@ -195,6 +238,7 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
               type="submit"
               disabled={
                 !message.trim() ||
+                !currentProject?.available ||
                 state.connection !== "ready" ||
                 state.turnStatus === "inProgress" ||
                 submitting
@@ -213,9 +257,9 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
           <button type="button">活动</button>
         </div>
         <section className="context-summary">
-          <p className="eyebrow">当前边界</p>
-          <h2>{sandboxLabel(sandbox)}</h2>
-          <p>{sandboxDescription(sandbox)}</p>
+          <p className="eyebrow">当前项目</p>
+          <h2>{currentProject?.name ?? "尚未选择"}</h2>
+          <p>{currentProject ? projectSummary(currentProject) : "添加项目后才能创建 Agent 任务。"}</p>
         </section>
         <section className="diff-panel">
           <div className="diff-heading">
@@ -251,12 +295,48 @@ export function App({ session, onOpenSettings = () => undefined }: AppProps) {
   );
 }
 
-function WelcomePanel({ onSelect }: { onSelect: (message: string) => void }) {
+function ProjectWelcome({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="welcome-panel project-welcome">
+      <span className="welcome-kicker">LOCAL PROJECT REQUIRED</span>
+      <h2>先选择项目，<br />再把任务交给 MiMo。</h2>
+      <p>项目记录只保存在 Mimodex 应用数据目录。选择文件夹后会读取 Git 分支和工作区状态。</p>
+      <button className="add-project-primary" type="button" onClick={onAdd}>添加本地项目</button>
+    </div>
+  );
+}
+
+function UnavailableProject({
+  onAdd,
+  project,
+}: {
+  onAdd: () => void;
+  project: ProjectSummary;
+}) {
+  return (
+    <div className="welcome-panel project-welcome">
+      <span className="welcome-kicker">PROJECT UNAVAILABLE</span>
+      <h2>找不到 {project.name}。</h2>
+      <p>原路径为 {project.path}。请恢复该文件夹，或添加一个新的本地项目后继续。</p>
+      <button className="add-project-primary" type="button" onClick={onAdd}>
+        添加其他项目
+      </button>
+    </div>
+  );
+}
+
+function WelcomePanel({
+  onSelect,
+  project,
+}: {
+  onSelect: (message: string) => void;
+  project: ProjectSummary;
+}) {
   return (
     <div className="welcome-panel">
       <span className="welcome-kicker">LOCAL-FIRST CODING AGENT</span>
       <h2>把任务交给 MiMo，<br />把每一步留在你眼前。</h2>
-      <p>当前切片已接通线程、轮次、流式事件、审批和中断状态。输入任务即可体验完整交互。</p>
+      <p>当前项目为 {project.name}。输入任务后，Agent 将以该文件夹作为工作目录。</p>
       <div className="suggestion-grid">
         <button type="button" onClick={() => onSelect("定位并修复当前项目中的失败测试。")}>
           <strong>修复失败测试</strong><span>定位根因并运行聚焦验证</span>
@@ -270,6 +350,42 @@ function WelcomePanel({ onSelect }: { onSelect: (message: string) => void }) {
       </div>
     </div>
   );
+}
+
+function projectInitials(name: string): string {
+  return name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, "").slice(0, 2).toUpperCase() || "PR";
+}
+
+function projectSubtitle(project: ProjectSummary): string {
+  if (!project.available) {
+    return "文件夹不可用";
+  }
+  if (!project.git.isRepository) {
+    return "非 Git 文件夹";
+  }
+  const branch = project.git.branch ?? project.git.head ?? "Git 仓库";
+  const changes = project.git.changedFiles + project.git.untrackedFiles;
+  return changes > 0 ? `${branch} · ${changes} 项变更` : branch;
+}
+
+function projectBreadcrumb(project: ProjectSummary): string {
+  if (!project.git.isRepository) {
+    return `${project.name} / LOCAL`;
+  }
+  return `${project.name} / ${project.git.branch ?? project.git.head ?? "DETACHED"}`;
+}
+
+function projectSummary(project: ProjectSummary): string {
+  if (!project.available) {
+    return "项目文件夹当前不可访问。";
+  }
+  if (!project.git.isRepository) {
+    return "本地文件夹，尚未检测到 Git 仓库。";
+  }
+  const changes = project.git.changedFiles + project.git.untrackedFiles;
+  return changes > 0
+    ? `${project.git.branch ?? "Detached HEAD"}，工作区有 ${changes} 项变更。`
+    : `${project.git.branch ?? "Detached HEAD"}，工作区干净。`;
 }
 
 function Timeline({ entries }: { entries: readonly TimelineEntry[] }) {

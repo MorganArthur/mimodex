@@ -369,6 +369,12 @@ button {
   border: 0;
 }
 
+.section-heading button:disabled,
+.project-row:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .project-row,
 .thread-row {
   display: flex;
@@ -431,10 +437,33 @@ button {
   border-radius: 50%;
 }
 
-.project-row i,
+.project-row.active i,
+.project-row i.dirty,
 .thread-state.running {
   background: #c6ec8b;
   box-shadow: 0 0 0 4px rgba(198, 236, 139, 0.08);
+}
+
+.project-row i.dirty {
+  background: #e4b95a;
+}
+
+.empty-projects {
+  width: 100%;
+  padding: 12px 9px;
+  color: #aab0a6;
+  background: transparent;
+  border: 1px dashed #444a40;
+  border-radius: 9px;
+  font-size: 10px;
+  text-align: left;
+}
+
+.sidebar-error {
+  margin: 9px 6px 0;
+  color: #e7a099;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .sidebar-footer {
@@ -510,6 +539,21 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.refresh-project {
+  padding: 6px 9px;
+  color: #596451;
+  background: transparent;
+  border: 1px solid #d2d6cb;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.refresh-project:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .model-pill,
@@ -593,6 +637,20 @@ button {
 .suggestion-grid strong,
 .suggestion-grid span {
   display: block;
+}
+
+.project-welcome {
+  max-width: 650px;
+}
+
+.add-project-primary {
+  padding: 11px 14px;
+  color: #f2f6ed;
+  background: #34422c;
+  border: 0;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 750;
 }
 
 .suggestion-grid strong {
@@ -791,7 +849,8 @@ button {
 }
 
 .composer-options input,
-.composer-options select {
+.composer-options select,
+.selected-project-path {
   width: 135px;
   padding: 0;
   background: transparent;
@@ -799,6 +858,13 @@ button {
   outline: none;
   font-size: 9px;
   font-weight: 600;
+}
+
+.selected-project-path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-options select {
