@@ -62,5 +62,5 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 ## 当前开发阶段
 
 MiMo Provider 技术验证清单中的强制退出条件已经通过。桌面界面、Tauri sidecar 和
-Mimodex Runtime 已完成首轮代码接入，当前工作重点是通过 Windows Preview CI 产出
-首个可安装技术预览，并在真实 Windows 11 环境验收 Agent 闭环。
+Mimodex Runtime 已完成首轮代码接入，并由 Windows Preview CI 产出首个 `55.98 MiB`
+可安装技术预览。当前工作重点是在真实 Windows 11 环境验收 Agent 闭环。

@@ -1,9 +1,10 @@
 # 桌面应用服务与交互壳实现说明
 
-- 状态：React 交互切片与真实 Tauri sidecar adapter 已实现，等待 Windows Preview CI 验证
+- 状态：React 交互切片、真实 Tauri sidecar adapter 与 Windows 安装包已通过 CI
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop`、`packages/desktop-core`
 - 首次远程验证：[Desktop CI #27253481256](https://github.com/MorganArthur/mimodex/actions/runs/27253481256)
+- 首次原生安装包：[Windows Preview #27319183630](https://github.com/MorganArthur/mimodex/actions/runs/27319183630)
 
 ## 1. 当前目标
 
@@ -83,5 +84,6 @@ sidecar 的条件下验证完整桌面交互，它会模拟：
 4. Runtime、Windows 沙箱辅助程序与 Tauri 的打包目录约定；
 5. Windows NSIS 技术预览安装包工作流与体积预算检查。
 
-下一步由 Windows Preview CI 验证原生编译和打包，并在真实 Windows 11 环境验收
-初始化、线程、轮次、审批和中断闭环。
+Windows Preview CI 已验证原生编译、sidecar 暂存、NSIS 打包和 `120 MiB` 体积硬
+上限，首个安装包为 `55.98 MiB`。下一步在真实 Windows 11 环境验收初始化、线程、
+轮次、审批和中断闭环。

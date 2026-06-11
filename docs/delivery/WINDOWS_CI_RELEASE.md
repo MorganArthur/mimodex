@@ -46,7 +46,9 @@ GitHub 托管 Runner，不要求安装在本地机器。
 
 Runtime CI 已基于固定上游 commit 与补丁队列建立。桌面 Workflow 已接入 Runtime
 客户端、桌面应用服务、React 交互测试与生产构建。较慢的原生编译与安装包任务独立
-放入 `windows-preview.yml`，避免拖慢日常 TypeScript 反馈。桌面 Runtime 客户端基线已在
+放入 `windows-preview.yml`，避免拖慢日常 TypeScript 反馈。首个未签名 NSIS 安装包已在
+[Windows Preview #27319183630](https://github.com/MorganArthur/mimodex/actions/runs/27319183630)
+成功构建，安装包大小为 `55.98 MiB`。桌面 Runtime 客户端基线已在
 [Desktop CI #27252463625](https://github.com/MorganArthur/mimodex/actions/runs/27252463625)
 首次通过；桌面应用服务与 React 交互壳已在
 [Desktop CI #27253481256](https://github.com/MorganArthur/mimodex/actions/runs/27253481256)
