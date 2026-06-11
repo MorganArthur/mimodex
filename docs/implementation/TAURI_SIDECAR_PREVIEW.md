@@ -1,10 +1,11 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：首个 Windows 技术预览已完成安装验证，替换构建待发布
+- 状态：Runtime IPC 修复版 Windows 技术预览已通过权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
 - 首次成功构建：[Windows Preview #27319183630](https://github.com/MorganArthur/mimodex/actions/runs/27319183630)
+- 当前可用构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
 
 ## 1. 本阶段目标
 
@@ -41,8 +42,13 @@ Rust 工具链、Cargo 缓存、Codex 源码、测试产物和调试符号不会
 [mimodex-windows-preview-6220ea0b89931b3a80967b2dc4e56ea8dac504cc](https://github.com/MorganArthur/mimodex/actions/runs/27319183630/artifacts/7553844185)。
 
 > 该首个 Artifact 在真实安装验证中发现 Tauri raw IPC 字节数组兼容问题，安装后
-> Runtime 初始化响应无法被前端解码，已经停止作为可用预览分发。修复后的构建会用
-> 新 Artifact 替换它。
+> Runtime 初始化响应无法被前端解码，已经停止作为可用预览分发。
+
+修复版 Artifact：
+[mimodex-windows-preview-60d643eeb3c84dd4277e30782b82bb1e44fdd0b2](https://github.com/MorganArthur/mimodex/actions/runs/27322304835/artifacts/7554941223)。
+该构建已通过 Runtime `initialize` 握手、NSIS 打包与独立 SHA256 校验；安装包大小
+为 `55.98 MiB`，SHA256 为
+`3B3EC46CC40F146DC057E82ECB03A1F55A4C48FF176EAEE6BF03CAE1CEC3C0B8`。
 
 ## 4. 当前使用限制
 
