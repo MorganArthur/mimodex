@@ -5,6 +5,7 @@ use serde::Serialize;
 
 const CREDENTIAL_SERVICE: &str = "com.morganarthur.mimodex";
 const CREDENTIAL_USER: &str = "mimo-api-key";
+const MIMODEX_MANAGED_API_KEY_ENV: &str = "MIMODEX_MANAGED_MIMO_API_KEY";
 const MIMO_API_KEY_ENV: &str = "MIMO_API_KEY";
 
 #[derive(Serialize)]
@@ -72,12 +73,7 @@ fn delete_mimo_credential() -> Result<CredentialStatus, String> {
 
 fn main() {
     let _ = initialize_credential_store();
-    if let Ok(Some(api_key)) = stored_api_key() {
-        // This runs before Tauri starts worker threads. The Runtime sidecar inherits this variable.
-        unsafe {
-            std::env::set_var(MIMO_API_KEY_ENV, api_key);
-        }
-    }
+    configure_runtime_credential();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -89,6 +85,24 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Mimodex desktop application");
+}
+
+fn configure_runtime_credential() {
+    // This runs before Tauri starts worker threads. The Runtime sidecar inherits this variable.
+    if let Ok(Some(api_key)) = stored_api_key() {
+        unsafe {
+            std::env::set_var(MIMO_API_KEY_ENV, api_key);
+            std::env::set_var(MIMODEX_MANAGED_API_KEY_ENV, "1");
+        }
+        return;
+    }
+
+    if std::env::var_os(MIMODEX_MANAGED_API_KEY_ENV).is_some() {
+        unsafe {
+            std::env::remove_var(MIMO_API_KEY_ENV);
+            std::env::remove_var(MIMODEX_MANAGED_API_KEY_ENV);
+        }
+    }
 }
 
 fn initialize_credential_store() -> Result<(), String> {
