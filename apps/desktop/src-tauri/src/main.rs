@@ -41,7 +41,7 @@ struct ProjectSummary {
     name: String,
     available: bool,
     git: GitStatus,
-    last_opened_at: u64,
+    last_opened_at: i64,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -80,8 +80,8 @@ struct ThreadRecord {
     turn_status: String,
     timeline: Vec<TimelineEntry>,
     diff: String,
-    created_at: u64,
-    updated_at: u64,
+    created_at: i64,
+    updated_at: i64,
     #[serde(default)]
     archived: bool,
 }
@@ -516,7 +516,7 @@ fn record_thread_projection(
         .query_row(
             "SELECT updated_at FROM threads WHERE id = ?1",
             [&thread.id],
-            |row| row.get::<_, u64>(0),
+            |row| row.get::<_, i64>(0),
         )
         .optional()
         .map_err(|_| thread_database_error("检查线程投影版本"))?;
@@ -724,7 +724,7 @@ fn project_id(path: &Path) -> String {
     }
 }
 
-fn inspect_project(path: &Path, last_opened_at: u64) -> ProjectSummary {
+fn inspect_project(path: &Path, last_opened_at: i64) -> ProjectSummary {
     ProjectSummary {
         id: project_id(path),
         path: path.to_string_lossy().to_string(),
@@ -818,10 +818,10 @@ fn sort_projects(projects: &mut [ProjectSummary]) {
     projects.sort_by(|left, right| right.last_opened_at.cmp(&left.last_opened_at));
 }
 
-fn unix_timestamp_ms() -> u64 {
+fn unix_timestamp_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
+        .map(|duration| duration.as_millis() as i64)
         .unwrap_or_default()
 }
 
