@@ -1,8 +1,8 @@
+import { RuntimeProtocolError } from "@mimodex/runtime-client";
 import type {
   InitializeResponse,
   JsonValue,
   RequestId,
-  RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
   ThreadStartParams,
@@ -90,6 +90,13 @@ export class FakeRuntimeClient implements RuntimeClientPort {
   emitRequest(request: ServerRequest): void {
     for (const listener of this.#requestListeners) {
       listener(request);
+    }
+  }
+
+  emitProtocolError(message: string): void {
+    const error = new RuntimeProtocolError(message);
+    for (const listener of this.#protocolErrorListeners) {
+      listener(error);
     }
   }
 }

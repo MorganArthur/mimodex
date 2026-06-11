@@ -142,3 +142,16 @@ test("无效 JSON 与未知响应 ID 通过协议错误事件报告", async () =
   assert.match(errors[0]?.message ?? "", /invalid JSON/);
   assert.match(errors[1]?.message ?? "", /unknown request id/);
 });
+
+test("底层解码异常保留具体原因", async () => {
+  const transport = new FakeTransport();
+  const client = new JsonRpcClient(transport);
+  const errors: RuntimeProtocolError[] = [];
+  client.onProtocolError((error) => errors.push(error));
+  await client.start();
+
+  transport.emitStdout([123, 125, 10] as unknown as Uint8Array);
+
+  assert.match(errors[0]?.message ?? "", /Runtime protocol failure:/);
+  assert.doesNotMatch(errors[0]?.message ?? "", /^Runtime protocol failure$/);
+});

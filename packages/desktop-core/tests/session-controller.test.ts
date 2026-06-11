@@ -122,3 +122,14 @@ test("普通轮次错误保留 Runtime 连接，切换项目时创建新线程",
   assert.equal(runtime.threadStarts.length, 2);
   assert.equal(runtime.threadStarts[1]?.cwd, "D:\\project-b");
 });
+
+test("单条协议诊断不会立即锁死已连接会话", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  await session.connect();
+
+  runtime.emitProtocolError("Runtime emitted invalid JSON");
+
+  assert.equal(session.getSnapshot().connection, "ready");
+  assert.equal(session.getSnapshot().timeline.at(-1)?.title, "Runtime 协议异常");
+});

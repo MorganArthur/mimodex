@@ -1,6 +1,6 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：首个 Windows 技术预览已通过权威构建
+- 状态：首个 Windows 技术预览已完成安装验证，替换构建待发布
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
@@ -40,12 +40,17 @@ Rust 工具链、Cargo 缓存、Codex 源码、测试产物和调试符号不会
 `214.27 MiB`，由 NSIS 压缩后仍满足 `120 MiB` 安装包硬上限。对应 Artifact：
 [mimodex-windows-preview-6220ea0b89931b3a80967b2dc4e56ea8dac504cc](https://github.com/MorganArthur/mimodex/actions/runs/27319183630/artifacts/7553844185)。
 
+> 该首个 Artifact 在真实安装验证中发现 Tauri raw IPC 字节数组兼容问题，安装后
+> Runtime 初始化响应无法被前端解码，已经停止作为可用预览分发。修复后的构建会用
+> 新 Artifact 替换它。
+
 ## 4. 当前使用限制
 
 - 启动 Mimodex 前，当前用户环境需要提供 `MIMO_API_KEY`；
 - 首个安装包用于验证真实 Runtime 连接、线程、轮次、审批、中断和文件修改闭环；
 - 尚未提供图形化凭据录入、Windows 凭据管理器存储和正式代码签名；
-- 正式发布前仍需执行真实 Windows 11 安装、启动、Agent 闭环和卸载验收。
+- CI 会执行 Runtime `initialize` 握手，但正式发布前仍需执行真实 Windows 11 安装、
+  启动、Agent 闭环和卸载验收。
 
 ## 5. 下一阶段
 

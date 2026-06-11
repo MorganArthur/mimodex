@@ -8,13 +8,14 @@ import {
 } from "@mimodex/runtime-client";
 
 type Listener<T> = (value: T) => void;
+export type TauriRawOutput = Uint8Array | number[];
 
 export interface TauriSidecarCommand {
   stdout: {
-    on(event: "data", listener: Listener<Uint8Array>): unknown;
+    on(event: "data", listener: Listener<TauriRawOutput>): unknown;
   };
   stderr: {
-    on(event: "data", listener: Listener<Uint8Array>): unknown;
+    on(event: "data", listener: Listener<TauriRawOutput>): unknown;
   };
   on(event: "close", listener: Listener<{ code: number | null; signal: number | null }>): unknown;
   on(event: "error", listener: Listener<string>): unknown;
@@ -48,8 +49,8 @@ export class TauriRuntimeProcessPort implements RuntimeProcessPort {
     }
     this.#started = true;
     const command = this.#commandFactory();
-    command.stdout.on("data", (chunk) => this.#emit(this.#stdoutListeners, chunk));
-    command.stderr.on("data", (chunk) => this.#emit(this.#stderrListeners, chunk));
+    command.stdout.on("data", (chunk) => this.#emit(this.#stdoutListeners, normalizeRawOutput(chunk)));
+    command.stderr.on("data", (chunk) => this.#emit(this.#stderrListeners, normalizeRawOutput(chunk)));
     command.on("error", (message) => this.#emit(this.#stderrListeners, message));
     command.on("close", ({ code, signal }) => {
       this.#child = null;
@@ -105,6 +106,10 @@ export class TauriRuntimeProcessPort implements RuntimeProcessPort {
       listener(value);
     }
   }
+}
+
+function normalizeRawOutput(chunk: TauriRawOutput): Uint8Array {
+  return chunk instanceof Uint8Array ? chunk : Uint8Array.from(chunk);
 }
 
 export function createTauriRuntimeClient(): MimodexRuntimeClient {

@@ -218,7 +218,7 @@ export class JsonRpcClient {
     const protocolError =
       error instanceof RuntimeProtocolError
         ? error
-        : new RuntimeProtocolError("Runtime protocol failure", { cause: error });
+        : new RuntimeProtocolError(`Runtime protocol failure: ${errorMessage(error)}`, { cause: error });
     this.#emit(this.#protocolErrorListeners, protocolError);
   }
 
@@ -278,6 +278,10 @@ export class JsonRpcClient {
       listener(value);
     }
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function asJsonObject(value: JsonValue): JsonObject {

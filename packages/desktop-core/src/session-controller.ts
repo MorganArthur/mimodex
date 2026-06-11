@@ -105,7 +105,7 @@ export class DesktopSessionController {
     this.#unsubscribers = [
       runtime.onNotification((notification) => this.#handleNotification(notification)),
       runtime.onServerRequest((request) => this.#handleServerRequest(request)),
-      runtime.onProtocolError((error) => this.#disconnect(error.message)),
+      runtime.onProtocolError((error) => this.#recordProtocolError(error.message)),
       runtime.onExit((details) => {
         const suffix = details?.code === undefined ? "" : `，退出码 ${details.code}`;
         this.#disconnect(`Runtime 已断开${suffix}`);
@@ -389,6 +389,17 @@ export class DesktopSessionController {
       title: "发生错误",
       content: message,
       status: "failed",
+    });
+  }
+
+  #recordProtocolError(message: string): void {
+    this.#publish({ error: message });
+    this.#append({
+      id: this.#nextId("protocol-error"),
+      kind: "error",
+      title: "Runtime 协议异常",
+      content: message,
+      status: "diagnostic",
     });
   }
 

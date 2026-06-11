@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { ProcessRuntimeTransport } from "@mimodex/runtime-client";
+import { MimodexRuntimeClient, ProcessRuntimeTransport } from "@mimodex/runtime-client";
 import {
   TauriRuntimeProcessPort,
+  type TauriRawOutput,
   type TauriSidecarCommand,
 } from "./tauri-runtime.js";
 
@@ -29,7 +30,7 @@ describe("Tauri Runtime sidecar 端口", () => {
       },
     });
     await transport.writeLine('{"method":"initialized"}');
-    command.emitStdout(new Uint8Array([123, 125, 10]));
+    command.emitStdout([123, 125, 10]);
     command.emitError("runtime warning");
     command.emitClose({ code: 0, signal: null });
     await transport.close();
@@ -41,13 +42,46 @@ describe("Tauri Runtime sidecar 端口", () => {
     expect(exits).toEqual([{ code: 0 }]);
     expect(command.killed).toBe(false);
   });
+
+  it("将 Tauri IPC 数字数组转换为字节流并完成 Runtime 初始化", async () => {
+    const command = new FakeCommand();
+    const client = new MimodexRuntimeClient(
+      new ProcessRuntimeTransport(new TauriRuntimeProcessPort(() => command)),
+      { clientVersion: "0.1.0" },
+    );
+
+    const initialization = client.initialize();
+    await vi.waitFor(() => expect(command.writes).toHaveLength(1));
+    command.emitStdout(
+      Array.from(
+        new TextEncoder().encode(
+          `${JSON.stringify({
+            id: 1,
+            result: {
+              userAgent: "mimodex-runtime-test",
+              codexHome: "C:\\Users\\tester\\.codex",
+              platformFamily: "windows",
+              platformOs: "windows",
+            },
+          })}\n`,
+        ),
+      ),
+    );
+
+    await expect(initialization).resolves.toMatchObject({
+      userAgent: "mimodex-runtime-test",
+      platformOs: "windows",
+    });
+    expect(command.writes).toHaveLength(2);
+    expect(JSON.parse(command.writes[1] ?? "{}")).toMatchObject({ method: "initialized" });
+  });
 });
 
 type CommandEvents = {
   close: Array<(value: { code: number | null; signal: number | null }) => void>;
   error: Array<(value: string) => void>;
-  stdout: Array<(value: Uint8Array) => void>;
-  stderr: Array<(value: Uint8Array) => void>;
+  stdout: Array<(value: TauriRawOutput) => void>;
+  stderr: Array<(value: TauriRawOutput) => void>;
 };
 
 class FakeCommand implements TauriSidecarCommand {
@@ -57,13 +91,13 @@ class FakeCommand implements TauriSidecarCommand {
   killed = false;
 
   readonly stdout = {
-    on: (_event: "data", listener: (value: Uint8Array) => void) => {
+    on: (_event: "data", listener: (value: TauriRawOutput) => void) => {
       this.events.stdout.push(listener);
     },
   };
 
   readonly stderr = {
-    on: (_event: "data", listener: (value: Uint8Array) => void) => {
+    on: (_event: "data", listener: (value: TauriRawOutput) => void) => {
       this.events.stderr.push(listener);
     },
   };
@@ -92,7 +126,7 @@ class FakeCommand implements TauriSidecarCommand {
     };
   }
 
-  emitStdout(value: Uint8Array): void {
+  emitStdout(value: TauriRawOutput): void {
     for (const listener of this.events.stdout) {
       listener(value);
     }

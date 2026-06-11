@@ -105,6 +105,12 @@ jobs:
           ./runtime-worktree/upstream/codex-rs/target/${{ env.RUNTIME_TARGET }}/release/codex-app-server.exe
           --version
 
+      - name: Verify Runtime initialize handshake
+        shell: pwsh
+        run: >
+          ./scripts/ci/verify-runtime-handshake.ps1
+          -RuntimePath ./runtime-worktree/upstream/codex-rs/target/${{ env.RUNTIME_TARGET }}/release/codex-app-server.exe
+
       - name: Stage Runtime sidecar for Tauri
         shell: pwsh
         run: >
