@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mimodex",
+  "version": "0.1.0",
+  "identifier": "com.morganarthur.mimodex",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Mimodex",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1120,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "category": "DeveloperTool",
+    "shortDescription": "MiMo 驱动的本地优先桌面编程 Agent",
+    "longDescription": "Mimodex 通过本地 Runtime、可审阅工具调用和 MiMo 模型帮助开发者完成代码任务。",
+    "externalBin": [
+      "binaries/mimodex-runtime"
+    ],
+    "resources": {
+      "binaries/codex-resources/codex-command-runner.exe": "codex-resources/codex-command-runner.exe",
+      "binaries/codex-resources/codex-windows-sandbox-setup.exe": "codex-resources/codex-windows-sandbox-setup.exe"
+    },
+    "windows": {
+      "allowDowngrades": true,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

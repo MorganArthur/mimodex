@@ -1,0 +1,167 @@
+name: Windows Preview
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - "apps/**"
+      - "packages/**"
+      - "runtime/**"
+      - "scripts/ci/**"
+      - ".github/workflows/windows-preview.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - "apps/**"
+      - "packages/**"
+      - "runtime/**"
+      - "scripts/ci/**"
+      - ".github/workflows/windows-preview.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  RUSTFLAGS: "-C strip=symbols"
+  RUNTIME_TARGET: "x86_64-pc-windows-msvc"
+
+jobs:
+  build:
+    name: Build unsigned Windows installer
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - name: Checkout Mimodex
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Checkout locked Codex upstream
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: openai/codex
+          ref: 14660c22d14312c28a50c52954dd77dd88f03c26
+          path: runtime-worktree/upstream
+          sparse-checkout: codex-rs
+          persist-credentials: false
+
+      - name: Verify and apply Mimodex Runtime patches
+        shell: pwsh
+        run: >
+          ./runtime/scripts/apply-patches.ps1
+          -UpstreamPath ./runtime-worktree/upstream
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup locked Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          targets: x86_64-pc-windows-msvc
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
+        with:
+          workspaces: |
+            runtime-worktree/upstream/codex-rs -> target
+            apps/desktop/src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install desktop dependencies
+        run: npm ci
+
+      - name: Verify TypeScript and React
+        run: npm run verify
+
+      - name: Build Mimodex Runtime sidecar
+        working-directory: runtime-worktree/upstream/codex-rs
+        run: >
+          cargo build --locked --release
+          --target ${{ env.RUNTIME_TARGET }}
+          -p codex-app-server
+          -p codex-windows-sandbox
+          --bins
+
+      - name: Verify Runtime executable
+        shell: pwsh
+        run: >
+          ./runtime-worktree/upstream/codex-rs/target/${{ env.RUNTIME_TARGET }}/release/codex-app-server.exe
+          --version
+
+      - name: Stage Runtime sidecar for Tauri
+        shell: pwsh
+        run: >
+          ./scripts/ci/stage-runtime-sidecar.ps1
+          -RuntimeTargetDir ./runtime-worktree/upstream/codex-rs/target/${{ env.RUNTIME_TARGET }}/release
+          -TauriDir ./apps/desktop/src-tauri
+
+      - name: Build NSIS installer
+        run: >
+          npm run tauri:build --workspace @mimodex/desktop --
+          --bundles nsis
+          --target ${{ env.RUNTIME_TARGET }}
+
+      - name: Collect installer and checksum
+        id: artifact
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem `
+            -LiteralPath "./apps/desktop/src-tauri/target/${{ env.RUNTIME_TARGET }}/release/bundle/nsis" `
+            -Filter "*.exe" |
+              Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "没有找到 NSIS 安装包。"
+          }
+
+          ./scripts/ci/assert-size-budget.ps1 `
+            -Path $installer.FullName `
+            -MaxMiB 120 `
+            -Label "Windows 技术预览安装包"
+
+          $artifactDir = New-Item -ItemType Directory -Force -Path "./artifacts/windows-preview"
+          $artifactPath = Join-Path $artifactDir.FullName "Mimodex_0.1.0_x64-setup.exe"
+          Copy-Item -LiteralPath $installer.FullName -Destination $artifactPath
+          $hash = Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256
+          "$($hash.Hash)  $([IO.Path]::GetFileName($artifactPath))" |
+            Set-Content -LiteralPath (Join-Path $artifactDir.FullName "Mimodex_0.1.0_x64-setup.exe.sha256")
+
+          $sizeMiB = [math]::Round((Get-Item -LiteralPath $artifactPath).Length / 1MB, 2)
+          "installer_size_mib=$sizeMiB" >> $env:GITHUB_OUTPUT
+          Write-Host "已收集 Windows 技术预览安装包：$artifactPath（$sizeMiB MiB）"
+
+      - name: Upload Windows preview artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mimodex-windows-preview-${{ github.sha }}
+          path: artifacts/windows-preview/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish build summary
+        shell: pwsh
+        run: |
+          @"
+          ## Mimodex Windows 技术预览
+
+          - 安装包：未签名 NSIS x64 安装包
+          - 安装包大小：${{ steps.artifact.outputs.installer_size_mib }} MiB
+          - Artifact：``mimodex-windows-preview-${{ github.sha }}``
+          - 有效期：14 天
+          "@ >> $env:GITHUB_STEP_SUMMARY

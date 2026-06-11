@@ -8,6 +8,8 @@ node_modules/
 coverage/
 dist/
 .vite-*.log
+apps/desktop/src-tauri/binaries/**/*.exe
+apps/desktop/src-tauri/target/
 
 # Spike output
 spikes/mimo-provider/artifacts/

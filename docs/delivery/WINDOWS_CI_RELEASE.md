@@ -1,7 +1,7 @@
 # Windows 11 CI 构建与发布方案
 
-- 状态：Runtime 与桌面 TypeScript 基线流水线已建立，等待 Tauri 原生构建接入
-- 最后更新：2026-06-10
+- 状态：Runtime、桌面 TypeScript 与未签名 Windows 技术预览流水线已建立
+- 最后更新：2026-06-11
 - 本地开发约束：不安装 Rust、Cargo、MSVC 或 Tauri 原生构建依赖
 
 ## 1. 可行性结论
@@ -39,13 +39,14 @@ GitHub 托管 Runner，不要求安装在本地机器。
 | --- | --- | --- |
 | `provider-spike-ci.yml` | PR、main、手动 | 验证当前 TypeScript Provider Spike，已建立 |
 | `runtime-ci.yml` | PR、main、手动 | 拉取锁定上游、应用补丁，执行 Rust 格式、检查、单测和 Windows Runtime 编译；已建立 |
-| `desktop-ci.yml` | PR、main、手动 | 桌面 TypeScript 检查、离线测试与 React 生产构建；后续扩展 Tauri Windows 编译和安装包冒烟 |
+| `desktop-ci.yml` | PR、main、手动 | 快速执行桌面 TypeScript 检查、离线测试与 React 生产构建 |
+| `windows-preview.yml` | PR、main、手动 | 构建 Runtime、Tauri 与未签名 NSIS 安装包，检查体积并上传 Actions Artifact |
 | `windows-release.yml` | 版本标签、手动批准 | 构建、签名并发布 Windows 安装包 |
 | `mimo-live-probe.yml` | 手动、受保护环境 | 使用预算受限凭据执行真实 API 兼容性验证 |
 
 Runtime CI 已基于固定上游 commit 与补丁队列建立。桌面 Workflow 已接入 Runtime
-客户端、桌面应用服务、React 交互测试与生产构建；Tauri 源码和锁文件进入仓库后，
-再扩展原生编译与安装包冒烟步骤。桌面 Runtime 客户端基线已在
+客户端、桌面应用服务、React 交互测试与生产构建。较慢的原生编译与安装包任务独立
+放入 `windows-preview.yml`，避免拖慢日常 TypeScript 反馈。桌面 Runtime 客户端基线已在
 [Desktop CI #27252463625](https://github.com/MorganArthur/mimodex/actions/runs/27252463625)
 首次通过；桌面应用服务与 React 交互壳已在
 [Desktop CI #27253481256](https://github.com/MorganArthur/mimodex/actions/runs/27253481256)

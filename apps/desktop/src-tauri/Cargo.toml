@@ -1,0 +1,14 @@
+[package]
+name = "mimodex"
+version = "0.1.0"
+description = "MiMo 驱动的本地优先桌面编程 Agent"
+authors = ["Mimodex contributors"]
+edition = "2024"
+license = "Apache-2.0"
+
+[build-dependencies]
+tauri-build = { version = "2.6.2", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.2", features = [] }
+tauri-plugin-shell = "2.3.5"

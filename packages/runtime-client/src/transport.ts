@@ -13,6 +13,7 @@ export interface RuntimeTransport {
 }
 
 export interface RuntimeProcessPort {
+  start?(): Promise<void>;
   write(input: string): Promise<void>;
   kill(): Promise<void>;
   onStdout(listener: (chunk: string | Uint8Array) => void): Unsubscribe;
@@ -37,6 +38,14 @@ export class ProcessRuntimeTransport implements RuntimeTransport {
       this.#process.onStderr(handlers.onStderr),
       this.#process.onExit(handlers.onExit),
     ];
+    try {
+      await this.#process.start?.();
+    } catch (error) {
+      for (const unsubscribe of this.#unsubscribers.splice(0)) {
+        unsubscribe();
+      }
+      throw error;
+    }
   }
 
   async writeLine(line: string): Promise<void> {

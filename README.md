@@ -31,6 +31,7 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 - [MiMo Runtime Adapter 实现计划](docs/implementation/RUNTIME_ADAPTER_PLAN.md)
 - [桌面 Runtime 客户端接入计划](docs/implementation/DESKTOP_RUNTIME_CLIENT_PLAN.md)
 - [桌面应用服务与交互壳实现说明](docs/implementation/DESKTOP_APP_SHELL_PLAN.md)
+- [Tauri Sidecar Windows 技术预览说明](docs/implementation/TAURI_SIDECAR_PREVIEW.md)
 - [MiMo Provider 技术验证清单](docs/validation/MIMO_PROVIDER_SPIKE.md)
 - [MiMo Provider Spike 当前状态](docs/validation/MIMO_PROVIDER_SPIKE_STATUS.md)
 - [默认模型真实基础流式探针证据](docs/validation/evidence/2026-06-09-mimo-v2.5-baseline.md)
@@ -60,5 +61,6 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 
 ## 当前开发阶段
 
-MiMo Provider 技术验证清单中的强制退出条件已经通过。当前工作重点是连接桌面界面、
-Tauri sidecar 和已验证的 Mimodex Runtime，形成首个可交互的本地 Agent 闭环。
+MiMo Provider 技术验证清单中的强制退出条件已经通过。桌面界面、Tauri sidecar 和
+Mimodex Runtime 已完成首轮代码接入，当前工作重点是通过 Windows Preview CI 产出
+首个可安装技术预览，并在真实 Windows 11 环境验收 Agent 闭环。
