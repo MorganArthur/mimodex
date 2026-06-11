@@ -1,9 +1,10 @@
 # 本地线程索引与恢复实现说明
 
-- 状态：首个可恢复线程索引切片已实现，等待 Windows Preview 权威构建
+- 状态：首个可恢复线程索引切片已通过 Windows Preview 权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src/threads.ts`、`packages/desktop-core/src/session-controller.ts`
 - 架构依据：`docs/architecture/decisions/ADR-0005-local-thread-persistence.md`
+- 权威构建：[Windows Preview #27342769848](https://github.com/MorganArthur/mimodex/actions/runs/27342769848)
 
 ## 1. 本阶段目标
 
@@ -70,5 +71,5 @@ Mimodex 自有只追加事实记录和 SQLite 查询投影。当前恢复依赖 
 - [x] 新建线程和切换项目清空旧 UI 投影；
 - [x] 启动时将未完成投影标记为已中断；
 - [x] React 与桌面会话测试通过；
-- [ ] Tauri Rust 后端格式检查与编译通过；
+- [x] Tauri Rust 后端格式检查与编译通过；
 - [ ] Windows 11 安装后完成创建、重启、恢复与继续对话验收。

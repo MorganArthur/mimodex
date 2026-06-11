@@ -1,13 +1,14 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：真实线程恢复版正在等待 Windows 技术预览权威构建
+- 状态：真实线程恢复版 Windows 技术预览已通过权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
 - 首次成功构建：[Windows Preview #27319183630](https://github.com/MorganArthur/mimodex/actions/runs/27319183630)
 - Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
 - 凭据设置构建：[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)
-- 当前可用构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
+- 项目管理构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
+- 当前可用构建：[Windows Preview #27342769848](https://github.com/MorganArthur/mimodex/actions/runs/27342769848)
 
 ## 1. 本阶段目标
 
@@ -65,6 +66,14 @@ Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。
 并通过 Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包
 大小为 `56.13 MiB`，SHA256 为
 `989B4D62A6F5888BB88293475C94D1C6E8CEC55EE63BFC5E019D5EFD48518E80`。
+
+当前线程恢复版 Artifact：
+[mimodex-windows-preview-d3b7671c7833fbf1074b35a537f31d1bd2c08a2d](https://github.com/MorganArthur/mimodex/actions/runs/27342769848/artifacts/7564072128)。
+该构建将演示最近线程替换为真实本地线程索引，支持按项目筛选、Runtime
+`thread/resume`、历史 UI 投影恢复、新建线程和继续对话，并通过 Tauri Rust 后端
+编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包大小为 `56.14 MiB`，
+SHA256 为
+`678A486A8C7CCAF9E25CE76E0B1870F1D730934B7C634C677B6EFACA8C39D331`。
 
 ## 4. 当前使用限制
 
