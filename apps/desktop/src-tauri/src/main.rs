@@ -92,8 +92,8 @@ fn main() {
 }
 
 fn initialize_credential_store() -> Result<(), String> {
-    let store = windows_native_keyring_store::Store::new()
-        .map_err(|_| credential_error("初始化"))?;
+    let store =
+        windows_native_keyring_store::Store::new().map_err(|_| credential_error("初始化"))?;
     keyring_core::set_default_store(store);
     Ok(())
 }
