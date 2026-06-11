@@ -1,11 +1,12 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：Runtime IPC 修复版 Windows 技术预览已通过权威构建
+- 状态：应用内安全凭据设置版 Windows 技术预览已通过权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
 - 首次成功构建：[Windows Preview #27319183630](https://github.com/MorganArthur/mimodex/actions/runs/27319183630)
-- 当前可用构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
+- Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
+- 当前可用构建：[Windows Preview #27327273086](https://github.com/MorganArthur/mimodex/actions/runs/27327273086)
 
 ## 1. 本阶段目标
 
@@ -49,6 +50,13 @@ Rust 工具链、Cargo 缓存、Codex 源码、测试产物和调试符号不会
 该构建已通过 Runtime `initialize` 握手、NSIS 打包与独立 SHA256 校验；安装包大小
 为 `55.98 MiB`，SHA256 为
 `3B3EC46CC40F146DC057E82ECB03A1F55A4C48FF176EAEE6BF03CAE1CEC3C0B8`。
+
+当前凭据设置版 Artifact：
+[mimodex-windows-preview-1548820e6fefbbbd03687ce24513e584c8533b58](https://github.com/MorganArthur/mimodex/actions/runs/27327273086/artifacts/7557107931)。
+该构建增加首次设置、Windows 凭据管理器安全存储、替换与删除凭据功能，并通过
+Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包大小为
+`56.01 MiB`，SHA256 为
+`89C82F3310B2527C06912C664E9C9F37C7935EDCC51E392FE5889436841B7FD2`。
 
 ## 4. 当前使用限制
 

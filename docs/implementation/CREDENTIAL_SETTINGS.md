@@ -1,6 +1,6 @@
 # MiMo 凭据设置与安全存储
 
-- 状态：已实现，等待 Windows 安装包验收
+- 状态：已实现并通过 Windows CI，等待真实安装验收
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri/src/main.rs`、`apps/desktop/src/credentials.ts`、
   `apps/desktop/src/DesktopRoot.tsx`
@@ -61,6 +61,14 @@ Windows 凭据条目使用：
 - [x] 前端无法读取保存后的明文 Key；
 - [x] 首次设置、替换与删除流程具备交互测试；
 - [x] 浏览器演示环境中的设置弹窗通过人工检查；
-- [ ] Windows CI 编译通过；
+- [x] Windows CI 编译通过；
 - [ ] 真实 Windows 凭据管理器保存、重启加载和删除通过；
 - [ ] 使用安全存储凭据完成一次真实 MiMo 任务。
+
+Windows CI 构建：
+[Windows Preview #27327273086](https://github.com/MorganArthur/mimodex/actions/runs/27327273086)。
+对应 Artifact：
+[mimodex-windows-preview-1548820e6fefbbbd03687ce24513e584c8533b58](https://github.com/MorganArthur/mimodex/actions/runs/27327273086/artifacts/7557107931)。
+
+安装包大小为 `56.01 MiB`，SHA256 为
+`89C82F3310B2527C06912C664E9C9F37C7935EDCC51E392FE5889436841B7FD2`。
