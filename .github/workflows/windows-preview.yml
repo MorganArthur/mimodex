@@ -102,8 +102,16 @@ jobs:
         shell: pwsh
         run: |
           $binaries = New-Item -ItemType Directory -Force -Path "./apps/desktop/src-tauri/binaries"
+          $resources = New-Item -ItemType Directory -Force `
+            -Path (Join-Path $binaries.FullName "codex-resources")
           New-Item -ItemType File -Force `
             -Path (Join-Path $binaries.FullName "mimodex-runtime-${{ env.RUNTIME_TARGET }}.exe") |
+            Out-Null
+          New-Item -ItemType File -Force `
+            -Path (Join-Path $resources.FullName "codex-command-runner.exe") |
+            Out-Null
+          New-Item -ItemType File -Force `
+            -Path (Join-Path $resources.FullName "codex-windows-sandbox-setup.exe") |
             Out-Null
 
       - name: Check Tauri Rust backend
