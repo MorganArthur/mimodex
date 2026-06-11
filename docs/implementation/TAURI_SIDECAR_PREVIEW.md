@@ -1,6 +1,6 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：SQLite 线程账本版正在等待 Windows 技术预览权威构建
+- 状态：SQLite 线程账本版 Windows 技术预览已通过权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
@@ -8,7 +8,7 @@
 - Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
 - 凭据设置构建：[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)
 - 项目管理构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
-- 当前可用构建：[Windows Preview #27342769848](https://github.com/MorganArthur/mimodex/actions/runs/27342769848)
+- 当前可用构建：[Windows Preview #27353878773](https://github.com/MorganArthur/mimodex/actions/runs/27353878773)
 
 ## 1. 本阶段目标
 
@@ -75,11 +75,20 @@ Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。
 SHA256 为
 `678A486A8C7CCAF9E25CE76E0B1870F1D730934B7C634C677B6EFACA8C39D331`。
 
+当前 SQLite 线程账本版 Artifact：
+[mimodex-windows-preview-7c4f68d13950d95a9b85b2e244eadcd2b32e941d](https://github.com/MorganArthur/mimodex/actions/runs/27353878773/artifacts/7569045083)。
+该构建将线程索引迁移为 bundled SQLite 事件账本与查询投影，支持旧 JSON 一次性导入、
+崩溃恢复、Runtime 归档与恢复归档、本地索引移除，并通过新增的 Tauri Rust SQLite
+单测、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包大小为 `56.88 MiB`，
+SHA256 为
+`3CE761AAA61AFB30487310223C87127698A70E15B904CDC8A5586F8EAE3A549C`。
+
 ## 4. 当前使用限制
 
 - 首个安装包用于验证真实 Runtime 连接、线程、轮次、审批、中断和文件修改闭环；
 - Runtime IPC 修复版仍需通过应用内凭据设置与 Windows 凭据管理器的真实安装验收；
 - 真实项目管理版新增文件夹选择、项目持久化、Git 摘要和项目切换，仍需完成安装验收；
+- SQLite 线程账本版仍需在真实安装环境验证旧 JSON 导入、归档、恢复归档和本地索引移除；
 - 尚未提供连接诊断、自定义 API Base URL 和正式代码签名；
 - CI 会执行 Runtime `initialize` 握手，但正式发布前仍需执行真实 Windows 11 安装、
   启动、Agent 闭环和卸载验收。

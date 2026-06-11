@@ -1,6 +1,6 @@
 # SQLite 线程事件账本与查询投影
 
-- 状态：首个 SQLite 账本切片已实现，等待 Windows Preview 权威构建
+- 状态：首个 SQLite 账本切片已通过 Windows Preview 权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri/src/main.rs`
 - 架构依据：`docs/architecture/decisions/ADR-0005-local-thread-persistence.md`
@@ -87,5 +87,5 @@ SQLite `thread_events` 当前记录桌面投影快照和生命周期事件，尚
 - [x] 归档与恢复归档联动 Runtime 权威线程；
 - [x] 本地索引移除明确保留 Runtime 归档历史；
 - [x] React、桌面会话和 Runtime 客户端测试通过；
-- [ ] Windows CI 执行 Tauri Rust SQLite 单测并通过；
+- [x] Windows CI 执行 Tauri Rust SQLite 单测并通过；
 - [ ] Windows 11 安装后完成 JSON 迁移、归档与恢复验收。
