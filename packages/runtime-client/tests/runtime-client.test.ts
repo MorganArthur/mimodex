@@ -53,6 +53,8 @@ test("Mimodex Runtime 客户端完成握手并调用首批 thread/turn API", asy
   });
   await client.interruptTurn({ threadId: "thread-1", turnId: "turn-1" });
   await client.resumeThread({ threadId: "thread-1" });
+  await client.archiveThread({ threadId: "thread-1" });
+  await client.unarchiveThread({ threadId: "thread-1" });
 
   assert.equal(initialized.platformOs, "windows");
   assert.deepEqual(methods, [
@@ -62,6 +64,8 @@ test("Mimodex Runtime 客户端完成握手并调用首批 thread/turn API", asy
     "turn/start",
     "turn/interrupt",
     "thread/resume",
+    "thread/archive",
+    "thread/unarchive",
   ]);
   const initialize = JSON.parse(transport.writes[0] ?? "");
   assert.equal(initialize.params.clientInfo.name, "mimodex_desktop");

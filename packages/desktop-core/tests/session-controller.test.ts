@@ -188,3 +188,15 @@ test("新建线程会清空当前投影但保留项目上下文", async () => {
   assert.equal(session.getSnapshot().projectPath, "D:\\project");
   assert.deepEqual(session.getSnapshot().timeline, []);
 });
+
+test("归档与恢复归档会调用 Runtime 权威线程 API", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  await session.connect();
+
+  await session.setThreadArchived("thread-history", true);
+  await session.setThreadArchived("thread-history", false);
+
+  assert.deepEqual(runtime.threadArchives, [{ threadId: "thread-history" }]);
+  assert.deepEqual(runtime.threadUnarchives, [{ threadId: "thread-history" }]);
+});

@@ -75,32 +75,38 @@ export function DesktopRoot({
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
+    const persistSnapshot = () => {
+      const state = session.getSnapshot();
+      const project = projectState.projects.find((candidate) =>
+        sameProjectPath(candidate.path, state.projectPath),
+      );
+      if (!state.threadId || !project) {
+        return;
+      }
+      void threadService
+        .upsert(threadRecordFromSession(state, project.id))
+        .then((nextState) => {
+          if (!disposed) {
+            setThreadState(nextState);
+            setThreadError(null);
+          }
+        })
+        .catch((error) => {
+          if (!disposed) {
+            setThreadError(errorMessage(error));
+          }
+        });
+    };
     const persist = () => {
       if (timer) {
         clearTimeout(timer);
+        timer = undefined;
       }
-      timer = setTimeout(() => {
-        const state = session.getSnapshot();
-        const project = projectState.projects.find((candidate) =>
-          sameProjectPath(candidate.path, state.projectPath),
-        );
-        if (!state.threadId || !project) {
-          return;
-        }
-        void threadService
-          .upsert(threadRecordFromSession(state, project.id))
-          .then((nextState) => {
-            if (!disposed) {
-              setThreadState(nextState);
-              setThreadError(null);
-            }
-          })
-          .catch((error) => {
-            if (!disposed) {
-              setThreadError(errorMessage(error));
-            }
-          });
-      }, 250);
+      if (session.getSnapshot().turnStatus !== "inProgress") {
+        persistSnapshot();
+        return;
+      }
+      timer = setTimeout(persistSnapshot, 1_000);
     };
     const unsubscribe = session.subscribe(persist);
     persist();
@@ -212,6 +218,51 @@ export function DesktopRoot({
     }
   };
 
+  const setThreadArchived = async (threadId: string, archived: boolean) => {
+    if (!session || !threadState) {
+      return;
+    }
+    setThreadBusy(true);
+    setThreadError(null);
+    try {
+      await session.setThreadArchived(threadId, archived);
+      if (session.getSnapshot().threadId === threadId) {
+        const project =
+          projectState?.projects.find(
+            (candidate) => candidate.id === projectState.selectedProjectId,
+          ) ?? null;
+        session.newThread(project?.path ?? null);
+      }
+      setThreadState(await threadService.setArchived(threadId, archived));
+    } catch (error) {
+      setThreadError(errorMessage(error));
+    } finally {
+      setThreadBusy(false);
+    }
+  };
+
+  const deleteThread = async (threadId: string) => {
+    if (!session || !threadState) {
+      return;
+    }
+    setThreadBusy(true);
+    setThreadError(null);
+    try {
+      if (session.getSnapshot().threadId === threadId) {
+        const project =
+          projectState?.projects.find(
+            (candidate) => candidate.id === projectState.selectedProjectId,
+          ) ?? null;
+        session.newThread(project?.path ?? null);
+      }
+      setThreadState(await threadService.delete(threadId));
+    } catch (error) {
+      setThreadError(errorMessage(error));
+    } finally {
+      setThreadBusy(false);
+    }
+  };
+
   const refreshProject = async () => {
     if (!projectState?.selectedProjectId) {
       return;
@@ -243,19 +294,25 @@ export function DesktopRoot({
   const currentProject =
     projectState.projects.find((project) => project.id === projectState.selectedProjectId) ?? null;
   const projectThreads = currentProject
-    ? threadState.threads.filter((thread) => thread.projectId === currentProject.id)
+    ? threadState.threads.filter((thread) => thread.projectId === currentProject.id && !thread.archived)
+    : [];
+  const archivedThreads = currentProject
+    ? threadState.threads.filter((thread) => thread.projectId === currentProject.id && thread.archived)
     : [];
 
   return (
     <>
       <App
+        archivedThreads={archivedThreads}
         currentProject={currentProject}
         onAddProject={addProject}
+        onDeleteThread={deleteThread}
         onNewThread={newThread}
         onOpenSettings={() => setSettingsOpen(true)}
         onRefreshProject={refreshProject}
         onSelectProject={selectProject}
         onSelectThread={selectThread}
+        onSetThreadArchived={setThreadArchived}
         projectBusy={projectBusy}
         projectError={projectError}
         projects={projectState.projects}
@@ -294,6 +351,7 @@ function threadRecordFromSession(state: SessionState, projectId: string): Thread
     diff: state.diff.slice(-100_000),
     createdAt: now,
     updatedAt: now,
+    archived: false,
   };
 }
 

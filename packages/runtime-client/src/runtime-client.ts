@@ -4,10 +4,14 @@ import type {
   InitializeResponse,
   ServerNotification,
   ServerRequest,
+  ThreadArchiveParams,
+  ThreadArchiveResponse,
   ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
+  ThreadUnarchiveParams,
+  ThreadUnarchiveResponse,
   TurnInterruptParams,
   TurnInterruptResponse,
   TurnStartParams,
@@ -65,6 +69,14 @@ export class MimodexRuntimeClient {
 
   resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
     return this.#request("thread/resume", params);
+  }
+
+  archiveThread(params: ThreadArchiveParams): Promise<ThreadArchiveResponse> {
+    return this.#request("thread/archive", params);
+  }
+
+  unarchiveThread(params: ThreadUnarchiveParams): Promise<ThreadUnarchiveResponse> {
+    return this.#request("thread/unarchive", params);
   }
 
   startTurn(params: TurnStartParams): Promise<TurnStartResponse> {

@@ -5,10 +5,14 @@ import type {
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
+  ThreadArchiveParams,
+  ThreadArchiveResponse,
   ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
+  ThreadUnarchiveParams,
+  ThreadUnarchiveResponse,
   TurnInterruptParams,
   TurnInterruptResponse,
   TurnStartParams,
@@ -81,9 +85,11 @@ export type ResumeThreadInput = {
 
 export interface RuntimeClientPort {
   initialize(): Promise<InitializeResponse>;
+  archiveThread(params: ThreadArchiveParams): Promise<ThreadArchiveResponse>;
   resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse>;
   startThread(params: ThreadStartParams): Promise<ThreadStartResponse>;
   startTurn(params: TurnStartParams): Promise<TurnStartResponse>;
+  unarchiveThread(params: ThreadUnarchiveParams): Promise<ThreadUnarchiveResponse>;
   interruptTurn(params: TurnInterruptParams): Promise<TurnInterruptResponse>;
   onNotification(listener: (notification: ServerNotification) => void): () => void;
   onServerRequest(listener: (request: ServerRequest) => void): () => void;
@@ -247,6 +253,20 @@ export class DesktopSessionController {
       diff: input.diff,
       error: null,
     });
+  }
+
+  async setThreadArchived(threadId: string, archived: boolean): Promise<void> {
+    if (this.#state.connection !== "ready") {
+      throw new Error("Runtime 尚未连接");
+    }
+    if (this.#state.turnStatus === "inProgress") {
+      throw new Error("已有任务正在执行");
+    }
+    if (archived) {
+      await this.#runtime.archiveThread({ threadId });
+    } else {
+      await this.#runtime.unarchiveThread({ threadId });
+    }
   }
 
   async stop(): Promise<void> {

@@ -92,6 +92,18 @@ export type ThreadResumeParams = {
 
 export type ThreadResumeResponse = ThreadStartResponse;
 
+export type ThreadArchiveParams = {
+  threadId: string;
+};
+
+export type ThreadArchiveResponse = JsonObject;
+
+export type ThreadUnarchiveParams = {
+  threadId: string;
+};
+
+export type ThreadUnarchiveResponse = JsonObject;
+
 export type TextUserInput = {
   type: "text";
   text: string;

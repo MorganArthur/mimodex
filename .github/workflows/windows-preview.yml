@@ -120,6 +120,12 @@ jobs:
           --manifest-path ./apps/desktop/src-tauri/Cargo.toml
           --target ${{ env.RUNTIME_TARGET }}
 
+      - name: Test Tauri Rust persistence
+        run: >
+          cargo test
+          --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+          --target ${{ env.RUNTIME_TARGET }}
+
       - name: Build Mimodex Runtime sidecar
         working-directory: runtime-worktree/upstream/codex-rs
         run: >

@@ -5,10 +5,14 @@ import type {
   RequestId,
   ServerNotification,
   ServerRequest,
+  ThreadArchiveParams,
+  ThreadArchiveResponse,
   ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
+  ThreadUnarchiveParams,
+  ThreadUnarchiveResponse,
   TurnInterruptParams,
   TurnInterruptResponse,
   TurnStartParams,
@@ -19,6 +23,8 @@ import type { RuntimeClientPort } from "../src/index.js";
 export class FakeRuntimeClient implements RuntimeClientPort {
   readonly threadStarts: ThreadStartParams[] = [];
   readonly threadResumes: ThreadResumeParams[] = [];
+  readonly threadArchives: ThreadArchiveParams[] = [];
+  readonly threadUnarchives: ThreadUnarchiveParams[] = [];
   readonly turnStarts: TurnStartParams[] = [];
   readonly interrupts: TurnInterruptParams[] = [];
   readonly responses: Array<{ id: RequestId; result: JsonValue | undefined }> = [];
@@ -56,6 +62,16 @@ export class FakeRuntimeClient implements RuntimeClientPort {
       modelProvider: "mimo",
       cwd: "D:\\project",
     };
+  }
+
+  async archiveThread(params: ThreadArchiveParams): Promise<ThreadArchiveResponse> {
+    this.threadArchives.push(params);
+    return {};
+  }
+
+  async unarchiveThread(params: ThreadUnarchiveParams): Promise<ThreadUnarchiveResponse> {
+    this.threadUnarchives.push(params);
+    return {};
   }
 
   async startTurn(params: TurnStartParams): Promise<TurnStartResponse> {

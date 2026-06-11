@@ -396,6 +396,61 @@ button {
   text-align: left;
 }
 
+.thread-list-item {
+  position: relative;
+}
+
+.thread-list-item:hover .thread-row,
+.thread-list-item:focus-within .thread-row {
+  padding-right: 48px;
+  background: #292e28;
+}
+
+.thread-actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: none;
+  gap: 3px;
+  transform: translateY(-50%);
+}
+
+.thread-list-item:hover .thread-actions,
+.thread-list-item:focus-within .thread-actions {
+  display: flex;
+}
+
+.thread-actions button {
+  padding: 4px 5px;
+  color: #b9c0b5;
+  background: #353b33;
+  border: 1px solid #474f44;
+  border-radius: 5px;
+  font-size: 8px;
+}
+
+.thread-actions button.delete-thread {
+  color: #e9a39b;
+}
+
+.archived-threads {
+  margin-top: 12px;
+  padding-top: 9px;
+  border-top: 1px solid #353a34;
+}
+
+.archived-threads summary {
+  padding: 0 9px 6px;
+  color: #8d958a;
+  cursor: pointer;
+  font-size: 9px;
+  list-style: none;
+}
+
+.archived-threads .thread-row {
+  opacity: 0.65;
+}
+
 .project-row.active,
 .thread-row.active {
   background: #292e28;

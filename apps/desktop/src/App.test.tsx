@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DesktopSessionController } from "@mimodex/desktop-core";
 import type {
@@ -10,10 +10,14 @@ import type {
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
+  ThreadArchiveParams,
+  ThreadArchiveResponse,
   ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
+  ThreadUnarchiveParams,
+  ThreadUnarchiveResponse,
   TurnInterruptParams,
   TurnInterruptResponse,
   TurnStartParams,
@@ -26,7 +30,10 @@ import type { CredentialService, CredentialStatus } from "./credentials.js";
 import type { ProjectService, ProjectState, ProjectSummary } from "./projects.js";
 import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("Mimodex 桌面壳", () => {
   it("默认展示 mimo-v2.5，并将 Pro 放入高级模型选择", async () => {
@@ -186,10 +193,39 @@ describe("Mimodex 桌面壳", () => {
     );
 
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
-    await user.click(screen.getByRole("button", { name: /修复历史测试/ }));
+    await user.click(screen.getByTitle("修复历史测试"));
 
     await waitFor(() => expect(runtime.threadResumes).toEqual([{ threadId: "thread-history" }]));
     expect(await screen.findByText("已恢复的历史回复")).toBeTruthy();
+  });
+
+  it("可以归档、恢复并永久删除线程记录", async () => {
+    const runtime = new UiRuntime();
+    const threads = new FakeThreadService([fixtureThread()]);
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtime)}
+        projectService={new FakeProjectService()}
+        threadService={threads}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "归档线程 修复历史测试" }));
+    expect(await screen.findByText("已归档线程 · 1")).toBeTruthy();
+
+    await user.click(screen.getByText("已归档线程 · 1"));
+    await user.click(screen.getByRole("button", { name: "恢复线程 修复历史测试" }));
+    expect(await screen.findByRole("button", { name: "归档线程 修复历史测试" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "归档线程 修复历史测试" }));
+    await user.click(screen.getByText("已归档线程 · 1"));
+    await user.click(screen.getByRole("button", { name: "移除本地线程索引 修复历史测试" }));
+
+    await waitFor(() => expect(threads.deletedIds).toEqual(["thread-history"]));
+    expect(confirm).toHaveBeenCalledOnce();
   });
 });
 
@@ -200,12 +236,15 @@ function renderApp(
 ) {
   return render(
     <App
+      archivedThreads={[]}
       currentProject={currentProject}
       onAddProject={() => undefined}
+      onDeleteThread={() => undefined}
       onNewThread={() => undefined}
       onRefreshProject={() => undefined}
       onSelectProject={() => undefined}
       onSelectThread={() => undefined}
+      onSetThreadArchived={() => undefined}
       projectBusy={false}
       projectError={null}
       projects={projects}
@@ -254,6 +293,14 @@ class UiRuntime implements RuntimeClientPort {
       modelProvider: "mimo",
       cwd: "D:\\projects\\fixture",
     };
+  }
+
+  async archiveThread(_params: ThreadArchiveParams): Promise<ThreadArchiveResponse> {
+    return {};
+  }
+
+  async unarchiveThread(_params: ThreadUnarchiveParams): Promise<ThreadUnarchiveResponse> {
+    return {};
   }
 
   async startTurn(params: TurnStartParams): Promise<TurnStartResponse> {
@@ -364,6 +411,7 @@ class FakeProjectService implements ProjectService {
 }
 
 class FakeThreadService implements ThreadService {
+  readonly deletedIds: string[] = [];
   #state: ThreadState;
 
   constructor(threads: ThreadRecord[] = []) {
@@ -384,6 +432,25 @@ class FakeThreadService implements ThreadService {
 
   async select(threadId: string | null): Promise<ThreadState> {
     this.#state = { ...this.#state, selectedThreadId: threadId };
+    return this.#state;
+  }
+
+  async setArchived(threadId: string, archived: boolean): Promise<ThreadState> {
+    this.#state = {
+      ...this.#state,
+      threads: this.#state.threads.map((thread) =>
+        thread.id === threadId ? { ...thread, archived } : thread,
+      ),
+    };
+    return this.#state;
+  }
+
+  async delete(threadId: string): Promise<ThreadState> {
+    this.deletedIds.push(threadId);
+    this.#state = {
+      ...this.#state,
+      threads: this.#state.threads.filter((thread) => thread.id !== threadId),
+    };
     return this.#state;
   }
 }
@@ -439,5 +506,6 @@ function fixtureThread(): ThreadRecord {
     diff: "",
     createdAt: 1,
     updatedAt: 2,
+    archived: false,
   };
 }

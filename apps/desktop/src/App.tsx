@@ -11,13 +11,16 @@ import type { ProjectSummary } from "./projects.js";
 import type { ThreadRecord } from "./threads.js";
 
 export type AppProps = {
+  archivedThreads: ThreadRecord[];
   currentProject: ProjectSummary | null;
   onAddProject: () => void | Promise<void>;
+  onDeleteThread: (threadId: string) => void | Promise<void>;
   onNewThread: () => void | Promise<void>;
   onOpenSettings?: () => void;
   onRefreshProject: () => void | Promise<void>;
   onSelectProject: (projectId: string) => void | Promise<void>;
   onSelectThread: (threadId: string) => void | Promise<void>;
+  onSetThreadArchived: (threadId: string, archived: boolean) => void | Promise<void>;
   projectBusy: boolean;
   projectError: string | null;
   projects: ProjectSummary[];
@@ -46,13 +49,16 @@ const entryLabels: Record<TimelineEntry["kind"], string> = {
 };
 
 export function App({
+  archivedThreads,
   currentProject,
   onAddProject,
+  onDeleteThread,
   onNewThread,
   onOpenSettings = () => undefined,
   onRefreshProject,
   onSelectProject,
   onSelectThread,
+  onSetThreadArchived,
   projectBusy,
   projectError,
   projects,
@@ -169,8 +175,8 @@ export function App({
             <p className="empty-threads">这个项目还没有线程。</p>
           ) : (
             threads.map((thread) => (
-              <button
-                className={`thread-row ${thread.id === state.threadId ? "active" : ""}`}
+              <ThreadRow
+                active={thread.id === state.threadId}
                 disabled={
                   projectBusy ||
                   threadBusy ||
@@ -178,17 +184,34 @@ export function App({
                   !currentProject?.available
                 }
                 key={thread.id}
-                title={thread.title}
-                type="button"
-                onClick={() => void onSelectThread(thread.id)}
-              >
-                <span className={`thread-state ${threadStatusClass(thread.turnStatus)}`} />
-                <div>
-                  <strong>{thread.title}</strong>
-                  <span>{threadSubtitle(thread)}</span>
-                </div>
-              </button>
+                onArchive={() => void onSetThreadArchived(thread.id, true)}
+                onSelect={() => void onSelectThread(thread.id)}
+                thread={thread}
+              />
             ))
+          )}
+          {archivedThreads.length > 0 && (
+            <details className="archived-threads">
+              <summary>已归档线程 · {archivedThreads.length}</summary>
+              {archivedThreads.map((thread) => (
+                <ThreadRow
+                  archived
+                  disabled={threadBusy || state.turnStatus === "inProgress"}
+                  key={thread.id}
+                  onDelete={() => {
+                    if (
+                      window.confirm(
+                        `移除线程“${thread.title}”的 Mimodex 本地索引？Runtime 归档历史仍会保留。`,
+                      )
+                    ) {
+                      void onDeleteThread(thread.id);
+                    }
+                  }}
+                  onRestore={() => void onSetThreadArchived(thread.id, false)}
+                  thread={thread}
+                />
+              ))}
+            </details>
           )}
           {threadError && <p className="sidebar-error">{threadError}</p>}
         </div>
@@ -442,6 +465,66 @@ function projectSummary(project: ProjectSummary): string {
 
 function threadStatusClass(status: ThreadRecord["turnStatus"]): string {
   return status === "inProgress" ? "running" : status;
+}
+
+function ThreadRow({
+  active = false,
+  archived = false,
+  disabled,
+  onArchive,
+  onDelete,
+  onRestore,
+  onSelect,
+  thread,
+}: {
+  active?: boolean;
+  archived?: boolean;
+  disabled: boolean;
+  onArchive?: () => void;
+  onDelete?: () => void;
+  onRestore?: () => void;
+  onSelect?: () => void;
+  thread: ThreadRecord;
+}) {
+  return (
+    <div className="thread-list-item">
+      <button
+        className={`thread-row ${active ? "active" : ""}`}
+        disabled={disabled || archived}
+        title={thread.title}
+        type="button"
+        onClick={onSelect}
+      >
+        <span className={`thread-state ${threadStatusClass(thread.turnStatus)}`} />
+        <div>
+          <strong>{thread.title}</strong>
+          <span>{threadSubtitle(thread)}</span>
+        </div>
+      </button>
+      <div className="thread-actions">
+        {archived ? (
+          <>
+            <button aria-label={`恢复线程 ${thread.title}`} disabled={disabled} type="button" onClick={onRestore}>
+              恢复
+            </button>
+            <button
+              aria-label={`移除本地线程索引 ${thread.title}`}
+              className="delete-thread"
+              disabled={disabled}
+              type="button"
+              onClick={onDelete}
+            >
+              移除
+            </button>
+          </>
+        ) : (
+          <button aria-label={`归档线程 ${thread.title}`} disabled={disabled} type="button" onClick={onArchive}>
+            归档
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function threadSubtitle(thread: ThreadRecord): string {

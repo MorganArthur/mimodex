@@ -1,6 +1,6 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：真实线程恢复版 Windows 技术预览已通过权威构建
+- 状态：SQLite 线程账本版正在等待 Windows 技术预览权威构建
 - 最后更新：2026-06-11
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
@@ -86,7 +86,7 @@ SHA256 为
 
 ## 5. 下一阶段
 
-1. 在真实 Windows 11 环境验证创建线程、重启恢复和继续对话；
-2. 实现 ADR-0005 的只追加事件账本与 SQLite 投影；
+1. 在真实 Windows 11 环境验证旧 JSON 迁移、归档、恢复归档和本地索引移除；
+2. 将全部有序 Runtime 原始事件直接写入账本，并从事件重建桌面投影；
 3. 增加连接诊断与自定义 API Base URL；
 4. 为签名发布工作流补齐安装、启动和卸载冒烟测试。

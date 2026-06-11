@@ -19,6 +19,7 @@ export type ThreadRecord = {
   diff: string;
   createdAt: number;
   updatedAt: number;
+  archived: boolean;
 };
 
 export type ThreadState = {
@@ -30,6 +31,8 @@ export interface ThreadService {
   list(): Promise<ThreadState>;
   upsert(thread: ThreadRecord): Promise<ThreadState>;
   select(threadId: string | null): Promise<ThreadState>;
+  setArchived(threadId: string, archived: boolean): Promise<ThreadState>;
+  delete(threadId: string): Promise<ThreadState>;
 }
 
 export function createThreadService(): ThreadService {
@@ -47,6 +50,14 @@ class TauriThreadService implements ThreadService {
 
   select(threadId: string | null): Promise<ThreadState> {
     return invoke("select_thread", { threadId });
+  }
+
+  setArchived(threadId: string, archived: boolean): Promise<ThreadState> {
+    return invoke("set_thread_archived", { threadId, archived });
+  }
+
+  delete(threadId: string): Promise<ThreadState> {
+    return invoke("delete_thread", { threadId });
   }
 }
 
@@ -86,6 +97,25 @@ class DemoThreadService implements ThreadService {
     };
     return this.#state;
   }
+
+  async setArchived(threadId: string, archived: boolean): Promise<ThreadState> {
+    this.#state = {
+      threads: this.#state.threads.map((thread) =>
+        thread.id === threadId ? { ...thread, archived, updatedAt: Date.now() } : thread,
+      ),
+      selectedThreadId:
+        archived && this.#state.selectedThreadId === threadId ? null : this.#state.selectedThreadId,
+    };
+    return this.#state;
+  }
+
+  async delete(threadId: string): Promise<ThreadState> {
+    this.#state = {
+      threads: this.#state.threads.filter((thread) => thread.id !== threadId),
+      selectedThreadId: this.#state.selectedThreadId === threadId ? null : this.#state.selectedThreadId,
+    };
+    return this.#state;
+  }
 }
 
 function demoThread(id: string, title: string, updatedAt: number): ThreadRecord {
@@ -116,5 +146,6 @@ function demoThread(id: string, title: string, updatedAt: number): ThreadRecord 
     diff: "",
     createdAt: updatedAt,
     updatedAt,
+    archived: false,
   };
 }

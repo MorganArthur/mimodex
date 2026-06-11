@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use keyring_core::{Entry, Error as KeyringError};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,11 +82,13 @@ struct ThreadRecord {
     diff: String,
     created_at: u64,
     updated_at: u64,
+    #[serde(default)]
+    archived: bool,
 }
 
 #[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ThreadStore {
+struct LegacyThreadStore {
     threads: Vec<ThreadRecord>,
     selected_thread_id: Option<String>,
 }
@@ -214,58 +217,103 @@ fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectState, S
 
 #[tauri::command]
 fn list_threads(app: AppHandle) -> Result<ThreadState, String> {
-    let mut store = load_thread_store(&app)?;
-    let mut changed = false;
-    for thread in &mut store.threads {
-        if thread.turn_status == "inProgress" {
-            thread.turn_status = "interrupted".to_string();
-            thread.updated_at = unix_timestamp_ms();
-            changed = true;
-        }
-    }
-    sort_threads(&mut store.threads);
-    if changed {
-        save_thread_store(&app, &store)?;
-    }
-    Ok(thread_state(store))
+    let mut connection = open_thread_database(&app)?;
+    import_legacy_threads(&app, &mut connection)?;
+    recover_interrupted_threads(&mut connection)?;
+    load_thread_state(&connection)
 }
 
 #[tauri::command]
-fn upsert_thread(app: AppHandle, mut thread: ThreadRecord) -> Result<ThreadState, String> {
+fn upsert_thread(app: AppHandle, thread: ThreadRecord) -> Result<ThreadState, String> {
     validate_thread(&thread)?;
-    let mut store = load_thread_store(&app)?;
-    let selected_thread_id = thread.id.clone();
-    if let Some(existing) = store
-        .threads
-        .iter_mut()
-        .find(|candidate| candidate.id == thread.id)
-    {
-        thread.created_at = existing.created_at;
-        *existing = thread;
-    } else {
-        store.threads.push(thread);
-    }
-    store.selected_thread_id = Some(selected_thread_id);
-    sort_threads(&mut store.threads);
-    save_thread_store(&app, &store)?;
-    Ok(thread_state(store))
+    let mut connection = open_thread_database(&app)?;
+    import_legacy_threads(&app, &mut connection)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| thread_database_error("开始写入事务"))?;
+    record_thread_projection(&transaction, &thread, "threadProjectionRecorded")?;
+    set_app_state(&transaction, "selectedThreadId", Some(&thread.id))?;
+    transaction
+        .commit()
+        .map_err(|_| thread_database_error("提交写入事务"))?;
+    load_thread_state(&connection)
 }
 
 #[tauri::command]
 fn select_thread(app: AppHandle, thread_id: Option<String>) -> Result<ThreadState, String> {
-    let mut store = load_thread_store(&app)?;
+    let connection = open_thread_database(&app)?;
     if let Some(id) = &thread_id {
-        let thread = store
-            .threads
-            .iter_mut()
-            .find(|thread| &thread.id == id)
-            .ok_or_else(|| "线程记录不存在。".to_string())?;
-        thread.updated_at = unix_timestamp_ms();
+        let exists = connection
+            .query_row(
+                "SELECT 1 FROM threads WHERE id = ?1",
+                [id],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(|_| thread_database_error("查询线程"))?
+            .is_some();
+        if !exists {
+            return Err("线程记录不存在。".to_string());
+        }
     }
-    store.selected_thread_id = thread_id;
-    sort_threads(&mut store.threads);
-    save_thread_store(&app, &store)?;
-    Ok(thread_state(store))
+    set_app_state(&connection, "selectedThreadId", thread_id.as_deref())?;
+    load_thread_state(&connection)
+}
+
+#[tauri::command]
+fn set_thread_archived(
+    app: AppHandle,
+    thread_id: String,
+    archived: bool,
+) -> Result<ThreadState, String> {
+    let mut connection = open_thread_database(&app)?;
+    let mut thread = load_thread(&connection, &thread_id)?
+        .ok_or_else(|| "线程记录不存在。".to_string())?;
+    thread.archived = archived;
+    thread.updated_at = unix_timestamp_ms();
+    let transaction = connection
+        .transaction()
+        .map_err(|_| thread_database_error("开始归档事务"))?;
+    record_thread_projection(
+        &transaction,
+        &thread,
+        if archived {
+            "threadArchived"
+        } else {
+            "threadUnarchived"
+        },
+    )?;
+    if archived && selected_thread_id(&transaction)?.as_deref() == Some(&thread_id) {
+        set_app_state(&transaction, "selectedThreadId", None)?;
+    }
+    transaction
+        .commit()
+        .map_err(|_| thread_database_error("提交归档事务"))?;
+    load_thread_state(&connection)
+}
+
+#[tauri::command]
+fn delete_thread(app: AppHandle, thread_id: String) -> Result<ThreadState, String> {
+    let mut connection = open_thread_database(&app)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| thread_database_error("开始删除事务"))?;
+    transaction
+        .execute("DELETE FROM thread_events WHERE thread_id = ?1", [&thread_id])
+        .map_err(|_| thread_database_error("删除线程事件"))?;
+    let deleted = transaction
+        .execute("DELETE FROM threads WHERE id = ?1", [&thread_id])
+        .map_err(|_| thread_database_error("删除线程投影"))?;
+    if deleted == 0 {
+        return Err("线程记录不存在。".to_string());
+    }
+    if selected_thread_id(&transaction)?.as_deref() == Some(&thread_id) {
+        set_app_state(&transaction, "selectedThreadId", None)?;
+    }
+    transaction
+        .commit()
+        .map_err(|_| thread_database_error("提交删除事务"))?;
+    load_thread_state(&connection)
 }
 
 fn main() {
@@ -278,6 +326,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             add_project,
+            delete_thread,
             delete_mimo_credential,
             get_mimo_credential_status,
             list_projects,
@@ -286,6 +335,7 @@ fn main() {
             save_mimo_credential,
             select_project,
             select_thread,
+            set_thread_archived,
             upsert_thread
         ])
         .run(tauri::generate_context!())
@@ -296,13 +346,6 @@ fn project_state(store: ProjectStore) -> ProjectState {
     ProjectState {
         projects: store.projects,
         selected_project_id: store.selected_project_id,
-    }
-}
-
-fn thread_state(store: ThreadStore) -> ThreadState {
-    ThreadState {
-        threads: store.threads,
-        selected_thread_id: store.selected_thread_id,
     }
 }
 
@@ -336,28 +379,318 @@ fn save_project_store(app: &AppHandle, store: &ProjectStore) -> Result<(), Strin
 fn thread_store_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
+        .map(|directory| directory.join("threads.sqlite3"))
+        .map_err(|_| "无法确定 Mimodex 应用数据目录。".to_string())
+}
+
+fn legacy_thread_store_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
         .map(|directory| directory.join("threads.json"))
         .map_err(|_| "无法确定 Mimodex 应用数据目录。".to_string())
 }
 
-fn load_thread_store(app: &AppHandle) -> Result<ThreadStore, String> {
-    let path = thread_store_path(app)?;
-    if !path.exists() {
-        return Ok(ThreadStore::default());
-    }
-    let contents = fs::read_to_string(path).map_err(|_| "无法读取线程记录。".to_string())?;
-    serde_json::from_str(&contents).map_err(|_| "线程记录格式无效。".to_string())
-}
-
-fn save_thread_store(app: &AppHandle, store: &ThreadStore) -> Result<(), String> {
+fn open_thread_database(app: &AppHandle) -> Result<Connection, String> {
     let path = thread_store_path(app)?;
     let directory = path
         .parent()
-        .ok_or_else(|| "线程记录路径无效。".to_string())?;
+        .ok_or_else(|| "线程数据库路径无效。".to_string())?;
     fs::create_dir_all(directory).map_err(|_| "无法创建 Mimodex 应用数据目录。".to_string())?;
-    let contents =
-        serde_json::to_string_pretty(store).map_err(|_| "无法序列化线程记录。".to_string())?;
-    fs::write(path, contents).map_err(|_| "无法保存线程记录。".to_string())
+    let connection = Connection::open(path).map_err(|_| thread_database_error("打开"))?;
+    migrate_thread_database(&connection)?;
+    Ok(connection)
+}
+
+fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = FULL;
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS thread_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                thread_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                occurred_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_thread_events_thread
+                ON thread_events(thread_id, sequence);
+            CREATE TABLE IF NOT EXISTS threads (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                title TEXT NOT NULL,
+                model TEXT NOT NULL,
+                sandbox TEXT NOT NULL,
+                turn_status TEXT NOT NULL,
+                timeline_json TEXT NOT NULL,
+                diff TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                archived INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_threads_project_updated
+                ON threads(project_id, archived, updated_at DESC);
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                VALUES (1, unixepoch('subsec') * 1000);
+            ",
+        )
+        .map_err(|_| thread_database_error("执行迁移"))?;
+    Ok(())
+}
+
+fn import_legacy_threads(app: &AppHandle, connection: &mut Connection) -> Result<(), String> {
+    if app_state(connection, "legacyThreadsJsonImported")?.as_deref() == Some("1") {
+        return Ok(());
+    }
+    let path = legacy_thread_store_path(app)?;
+    let legacy = if path.exists() {
+        let contents = fs::read_to_string(path).map_err(|_| "无法读取旧线程记录。".to_string())?;
+        serde_json::from_str::<LegacyThreadStore>(&contents)
+            .map_err(|_| "旧线程记录格式无效。".to_string())?
+    } else {
+        LegacyThreadStore::default()
+    };
+    let transaction = connection
+        .transaction()
+        .map_err(|_| thread_database_error("开始导入事务"))?;
+    for thread in legacy.threads {
+        validate_thread(&thread)?;
+        record_thread_projection(&transaction, &thread, "legacyThreadImported")?;
+    }
+    set_app_state(
+        &transaction,
+        "selectedThreadId",
+        legacy.selected_thread_id.as_deref(),
+    )?;
+    set_app_state(&transaction, "legacyThreadsJsonImported", Some("1"))?;
+    transaction
+        .commit()
+        .map_err(|_| thread_database_error("提交导入事务"))
+}
+
+fn recover_interrupted_threads(connection: &mut Connection) -> Result<(), String> {
+    let thread_ids = {
+        let mut statement = connection
+            .prepare("SELECT id FROM threads WHERE turn_status = 'inProgress'")
+            .map_err(|_| thread_database_error("准备崩溃恢复查询"))?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|_| thread_database_error("查询待恢复线程"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| thread_database_error("读取待恢复线程"))?
+    };
+    if thread_ids.is_empty() {
+        return Ok(());
+    }
+    let transaction = connection
+        .transaction()
+        .map_err(|_| thread_database_error("开始崩溃恢复事务"))?;
+    for thread_id in thread_ids {
+        let mut thread = load_thread(&transaction, &thread_id)?
+            .ok_or_else(|| "线程记录不存在。".to_string())?;
+        thread.turn_status = "interrupted".to_string();
+        thread.updated_at = unix_timestamp_ms();
+        record_thread_projection(&transaction, &thread, "threadInterruptedAfterRestart")?;
+    }
+    transaction
+        .commit()
+        .map_err(|_| thread_database_error("提交崩溃恢复事务"))
+}
+
+fn record_thread_projection(
+    transaction: &Transaction<'_>,
+    thread: &ThreadRecord,
+    event_type: &str,
+) -> Result<(), String> {
+    let stored_updated_at = transaction
+        .query_row(
+            "SELECT updated_at FROM threads WHERE id = ?1",
+            [&thread.id],
+            |row| row.get::<_, u64>(0),
+        )
+        .optional()
+        .map_err(|_| thread_database_error("检查线程投影版本"))?;
+    if stored_updated_at.is_some_and(|updated_at| updated_at > thread.updated_at) {
+        return Ok(());
+    }
+    let payload =
+        serde_json::to_string(thread).map_err(|_| "无法序列化线程事件。".to_string())?;
+    let duplicate = transaction
+        .query_row(
+            "
+            SELECT payload_json = ?2
+            FROM thread_events
+            WHERE thread_id = ?1 AND event_type = ?3
+            ORDER BY sequence DESC
+            LIMIT 1
+            ",
+            params![thread.id, payload, event_type],
+            |row| row.get::<_, bool>(0),
+        )
+        .optional()
+        .map_err(|_| thread_database_error("检查重复线程事件"))?
+        .unwrap_or(false);
+    if !duplicate {
+        transaction
+            .execute(
+                "
+                INSERT INTO thread_events(thread_id, event_type, payload_json, occurred_at)
+                VALUES (?1, ?2, ?3, ?4)
+                ",
+                params![thread.id, event_type, payload, unix_timestamp_ms()],
+            )
+            .map_err(|_| thread_database_error("追加线程事件"))?;
+    }
+    upsert_thread_projection(transaction, thread)
+}
+
+fn upsert_thread_projection(
+    connection: &Connection,
+    thread: &ThreadRecord,
+) -> Result<(), String> {
+    let timeline_json =
+        serde_json::to_string(&thread.timeline).map_err(|_| "无法序列化线程时间线。".to_string())?;
+    connection
+        .execute(
+            "
+            INSERT INTO threads(
+                id, project_id, project_path, title, model, sandbox, turn_status,
+                timeline_json, diff, created_at, updated_at, archived
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            ON CONFLICT(id) DO UPDATE SET
+                project_id = excluded.project_id,
+                project_path = excluded.project_path,
+                title = excluded.title,
+                model = excluded.model,
+                sandbox = excluded.sandbox,
+                turn_status = excluded.turn_status,
+                timeline_json = excluded.timeline_json,
+                diff = excluded.diff,
+                updated_at = excluded.updated_at,
+                archived = excluded.archived
+            ",
+            params![
+                thread.id,
+                thread.project_id,
+                thread.project_path,
+                thread.title,
+                thread.model,
+                thread.sandbox,
+                thread.turn_status,
+                timeline_json,
+                thread.diff,
+                thread.created_at,
+                thread.updated_at,
+                thread.archived
+            ],
+        )
+        .map_err(|_| thread_database_error("更新线程投影"))?;
+    Ok(())
+}
+
+fn load_thread_state(connection: &Connection) -> Result<ThreadState, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id, project_id, project_path, title, model, sandbox, turn_status,
+                   timeline_json, diff, created_at, updated_at, archived
+            FROM threads
+            ORDER BY archived ASC, updated_at DESC
+            ",
+        )
+        .map_err(|_| thread_database_error("准备线程列表查询"))?;
+    let threads = statement
+        .query_map([], thread_from_row)
+        .map_err(|_| thread_database_error("查询线程列表"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| thread_database_error("读取线程列表"))?;
+    Ok(ThreadState {
+        threads,
+        selected_thread_id: selected_thread_id(connection)?,
+    })
+}
+
+fn load_thread(connection: &Connection, thread_id: &str) -> Result<Option<ThreadRecord>, String> {
+    connection
+        .query_row(
+            "
+            SELECT id, project_id, project_path, title, model, sandbox, turn_status,
+                   timeline_json, diff, created_at, updated_at, archived
+            FROM threads WHERE id = ?1
+            ",
+            [thread_id],
+            thread_from_row,
+        )
+        .optional()
+        .map_err(|_| thread_database_error("读取线程"))
+}
+
+fn thread_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadRecord> {
+    let timeline_json: String = row.get(7)?;
+    let timeline = serde_json::from_str(&timeline_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            7,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })?;
+    Ok(ThreadRecord {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        project_path: row.get(2)?,
+        title: row.get(3)?,
+        model: row.get(4)?,
+        sandbox: row.get(5)?,
+        turn_status: row.get(6)?,
+        timeline,
+        diff: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+        archived: row.get(11)?,
+    })
+}
+
+fn set_app_state(connection: &Connection, key: &str, value: Option<&str>) -> Result<(), String> {
+    connection
+        .execute(
+            "
+            INSERT INTO app_state(key, value) VALUES (?1, ?2)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            ",
+            params![key, value],
+        )
+        .map_err(|_| thread_database_error("更新应用状态"))?;
+    Ok(())
+}
+
+fn app_state(connection: &Connection, key: &str) -> Result<Option<String>, String> {
+    connection
+        .query_row("SELECT value FROM app_state WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
+        .optional()
+        .map_err(|_| thread_database_error("读取应用状态"))
+        .map(Option::flatten)
+}
+
+fn selected_thread_id(connection: &Connection) -> Result<Option<String>, String> {
+    app_state(connection, "selectedThreadId")
+}
+
+fn thread_database_error(action: &str) -> String {
+    format!("{action}线程 SQLite 数据库失败。")
 }
 
 fn validate_thread(thread: &ThreadRecord) -> Result<(), String> {
@@ -494,10 +827,6 @@ fn sort_projects(projects: &mut [ProjectSummary]) {
     projects.sort_by(|left, right| right.last_opened_at.cmp(&left.last_opened_at));
 }
 
-fn sort_threads(threads: &mut [ThreadRecord]) {
-    threads.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
-}
-
 fn unix_timestamp_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -550,4 +879,107 @@ fn environment_api_key() -> Option<String> {
 
 fn credential_error(action: &str) -> String {
     format!("{action} Windows 凭据管理器中的 MiMo API Key 失败。")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thread_events_are_append_only_and_projection_is_queryable() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory SQLite");
+        migrate_thread_database(&connection).expect("migrate SQLite");
+        let mut thread = fixture_thread();
+
+        let transaction = connection.transaction().expect("begin transaction");
+        record_thread_projection(&transaction, &thread, "threadProjectionRecorded")
+            .expect("record first projection");
+        record_thread_projection(&transaction, &thread, "threadProjectionRecorded")
+            .expect("deduplicate identical projection");
+        transaction.commit().expect("commit first transaction");
+
+        thread.turn_status = "completed".to_string();
+        thread.updated_at += 1;
+        let transaction = connection.transaction().expect("begin second transaction");
+        record_thread_projection(&transaction, &thread, "threadProjectionRecorded")
+            .expect("record changed projection");
+        transaction.commit().expect("commit second transaction");
+
+        let event_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM thread_events", [], |row| row.get(0))
+            .expect("count events");
+        let stored = load_thread(&connection, &thread.id)
+            .expect("load projection")
+            .expect("thread exists");
+
+        assert_eq!(event_count, 2);
+        assert_eq!(stored.turn_status, "completed");
+        assert_eq!(stored.timeline[0].content, "修复测试");
+    }
+
+    #[test]
+    fn migration_is_idempotent() {
+        let connection = Connection::open_in_memory().expect("open in-memory SQLite");
+        migrate_thread_database(&connection).expect("first migration");
+        migrate_thread_database(&connection).expect("second migration");
+
+        let migration_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
+            .expect("count migrations");
+        assert_eq!(migration_count, 1);
+    }
+
+    #[test]
+    fn stale_projection_does_not_overwrite_newer_state_or_append_event() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory SQLite");
+        migrate_thread_database(&connection).expect("migrate SQLite");
+        let mut completed = fixture_thread();
+        completed.turn_status = "completed".to_string();
+        completed.updated_at = 2;
+
+        let transaction = connection.transaction().expect("begin first transaction");
+        record_thread_projection(&transaction, &completed, "threadProjectionRecorded")
+            .expect("record completed projection");
+        transaction.commit().expect("commit first transaction");
+
+        let stale = fixture_thread();
+        let transaction = connection.transaction().expect("begin stale transaction");
+        record_thread_projection(&transaction, &stale, "threadProjectionRecorded")
+            .expect("ignore stale projection");
+        transaction.commit().expect("commit stale transaction");
+
+        let event_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM thread_events", [], |row| row.get(0))
+            .expect("count events");
+        let stored = load_thread(&connection, &completed.id)
+            .expect("load projection")
+            .expect("thread exists");
+
+        assert_eq!(event_count, 1);
+        assert_eq!(stored.turn_status, "completed");
+        assert_eq!(stored.updated_at, 2);
+    }
+
+    fn fixture_thread() -> ThreadRecord {
+        ThreadRecord {
+            id: "thread-test".to_string(),
+            project_id: "project-test".to_string(),
+            project_path: "D:\\project".to_string(),
+            title: "修复测试".to_string(),
+            model: "mimo-v2.5".to_string(),
+            sandbox: "workspace-write".to_string(),
+            turn_status: "inProgress".to_string(),
+            timeline: vec![TimelineEntry {
+                id: "user-1".to_string(),
+                kind: "user".to_string(),
+                title: "你".to_string(),
+                content: "修复测试".to_string(),
+                status: None,
+            }],
+            diff: String::new(),
+            created_at: 1,
+            updated_at: 1,
+            archived: false,
+        }
+    }
 }

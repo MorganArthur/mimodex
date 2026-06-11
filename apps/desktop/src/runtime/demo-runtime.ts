@@ -5,10 +5,14 @@ import type {
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
+  ThreadArchiveParams,
+  ThreadArchiveResponse,
   ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartParams,
   ThreadStartResponse,
+  ThreadUnarchiveParams,
+  ThreadUnarchiveResponse,
   TurnInterruptParams,
   TurnInterruptResponse,
   TurnStartParams,
@@ -57,6 +61,14 @@ export class DemoRuntimeClient implements RuntimeClientPort {
       modelProvider: "mimo",
       cwd: "D:\\0WORKSPACE\\mimodex",
     };
+  }
+
+  async archiveThread(_params: ThreadArchiveParams): Promise<ThreadArchiveResponse> {
+    return {};
+  }
+
+  async unarchiveThread(_params: ThreadUnarchiveParams): Promise<ThreadUnarchiveResponse> {
+    return {};
   }
 
   async startTurn(_params: TurnStartParams): Promise<TurnStartResponse> {
