@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use keyring_core::{Entry, Error as KeyringError};
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -244,11 +244,7 @@ fn select_thread(app: AppHandle, thread_id: Option<String>) -> Result<ThreadStat
     let connection = open_thread_database(&app)?;
     if let Some(id) = &thread_id {
         let exists = connection
-            .query_row(
-                "SELECT 1 FROM threads WHERE id = ?1",
-                [id],
-                |_| Ok(()),
-            )
+            .query_row("SELECT 1 FROM threads WHERE id = ?1", [id], |_| Ok(()))
             .optional()
             .map_err(|_| thread_database_error("查询线程"))?
             .is_some();
@@ -267,8 +263,8 @@ fn set_thread_archived(
     archived: bool,
 ) -> Result<ThreadState, String> {
     let mut connection = open_thread_database(&app)?;
-    let mut thread = load_thread(&connection, &thread_id)?
-        .ok_or_else(|| "线程记录不存在。".to_string())?;
+    let mut thread =
+        load_thread(&connection, &thread_id)?.ok_or_else(|| "线程记录不存在。".to_string())?;
     thread.archived = archived;
     thread.updated_at = unix_timestamp_ms();
     let transaction = connection
@@ -299,7 +295,10 @@ fn delete_thread(app: AppHandle, thread_id: String) -> Result<ThreadState, Strin
         .transaction()
         .map_err(|_| thread_database_error("开始删除事务"))?;
     transaction
-        .execute("DELETE FROM thread_events WHERE thread_id = ?1", [&thread_id])
+        .execute(
+            "DELETE FROM thread_events WHERE thread_id = ?1",
+            [&thread_id],
+        )
         .map_err(|_| thread_database_error("删除线程事件"))?;
     let deleted = transaction
         .execute("DELETE FROM threads WHERE id = ?1", [&thread_id])
@@ -497,8 +496,8 @@ fn recover_interrupted_threads(connection: &mut Connection) -> Result<(), String
         .transaction()
         .map_err(|_| thread_database_error("开始崩溃恢复事务"))?;
     for thread_id in thread_ids {
-        let mut thread = load_thread(&transaction, &thread_id)?
-            .ok_or_else(|| "线程记录不存在。".to_string())?;
+        let mut thread =
+            load_thread(&transaction, &thread_id)?.ok_or_else(|| "线程记录不存在。".to_string())?;
         thread.turn_status = "interrupted".to_string();
         thread.updated_at = unix_timestamp_ms();
         record_thread_projection(&transaction, &thread, "threadInterruptedAfterRestart")?;
@@ -524,8 +523,7 @@ fn record_thread_projection(
     if stored_updated_at.is_some_and(|updated_at| updated_at > thread.updated_at) {
         return Ok(());
     }
-    let payload =
-        serde_json::to_string(thread).map_err(|_| "无法序列化线程事件。".to_string())?;
+    let payload = serde_json::to_string(thread).map_err(|_| "无法序列化线程事件。".to_string())?;
     let duplicate = transaction
         .query_row(
             "
@@ -555,12 +553,9 @@ fn record_thread_projection(
     upsert_thread_projection(transaction, thread)
 }
 
-fn upsert_thread_projection(
-    connection: &Connection,
-    thread: &ThreadRecord,
-) -> Result<(), String> {
-    let timeline_json =
-        serde_json::to_string(&thread.timeline).map_err(|_| "无法序列化线程时间线。".to_string())?;
+fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> Result<(), String> {
+    let timeline_json = serde_json::to_string(&thread.timeline)
+        .map_err(|_| "无法序列化线程时间线。".to_string())?;
     connection
         .execute(
             "
@@ -640,11 +635,7 @@ fn load_thread(connection: &Connection, thread_id: &str) -> Result<Option<Thread
 fn thread_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadRecord> {
     let timeline_json: String = row.get(7)?;
     let timeline = serde_json::from_str(&timeline_json).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(
-            7,
-            rusqlite::types::Type::Text,
-            Box::new(error),
-        )
+        rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(error))
     })?;
     Ok(ThreadRecord {
         id: row.get(0)?,
@@ -924,7 +915,9 @@ mod tests {
         migrate_thread_database(&connection).expect("second migration");
 
         let migration_count: i64 = connection
-            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .expect("count migrations");
         assert_eq!(migration_count, 1);
     }
