@@ -1,7 +1,8 @@
 import { createRoot } from "react-dom/client";
 
 import { DesktopSessionController } from "@mimodex/desktop-core";
-import { App } from "./App.js";
+import { createCredentialService } from "./credentials.js";
+import { DesktopRoot } from "./DesktopRoot.js";
 import { createDesktopRuntimeClient } from "./runtime/create-runtime.js";
 import "./styles.css";
 
@@ -10,5 +11,8 @@ if (!root) {
   throw new Error("Missing root element");
 }
 
-const session = new DesktopSessionController(createDesktopRuntimeClient());
-createRoot(root).render(<App session={session} />);
+const credentialService = createCredentialService();
+const createSession = () => new DesktopSessionController(createDesktopRuntimeClient());
+createRoot(root).render(
+  <DesktopRoot credentialService={credentialService} createSession={createSession} />,
+);

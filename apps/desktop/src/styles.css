@@ -29,6 +29,246 @@ button {
   cursor: pointer;
 }
 
+.setup-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(198, 236, 139, 0.25), transparent 32%),
+    #e9e6de;
+}
+
+.setup-card,
+.settings-dialog {
+  width: min(520px, 100%);
+  padding: 28px;
+  background: #f8f6f1;
+  border: 1px solid #d3cfc5;
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(49, 49, 42, 0.16);
+}
+
+.setup-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 32px;
+}
+
+.setup-brand strong,
+.setup-brand span {
+  display: block;
+}
+
+.setup-brand > div span {
+  margin-top: 2px;
+  color: #858980;
+  font-size: 10px;
+}
+
+.setup-card h1 {
+  margin: 0;
+  color: #242a23;
+  font-family: Georgia, "Microsoft YaHei UI", serif;
+  font-size: 36px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.setup-description {
+  margin: 14px 0 24px;
+  color: #6c7168;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.credential-form {
+  display: grid;
+  gap: 13px;
+}
+
+.credential-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.credential-form label > span {
+  color: #666d63;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.credential-form input {
+  width: 100%;
+  padding: 11px 12px;
+  background: #fffefa;
+  border: 1px solid #d6d2c8;
+  border-radius: 8px;
+  outline: none;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+.credential-form input:focus {
+  border-color: #7b9466;
+  box-shadow: 0 0 0 3px rgba(123, 148, 102, 0.12);
+}
+
+.credential-form input:disabled {
+  color: #7c8178;
+  background: #efede7;
+}
+
+.credential-form small,
+.restart-note {
+  color: #8a8e86;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.credential-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  background: #eeece5;
+  border-radius: 8px;
+}
+
+.credential-status strong,
+.credential-status span {
+  display: block;
+}
+
+.credential-status strong {
+  color: #4c5548;
+  font-size: 10px;
+}
+
+.credential-status div span {
+  margin-top: 2px;
+  color: #888d84;
+  font-size: 9px;
+}
+
+.credential-submit {
+  padding: 11px 14px;
+  color: #f2f6ed;
+  background: #34422c;
+  border: 0;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.credential-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.restart-note,
+.form-error {
+  margin: 0;
+}
+
+.form-error {
+  color: #a0433d;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.loading-panel {
+  color: #626960;
+  font-size: 12px;
+}
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  background: rgba(32, 35, 31, 0.52);
+  backdrop-filter: blur(4px);
+}
+
+.settings-dialog {
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+
+.settings-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.settings-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.settings-dialog header button {
+  width: 28px;
+  height: 28px;
+  color: #70766d;
+  background: #ebe8e0;
+  border: 1px solid #dad6cc;
+  border-radius: 7px;
+  font-size: 18px;
+}
+
+.danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #dedad1;
+}
+
+.danger-zone strong,
+.danger-zone span {
+  display: block;
+}
+
+.danger-zone strong {
+  color: #713f3a;
+  font-size: 10px;
+}
+
+.danger-zone span {
+  margin-top: 4px;
+  color: #8a8e86;
+  font-size: 9px;
+}
+
+.danger-zone button {
+  flex: none;
+  padding: 8px 10px;
+  color: #943c36;
+  background: #fff0ed;
+  border: 1px solid #e8c0bb;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.environment-note {
+  margin-top: 24px;
+  padding: 12px;
+  color: #6f755f;
+  background: #eef2e7;
+  border: 1px solid #d9e0ce;
+  border-radius: 8px;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 248px minmax(540px, 1fr) 320px;

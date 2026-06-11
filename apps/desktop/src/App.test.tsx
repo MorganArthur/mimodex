@@ -19,6 +19,8 @@ import type {
 } from "@mimodex/runtime-client";
 import type { RuntimeClientPort } from "@mimodex/desktop-core";
 import { App } from "./App.js";
+import { DesktopRoot } from "./DesktopRoot.js";
+import type { CredentialService, CredentialStatus } from "./credentials.js";
 
 afterEach(cleanup);
 
@@ -58,15 +60,49 @@ describe("Mimodex 桌面壳", () => {
       expect(runtime.responses).toEqual([{ id: "approval-1", result: { decision: "accept" } }]),
     );
   });
+
+  it("未配置凭据时先完成安全存储，再创建 Runtime 会话", async () => {
+    const credentials = new FakeCredentialService(false);
+    const runtime = new UiRuntime();
+    const createSession = () => new DesktopSessionController(runtime);
+    const user = userEvent.setup();
+    render(<DesktopRoot credentialService={credentials} createSession={createSession} />);
+
+    expect(await screen.findByText("连接你的 MiMo API")).toBeTruthy();
+    expect(runtime.initializeCount).toBe(0);
+
+    await user.type(screen.getByLabelText("MiMo API Key"), "test-mimo-key");
+    await user.click(screen.getByRole("button", { name: "保存并重启 Mimodex" }));
+
+    await waitFor(() => expect(credentials.savedKeys).toEqual(["test-mimo-key"]));
+    await waitFor(() => expect(credentials.restartCount).toBe(1));
+    await waitFor(() => expect(runtime.initializeCount).toBe(1));
+  });
+
+  it("可以从左下角设置入口管理已保存凭据", async () => {
+    const credentials = new FakeCredentialService(true);
+    const runtime = new UiRuntime();
+    const createSession = () => new DesktopSessionController(runtime);
+    const user = userEvent.setup();
+    render(<DesktopRoot credentialService={credentials} createSession={createSession} />);
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+    expect(screen.getByRole("dialog", { name: "MiMo 设置" })).toBeTruthy();
+    expect(screen.getByText("已安全保存")).toBeTruthy();
+  });
 });
 
 class UiRuntime implements RuntimeClientPort {
+  initializeCount = 0;
   readonly turnStarts: TurnStartParams[] = [];
   readonly responses: Array<{ id: RequestId; result: JsonValue | undefined }> = [];
   readonly #notifications = new Set<(notification: ServerNotification) => void>();
   readonly #requests = new Set<(request: ServerRequest) => void>();
 
   async initialize(): Promise<InitializeResponse> {
+    this.initializeCount += 1;
     return {
       userAgent: "ui-test",
       codexHome: "C:\\mimodex",
@@ -121,5 +157,38 @@ class UiRuntime implements RuntimeClientPort {
     for (const listener of this.#requests) {
       listener(request);
     }
+  }
+}
+
+class FakeCredentialService implements CredentialService {
+  readonly savedKeys: string[] = [];
+  restartCount = 0;
+  #status: CredentialStatus;
+
+  constructor(configured: boolean) {
+    this.#status = {
+      configured,
+      source: configured ? "windowsCredentialManager" : "missing",
+      storage: "Windows 凭据管理器",
+    };
+  }
+
+  async getStatus(): Promise<CredentialStatus> {
+    return this.#status;
+  }
+
+  async save(apiKey: string): Promise<CredentialStatus> {
+    this.savedKeys.push(apiKey);
+    this.#status = { ...this.#status, configured: true, source: "windowsCredentialManager" };
+    return this.#status;
+  }
+
+  async delete(): Promise<CredentialStatus> {
+    this.#status = { ...this.#status, configured: false, source: "missing" };
+    return this.#status;
+  }
+
+  async restart(): Promise<void> {
+    this.restartCount += 1;
   }
 }

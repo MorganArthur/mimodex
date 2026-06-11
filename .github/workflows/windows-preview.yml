@@ -74,6 +74,7 @@ jobs:
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
           toolchain: 1.95.0
+          components: rustfmt
           targets: x86_64-pc-windows-msvc
 
       - name: Restore Rust build cache
@@ -89,6 +90,19 @@ jobs:
 
       - name: Verify TypeScript and React
         run: npm run verify
+
+      - name: Check Tauri Rust formatting
+        run: >
+          cargo fmt
+          --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+          --
+          --check
+
+      - name: Check Tauri Rust backend
+        run: >
+          cargo check
+          --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+          --target ${{ env.RUNTIME_TARGET }}
 
       - name: Build Mimodex Runtime sidecar
         working-directory: runtime-worktree/upstream/codex-rs

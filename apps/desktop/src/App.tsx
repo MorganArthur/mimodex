@@ -10,6 +10,7 @@ import {
 
 export type AppProps = {
   session: DesktopSessionController;
+  onOpenSettings?: () => void;
 };
 
 const statusLabels: Record<SessionState["connection"], string> = {
@@ -30,7 +31,7 @@ const entryLabels: Record<TimelineEntry["kind"], string> = {
   user: "YOU",
 };
 
-export function App({ session }: AppProps) {
+export function App({ session, onOpenSettings = () => undefined }: AppProps) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [projectPath, setProjectPath] = useState("D:\\0WORKSPACE\\mimodex");
   const [model, setModel] = useState<"mimo-v2.5" | "mimo-v2.5-pro">("mimo-v2.5");
@@ -115,7 +116,7 @@ export function App({ session }: AppProps) {
             <strong>{statusLabels[state.connection]}</strong>
             <span>{state.platform ?? "本地演示连接"}</span>
           </div>
-          <button type="button" aria-label="打开设置">···</button>
+          <button type="button" aria-label="打开设置" onClick={onOpenSettings}>···</button>
         </div>
       </aside>
 
