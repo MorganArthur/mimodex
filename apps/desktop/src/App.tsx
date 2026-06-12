@@ -75,6 +75,18 @@ export function App({
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const conversationRef = useRef<HTMLElement>(null);
+  const gitDiff = currentProject?.git.diff ?? "";
+  const visibleDiff = currentProject?.git.dirty ? gitDiff : state.diff;
+  const diffFiles = currentProject?.git.dirty
+    ? currentProject.git.changedFiles + currentProject.git.untrackedFiles
+    : state.diff
+      ? 1
+      : 0;
+  const diffCount = currentProject?.git.dirty
+    ? `+${currentProject.git.additions} -${currentProject.git.deletions}`
+    : state.diff
+      ? "+1 -1"
+      : "0";
 
   useEffect(() => {
     void session.connect().catch(() => undefined);
@@ -351,12 +363,12 @@ export function App({
           <div className="diff-heading">
             <div>
               <span>工作区 Diff</span>
-              <strong>{state.diff ? "1 个文件" : "等待变更"}</strong>
+              <strong>{diffFiles > 0 ? gitChangeSummary(currentProject, diffFiles) : "等待变更"}</strong>
             </div>
-            <span className="diff-count">{state.diff ? "+1 -1" : "0"}</span>
+            <span className="diff-count">{diffCount}</span>
           </div>
-          {state.diff ? (
-            <pre>{state.diff}</pre>
+          {visibleDiff ? (
+            <pre>{visibleDiff}</pre>
           ) : (
             <div className="empty-diff">
               <span>±</span>
@@ -472,6 +484,23 @@ function projectSummary(project: ProjectSummary): string {
   return changes > 0
     ? `${project.git.branch ?? "Detached HEAD"}，工作区有 ${changes} 项变更。`
     : `${project.git.branch ?? "Detached HEAD"}，工作区干净。`;
+}
+
+function gitChangeSummary(project: ProjectSummary | null, files: number): string {
+  if (!project?.git.dirty) {
+    return `${files} 个文件`;
+  }
+  const parts = [`${files} 个文件`];
+  if (project.git.stagedFiles > 0) {
+    parts.push(`${project.git.stagedFiles} 已暂存`);
+  }
+  if (project.git.unstagedFiles > 0) {
+    parts.push(`${project.git.unstagedFiles} 未暂存`);
+  }
+  if (project.git.untrackedFiles > 0) {
+    parts.push(`${project.git.untrackedFiles} 未跟踪`);
+  }
+  return parts.join(" · ");
 }
 
 function threadStatusClass(status: ThreadRecord["turnStatus"]): string {

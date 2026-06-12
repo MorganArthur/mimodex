@@ -8,6 +8,11 @@ export type GitStatus = {
   dirty: boolean;
   changedFiles: number;
   untrackedFiles: number;
+  stagedFiles: number;
+  unstagedFiles: number;
+  additions: number;
+  deletions: number;
+  diff: string;
 };
 
 export type ProjectSummary = {
@@ -105,6 +110,11 @@ function demoProject(path: string, name: string, branch: string): ProjectSummary
       dirty: false,
       changedFiles: 0,
       untrackedFiles: 0,
+      stagedFiles: 0,
+      unstagedFiles: 0,
+      additions: 0,
+      deletions: 0,
+      diff: "",
     },
     lastOpenedAt: Date.now(),
   };

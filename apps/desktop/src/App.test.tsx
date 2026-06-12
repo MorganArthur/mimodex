@@ -180,6 +180,26 @@ describe("Mimodex 桌面壳", () => {
     expect(runtime.threadStarts).toHaveLength(0);
   });
 
+  it("右侧展示 Git 暂存区中的文件与真实 Diff", async () => {
+    const runtime = new UiRuntime();
+    const project = {
+      ...fixtureProject(),
+      git: {
+        ...fixtureProject().git,
+        dirty: true,
+        changedFiles: 1,
+        stagedFiles: 1,
+        additions: 2,
+        diff: "## 已暂存\n\ndiff --git a/.gitignore b/.gitignore\n+node_modules/\n+dist/",
+      },
+    };
+    renderApp(runtime, [project], project);
+
+    expect(await screen.findByText("1 个文件 · 1 已暂存")).toBeTruthy();
+    expect(screen.getByText("+2 -0")).toBeTruthy();
+    expect(screen.getByText(/diff --git a\/\.gitignore b\/\.gitignore/)).toBeTruthy();
+  });
+
   it("从真实最近线程列表恢复 Runtime 线程与本地投影", async () => {
     const runtime = new UiRuntime();
     const thread = fixtureThread();
@@ -528,6 +548,11 @@ function fixtureProject(): ProjectSummary {
       dirty: false,
       changedFiles: 0,
       untrackedFiles: 0,
+      stagedFiles: 0,
+      unstagedFiles: 0,
+      additions: 0,
+      deletions: 0,
+      diff: "",
     },
     lastOpenedAt: 2,
   };
@@ -539,7 +564,16 @@ function secondProject(): ProjectSummary {
     id: "d:\\projects\\second",
     path: "D:\\projects\\second",
     name: "second",
-    git: { ...fixtureProject().git, branch: "feature/project-management", dirty: true, changedFiles: 2 },
+    git: {
+      ...fixtureProject().git,
+      branch: "feature/project-management",
+      dirty: true,
+      changedFiles: 2,
+      unstagedFiles: 2,
+      additions: 3,
+      deletions: 1,
+      diff: "## 未暂存\n\n+ updated",
+    },
     lastOpenedAt: 1,
   };
 }

@@ -13,6 +13,8 @@ const CREDENTIAL_SERVICE: &str = "com.morganarthur.mimodex";
 const CREDENTIAL_USER: &str = "mimo-api-key";
 const MIMODEX_MANAGED_API_KEY_ENV: &str = "MIMODEX_MANAGED_MIMO_API_KEY";
 const MIMO_API_KEY_ENV: &str = "MIMO_API_KEY";
+const MAX_PROJECT_DIFF_CHARS: usize = 500_000;
+const MAX_UNTRACKED_DIFF_FILES: usize = 100;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +33,16 @@ struct GitStatus {
     dirty: bool,
     changed_files: usize,
     untracked_files: usize,
+    #[serde(default)]
+    staged_files: usize,
+    #[serde(default)]
+    unstaged_files: usize,
+    #[serde(default)]
+    additions: usize,
+    #[serde(default)]
+    deletions: usize,
+    #[serde(default)]
+    diff: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -896,18 +908,45 @@ fn inspect_git_status(path: &Path) -> GitStatus {
     let head = run_git(path, &["rev-parse", "--short", "HEAD"]).filter(|value| !value.is_empty());
     let status = run_git(
         path,
-        &["status", "--porcelain=v1", "--untracked-files=normal"],
+        &["status", "--porcelain=v1", "--untracked-files=all"],
     )
     .unwrap_or_default();
     let mut changed_files = 0;
     let mut untracked_files = 0;
+    let mut staged_files = 0;
+    let mut unstaged_files = 0;
     for line in status.lines().filter(|line| !line.trim().is_empty()) {
         if line.starts_with("??") {
             untracked_files += 1;
         } else {
             changed_files += 1;
+            let bytes = line.as_bytes();
+            if bytes.first().is_some_and(|value| *value != b' ' && *value != b'?') {
+                staged_files += 1;
+            }
+            if bytes.get(1).is_some_and(|value| *value != b' ' && *value != b'?') {
+                unstaged_files += 1;
+            }
         }
     }
+    let staged_diff = run_git(
+        path,
+        &["diff", "--cached", "--no-ext-diff", "--no-color", "--", "."],
+    )
+    .unwrap_or_default();
+    let unstaged_diff = run_git(
+        path,
+        &["diff", "--no-ext-diff", "--no-color", "--", "."],
+    )
+    .unwrap_or_default();
+    let untracked_diff = untracked_git_diff(path);
+    let full_diff = join_git_diffs(&[
+        ("已暂存", &staged_diff),
+        ("未暂存", &unstaged_diff),
+        ("未跟踪", &untracked_diff),
+    ]);
+    let (additions, deletions) = diff_line_counts(&full_diff);
+    let diff = truncate_git_diff(full_diff);
 
     GitStatus {
         is_repository: true,
@@ -916,6 +955,11 @@ fn inspect_git_status(path: &Path) -> GitStatus {
         dirty: changed_files + untracked_files > 0,
         changed_files,
         untracked_files,
+        staged_files,
+        unstaged_files,
+        additions,
+        deletions,
+        diff,
     }
 }
 
@@ -927,18 +971,99 @@ fn empty_git_status() -> GitStatus {
         dirty: false,
         changed_files: 0,
         untracked_files: 0,
+        staged_files: 0,
+        unstaged_files: 0,
+        additions: 0,
+        deletions: 0,
+        diff: String::new(),
     }
 }
 
 fn run_git(path: &Path, args: &[&str]) -> Option<String> {
+    run_git_with_exit_codes(path, args, &[0])
+}
+
+fn run_git_with_exit_codes(
+    path: &Path,
+    args: &[&str],
+    accepted_exit_codes: &[i32],
+) -> Option<String> {
     let mut command = Command::new("git");
     command.arg("-C").arg(path).args(args);
     hide_command_window(&mut command);
     let output = command.output().ok()?;
-    output
-        .status
-        .success()
+    let exit_code = output.status.code()?;
+    accepted_exit_codes
+        .contains(&exit_code)
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn untracked_git_diff(path: &Path) -> String {
+    let files = run_git(path, &["ls-files", "--others", "--exclude-standard", "-z", "--", "."])
+        .unwrap_or_default();
+    let files = files
+        .split('\0')
+        .filter(|file| !file.is_empty())
+        .collect::<Vec<_>>();
+    let omitted_files = files.len().saturating_sub(MAX_UNTRACKED_DIFF_FILES);
+    let mut diffs = files
+        .into_iter()
+        .take(MAX_UNTRACKED_DIFF_FILES)
+        .filter_map(|file| {
+            run_git_with_exit_codes(
+                path,
+                &[
+                    "diff",
+                    "--no-index",
+                    "--no-ext-diff",
+                    "--no-color",
+                    "--",
+                    "/dev/null",
+                    file,
+                ],
+                &[0, 1],
+            )
+        })
+        .filter(|diff| !diff.is_empty())
+        .collect::<Vec<_>>();
+    if omitted_files > 0 {
+        diffs.push(format!("[另有 {omitted_files} 个未跟踪文件未展开]"));
+    }
+    diffs.join("\n\n")
+}
+
+fn join_git_diffs(sections: &[(&str, &str)]) -> String {
+    sections
+        .iter()
+        .filter(|(_, diff)| !diff.is_empty())
+        .map(|(title, diff)| format!("## {title}\n\n{diff}"))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn diff_line_counts(diff: &str) -> (usize, usize) {
+    let mut additions = 0;
+    let mut deletions = 0;
+    for line in diff.lines() {
+        if line.starts_with("+++") || line.starts_with("---") {
+            continue;
+        }
+        if line.starts_with('+') {
+            additions += 1;
+        } else if line.starts_with('-') {
+            deletions += 1;
+        }
+    }
+    (additions, deletions)
+}
+
+fn truncate_git_diff(mut diff: String) -> String {
+    let Some((byte_index, _)) = diff.char_indices().nth(MAX_PROJECT_DIFF_CHARS) else {
+        return diff;
+    };
+    diff.truncate(byte_index);
+    diff.push_str("\n\n[Diff 内容过长，已截断；文件计数与增删行统计仍为完整结果]");
+    diff
 }
 
 #[cfg(windows)]
@@ -1011,6 +1136,44 @@ fn credential_error(action: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_status_includes_staged_new_file_diff() {
+        let directory = std::env::temp_dir().join(format!(
+            "mimodex-git-status-{}",
+            unix_timestamp_ms()
+        ));
+        fs::create_dir_all(&directory).expect("create temporary repository");
+        run_git(&directory, &["init"]).expect("initialize repository");
+        fs::write(directory.join(".gitignore"), "node_modules/\ndist/\n")
+            .expect("write staged fixture");
+        run_git(&directory, &["add", ".gitignore"]).expect("stage fixture");
+
+        let status = inspect_git_status(&directory);
+
+        assert!(status.dirty);
+        assert_eq!(status.changed_files, 1);
+        assert_eq!(status.staged_files, 1);
+        assert_eq!(status.unstaged_files, 0);
+        assert_eq!(status.untracked_files, 0);
+        assert_eq!(status.additions, 2);
+        assert_eq!(status.deletions, 0);
+        assert!(status.diff.contains("## 已暂存"));
+        assert!(status.diff.contains("diff --git a/.gitignore b/.gitignore"));
+
+        fs::remove_dir_all(directory).expect("remove temporary repository");
+    }
+
+    #[test]
+    fn project_diff_is_truncated_without_breaking_unicode() {
+        let diff = format!("{}结束", "变".repeat(MAX_PROJECT_DIFF_CHARS));
+
+        let truncated = truncate_git_diff(diff);
+
+        assert!(truncated.starts_with('变'));
+        assert!(truncated.contains("已截断"));
+        assert!(!truncated.contains("结束"));
+    }
 
     #[test]
     fn thread_events_are_append_only_and_projection_is_queryable() {
