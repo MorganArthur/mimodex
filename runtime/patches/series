@@ -5,3 +5,4 @@
 0004-add-mimo-core-basic-model-flow.patch
 0005-add-mimo-tool-loop-and-recovery.patch
 0006-accept-null-mimo-sse-collections.patch
+0007-use-mimo-identity-and-disable-thinking.patch

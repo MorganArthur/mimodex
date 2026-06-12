@@ -1,0 +1,88 @@
+diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+--- a/codex-rs/core/src/client.rs
++++ b/codex-rs/core/src/client.rs
+@@ -848,6 +848,9 @@
+             "stream": true,
+             "stream_options": {
+                 "include_usage": true
++            },
++            "thinking": {
++                "type": "disabled"
+             }
+         });
+         if !tools.is_empty() {
+diff --git a/codex-rs/core/src/client_tests.rs b/codex-rs/core/src/client_tests.rs
+--- a/codex-rs/core/src/client_tests.rs
++++ b/codex-rs/core/src/client_tests.rs
+@@ -238,7 +238,8 @@
+                 {"role": "user", "content": "请完成基础轮次"}
+             ],
+             "stream": true,
+-            "stream_options": {"include_usage": true}
++            "stream_options": {"include_usage": true},
++            "thinking": {"type": "disabled"}
+         })
+     );
+ }
+diff --git a/codex-rs/core/tests/suite/chat_completions.rs b/codex-rs/core/tests/suite/chat_completions.rs
+--- a/codex-rs/core/tests/suite/chat_completions.rs
++++ b/codex-rs/core/tests/suite/chat_completions.rs
+@@ -135,6 +135,14 @@
+         serde_json::from_slice(&requests[1].body).expect("second request should be JSON");
+ 
+     assert_eq!(first["model"], "mimo-v2.5");
++    assert_eq!(first["thinking"], json!({"type": "disabled"}));
++    let system_prompt = first["messages"][0]["content"]
++        .as_str()
++        .expect("first message should contain the MiMo system prompt");
++    assert!(system_prompt.contains("You are MiMo"));
++    assert!(system_prompt.contains("Mimodex"));
++    assert!(!system_prompt.contains("Codex CLI"));
++    assert!(!system_prompt.contains("Anthropic"));
+     assert!(
+         first["tools"]
+             .as_array()
+diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provider/src/mimo/catalog.rs
+--- a/codex-rs/model-provider/src/mimo/catalog.rs
++++ b/codex-rs/model-provider/src/mimo/catalog.rs
+@@ -1,5 +1,4 @@
+ use codex_models_manager::bundled_models_response;
+-use codex_models_manager::model_info::BASE_INSTRUCTIONS;
+ use codex_protocol::openai_models::ConfigShellToolType;
+ use codex_protocol::openai_models::InputModality;
+ use codex_protocol::openai_models::ModelInfo;
+@@ -9,6 +8,11 @@
+ pub(crate) const MIMO_DEFAULT_MODEL_ID: &str = "mimo-v2.5";
+ pub(crate) const MIMO_PRO_MODEL_ID: &str = "mimo-v2.5-pro";
+ const BASE_MODEL_ID: &str = "gpt-5.4";
++const MIMO_BASE_INSTRUCTIONS: &str = r#"You are MiMo, an AI assistant developed by Xiaomi, operating as the coding agent inside the Mimodex desktop application.
++
++Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files, use available tools when needed, make focused changes, and verify the result before reporting completion.
++
++Never claim to be Claude, Anthropic, Codex, OpenAI, or another model or product. If asked about your identity, say that you are Xiaomi MiMo running inside Mimodex. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work."#;
+ 
+ pub(crate) fn static_model_catalog() -> ModelsResponse {
+     ModelsResponse {
+@@ -67,7 +71,7 @@
+     model.additional_speed_tiers.clear();
+     model.service_tiers.clear();
+     model.default_service_tier = None;
+-    model.base_instructions = BASE_INSTRUCTIONS.to_string();
++    model.base_instructions = MIMO_BASE_INSTRUCTIONS.to_string();
+     model.model_messages = None;
+     model.supports_reasoning_summaries = false;
+     model.support_verbosity = false;
+@@ -119,7 +123,12 @@
+             assert_eq!(model.input_modalities, vec![InputModality::Text]);
+             assert!(model.service_tiers.is_empty());
+             assert!(model.context_window.is_none());
+-            assert_eq!(model.base_instructions, BASE_INSTRUCTIONS);
++            assert_eq!(model.base_instructions, MIMO_BASE_INSTRUCTIONS);
++            assert!(model.base_instructions.contains("You are MiMo"));
++            assert!(model.base_instructions.contains("Mimodex"));
++            assert!(!model.base_instructions.contains("Codex CLI"));
++            assert!(!model.base_instructions.contains("Anthropic"));
++            assert!(model.base_instructions.len() < 2_000);
+         }
+     }
+ }

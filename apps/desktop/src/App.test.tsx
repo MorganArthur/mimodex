@@ -196,7 +196,19 @@ describe("Mimodex 桌面壳", () => {
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
     await user.click(screen.getByTitle("修复历史测试"));
 
-    await waitFor(() => expect(runtime.threadResumes).toEqual([{ threadId: "thread-history" }]));
+    await waitFor(() =>
+      expect(runtime.threadResumes).toEqual([
+        expect.objectContaining({
+          threadId: "thread-history",
+          model: "mimo-v2.5",
+          modelProvider: "mimo",
+          cwd: "D:\\projects\\fixture",
+          approvalPolicy: "on-request",
+          sandbox: "workspace-write",
+          baseInstructions: expect.stringContaining("You are MiMo"),
+        }),
+      ]),
+    );
     expect(await screen.findByText("已恢复的历史回复")).toBeTruthy();
   });
 

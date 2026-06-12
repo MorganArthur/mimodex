@@ -75,6 +75,7 @@ export type ThreadStartParams = {
   cwd?: string | null;
   approvalPolicy?: "never" | "on-failure" | "on-request" | "untrusted" | null;
   sandbox?: "danger-full-access" | "read-only" | "workspace-write" | null;
+  baseInstructions?: string | null;
   ephemeral?: boolean | null;
   threadSource?: string | null;
 };
@@ -88,6 +89,12 @@ export type ThreadStartResponse = JsonObject & {
 
 export type ThreadResumeParams = {
   threadId: string;
+  model?: string | null;
+  modelProvider?: string | null;
+  cwd?: string | null;
+  approvalPolicy?: "never" | "on-failure" | "on-request" | "untrusted" | null;
+  sandbox?: "danger-full-access" | "read-only" | "workspace-write" | null;
+  baseInstructions?: string | null;
 };
 
 export type ThreadResumeResponse = ThreadStartResponse;

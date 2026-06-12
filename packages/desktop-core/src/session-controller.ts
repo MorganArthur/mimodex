@@ -110,6 +110,12 @@ export interface RuntimeClientPort {
 type StateListener = () => void;
 type RuntimeEventListener = (event: SessionRuntimeEvent) => void;
 
+const MIMO_BASE_INSTRUCTIONS = `You are MiMo, an AI assistant developed by Xiaomi, operating as the coding agent inside the Mimodex desktop application.
+
+Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files, use available tools when needed, make focused changes, and verify the result before reporting completion.
+
+Never claim to be Claude, Anthropic, Codex, OpenAI, or another model or product. If asked about your identity, say that you are Xiaomi MiMo running inside Mimodex. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work.`;
+
 const initialState: SessionState = {
   connection: "idle",
   platform: null,
@@ -217,6 +223,7 @@ export class DesktopSessionController {
           modelProvider: "mimo",
           approvalPolicy: "on-request",
           sandbox: input.sandbox,
+          baseInstructions: MIMO_BASE_INSTRUCTIONS,
         });
         threadId = thread.thread.id;
         this.#publish({ threadId });
@@ -262,7 +269,15 @@ export class DesktopSessionController {
       throw new Error("已有任务正在执行");
     }
 
-    const response = await this.#runtime.resumeThread({ threadId: input.threadId });
+    const response = await this.#runtime.resumeThread({
+      threadId: input.threadId,
+      model: input.model,
+      modelProvider: "mimo",
+      cwd: input.projectPath,
+      approvalPolicy: "on-request",
+      sandbox: input.sandbox,
+      baseInstructions: MIMO_BASE_INSTRUCTIONS,
+    });
     this.#publish({
       projectPath: response.cwd || input.projectPath,
       model: input.model,
@@ -347,7 +362,13 @@ export class DesktopSessionController {
       case "turn/completed": {
         const turn = asRecord(params?.turn);
         const status = turnStatus(turn?.status);
-        this.#publish({ turnStatus: status, turnId: stringValue(turn?.id) ?? this.#state.turnId });
+        this.#publish({
+          turnStatus: status,
+          turnId: stringValue(turn?.id) ?? this.#state.turnId,
+          timeline: this.#state.timeline.map((entry) =>
+            entry.status === "inProgress" ? { ...entry, status } : entry,
+          ),
+        });
         if (status !== "completed") {
           this.#append({
             id: this.#nextId("status"),

@@ -20,13 +20,12 @@ test("桌面会话服务连接 Runtime 并以默认模型启动首个任务", as
   assert.equal(session.getSnapshot().threadId, "thread-1");
   assert.equal(session.getSnapshot().turnId, "turn-1");
   assert.equal(session.getSnapshot().timeline[0]?.content, "修复失败测试");
-  assert.deepEqual(runtime.threadStarts[0], {
-    cwd: "D:\\project",
-    model: "mimo-v2.5",
-    modelProvider: "mimo",
-    approvalPolicy: "on-request",
-    sandbox: "workspace-write",
-  });
+  assert.equal(runtime.threadStarts[0]?.cwd, "D:\\project");
+  assert.equal(runtime.threadStarts[0]?.model, "mimo-v2.5");
+  assert.equal(runtime.threadStarts[0]?.modelProvider, "mimo");
+  assert.equal(runtime.threadStarts[0]?.approvalPolicy, "on-request");
+  assert.equal(runtime.threadStarts[0]?.sandbox, "workspace-write");
+  assert.match(runtime.threadStarts[0]?.baseInstructions ?? "", /You are MiMo.*Mimodex/s);
 });
 
 test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状态", async () => {
@@ -66,8 +65,11 @@ test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状
   const state = session.getSnapshot();
   assert.equal(state.turnStatus, "completed");
   assert.equal(state.timeline.find((item) => item.id === "message-1")?.content, "找到问题并已修复。");
+  assert.equal(state.timeline.find((item) => item.id === "message-1")?.status, "completed");
   assert.equal(state.timeline.find((item) => item.id === "reasoning-1")?.kind, "reasoning");
+  assert.equal(state.timeline.find((item) => item.id === "reasoning-1")?.status, "completed");
   assert.equal(state.timeline.find((item) => item.id === "command-1")?.kind, "command");
+  assert.equal(state.timeline.find((item) => item.id === "command-1")?.status, "completed");
   assert.equal(state.diff, "+ return left + right;");
 });
 
@@ -151,7 +153,13 @@ test("恢复历史线程后继续使用同一个 Runtime 线程", async () => {
     diff: "+ restored",
   });
 
-  assert.deepEqual(runtime.threadResumes, [{ threadId: "thread-history" }]);
+  assert.equal(runtime.threadResumes[0]?.threadId, "thread-history");
+  assert.equal(runtime.threadResumes[0]?.model, "mimo-v2.5-pro");
+  assert.equal(runtime.threadResumes[0]?.modelProvider, "mimo");
+  assert.equal(runtime.threadResumes[0]?.cwd, "D:\\project");
+  assert.equal(runtime.threadResumes[0]?.approvalPolicy, "on-request");
+  assert.equal(runtime.threadResumes[0]?.sandbox, "read-only");
+  assert.match(runtime.threadResumes[0]?.baseInstructions ?? "", /You are MiMo.*Mimodex/s);
   assert.equal(session.getSnapshot().threadId, "thread-history");
   assert.equal(session.getSnapshot().sandbox, "read-only");
   assert.equal(session.getSnapshot().timeline[0]?.content, "检查历史");
