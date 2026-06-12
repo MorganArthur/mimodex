@@ -233,7 +233,7 @@ async fn diagnose_mimo_connection(
     }) {
         Ok(settings) => settings,
         Err(message) => {
-            return diagnostic_failure("endpoint", "端点配置无效", message, None, None);
+            return diagnostic_failure("endpoint", "端点配置无效", &message, None, None);
         }
     };
     let api_key = api_key
