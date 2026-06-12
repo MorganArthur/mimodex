@@ -8,7 +8,7 @@
 - Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
 - 凭据设置构建：[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)
 - 项目管理构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
-- 当前可用构建：[Windows Preview #27385722233](https://github.com/MorganArthur/mimodex/actions/runs/27385722233)
+- 当前可用构建：[Windows Preview #27388925489](https://github.com/MorganArthur/mimodex/actions/runs/27388925489)
 
 ## 1. 本阶段目标
 
@@ -90,6 +90,14 @@ SHA256 为
 该构建通过新增 Rust 持久化单测、Runtime 握手、NSIS 打包与独立 SHA256 校验。
 安装包大小为 `56.89 MiB`，SHA256 为
 `D97FFBE3BE7716F4E1FF0EBDA1887E803FB4B04F9E254E35BB7F56001812551B`。
+
+当前 MiMo 流式兼容与对话区滚动修复版 Artifact：
+[mimodex-windows-preview-e7273140022704a419a46756dc5e94dee20e4150](https://github.com/MorganArthur/mimodex/actions/runs/27388925489/artifacts/7582005609)。
+该构建兼容 MiMo SSE 增量中的 `choices: null` 与 `tool_calls: null`，避免正常对话因
+反序列化失败重复重连；同时固定桌面应用主布局高度，使中央对话区域独立滚动。该构建
+通过 Runtime 回归测试、Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256
+校验。安装包大小为 `56.90 MiB`，SHA256 为
+`6A4EC131DA5289430D2E4AE9B9C4E73441CACEF361B69A49FCC938773A6B9E5D`。
 
 ## 4. 当前使用限制
 
