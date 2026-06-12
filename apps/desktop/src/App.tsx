@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import {
   type ApprovalDecision,
@@ -7,7 +7,9 @@ import {
   type SessionState,
   type TimelineEntry,
 } from "@mimodex/desktop-core";
+import { parseUnifiedDiff } from "./diff.js";
 import type { ProjectSummary } from "./projects.js";
+import type { AppSettings } from "./settings.js";
 import type { ThreadRecord } from "./threads.js";
 
 export type AppProps = {
@@ -25,6 +27,7 @@ export type AppProps = {
   projectError: string | null;
   projects: ProjectSummary[];
   session: DesktopSessionController;
+  settings: AppSettings;
   threadBusy: boolean;
   threadError: string | null;
   threads: ThreadRecord[];
@@ -63,20 +66,25 @@ export function App({
   projectError,
   projects,
   session,
+  settings,
   threadBusy,
   threadError,
   threads,
 }: AppProps) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
-  const [model, setModel] = useState<"mimo-v2.5" | "mimo-v2.5-pro">("mimo-v2.5");
+  const [model, setModel] = useState<"mimo-v2.5" | "mimo-v2.5-pro">(settings.defaultModel);
   const [sandbox, setSandbox] = useState<"danger-full-access" | "read-only" | "workspace-write">(
-    "workspace-write",
+    settings.defaultSandbox,
   );
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [selectedDiffFileId, setSelectedDiffFileId] = useState<string | null>(null);
   const conversationRef = useRef<HTMLElement>(null);
   const gitDiff = currentProject?.git.diff ?? "";
   const visibleDiff = currentProject?.git.dirty ? gitDiff : state.diff;
+  const parsedDiffFiles = useMemo(() => parseUnifiedDiff(visibleDiff), [visibleDiff]);
+  const selectedDiffFile =
+    parsedDiffFiles.find((file) => file.id === selectedDiffFileId) ?? parsedDiffFiles[0] ?? null;
   const diffFiles = currentProject?.git.dirty
     ? currentProject.git.changedFiles + currentProject.git.untrackedFiles
     : state.diff
@@ -96,8 +104,23 @@ export function App({
     if (state.threadId) {
       setModel(state.model === "mimo-v2.5-pro" ? "mimo-v2.5-pro" : "mimo-v2.5");
       setSandbox(state.sandbox);
+    } else {
+      setModel(settings.defaultModel);
+      setSandbox(settings.defaultSandbox);
     }
-  }, [state.model, state.sandbox, state.threadId]);
+  }, [
+    settings.defaultModel,
+    settings.defaultSandbox,
+    state.model,
+    state.sandbox,
+    state.threadId,
+  ]);
+
+  useEffect(() => {
+    if (!parsedDiffFiles.some((file) => file.id === selectedDiffFileId)) {
+      setSelectedDiffFileId(parsedDiffFiles[0]?.id ?? null);
+    }
+  }, [parsedDiffFiles, selectedDiffFileId]);
 
   useEffect(() => {
     if (state.turnStatus !== "inProgress") {
@@ -368,7 +391,25 @@ export function App({
             <span className="diff-count">{diffCount}</span>
           </div>
           {visibleDiff ? (
-            <pre>{visibleDiff}</pre>
+            <div className="diff-review">
+              <div className="diff-file-list">
+                {parsedDiffFiles.map((file) => (
+                  <button
+                    className={file.id === selectedDiffFile?.id ? "active" : ""}
+                    key={file.id}
+                    type="button"
+                    onClick={() => setSelectedDiffFileId(file.id)}
+                  >
+                    <span title={file.path}>{file.path}</span>
+                    <small>{file.section ?? "Runtime Diff"}</small>
+                    <i>+{file.additions} -{file.deletions}</i>
+                  </button>
+                ))}
+              </div>
+              {selectedDiffFile && (
+                <pre className="diff-file-detail">{selectedDiffFile.diff}</pre>
+              )}
+            </div>
           ) : (
             <div className="empty-diff">
               <span>±</span>
@@ -386,6 +427,14 @@ export function App({
             <div><dt>连接</dt><dd>{statusLabels[state.connection]}</dd></div>
             <div><dt>模型</dt><dd>{state.model}</dd></div>
             <div><dt>线程</dt><dd>{state.threadId ? "已创建" : "待创建"}</dd></div>
+            <div><dt>Token 总量</dt><dd>{formatTokens(state.tokenUsage?.totalTokens)}</dd></div>
+            {state.tokenUsage && (
+              <>
+                <div><dt>输入 / 输出</dt><dd>{formatTokens(state.tokenUsage.inputTokens)} / {formatTokens(state.tokenUsage.outputTokens)}</dd></div>
+                <div><dt>缓存 / 推理</dt><dd>{formatTokens(state.tokenUsage.cachedInputTokens)} / {formatTokens(state.tokenUsage.reasoningOutputTokens)}</dd></div>
+                <div><dt>上下文窗口</dt><dd>{formatTokens(state.tokenUsage.contextWindow)}</dd></div>
+              </>
+            )}
           </dl>
         </section>
       </aside>
@@ -593,6 +642,10 @@ function relativeTime(timestamp: number): string {
     return `${Math.floor(elapsed / 3_600_000)} 小时前`;
   }
   return `${Math.floor(elapsed / 86_400_000)} 天前`;
+}
+
+function formatTokens(value: number | null | undefined): string {
+  return value === null || value === undefined ? "等待统计" : value.toLocaleString("zh-CN");
 }
 
 function Timeline({ entries }: { entries: readonly TimelineEntry[] }) {

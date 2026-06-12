@@ -35,6 +35,15 @@ export type ApprovalDecision = "accept" | "acceptForSession" | "cancel" | "decli
 export type ModelId = "mimo-v2.5" | "mimo-v2.5-pro";
 export type SandboxMode = "danger-full-access" | "read-only" | "workspace-write";
 
+export type TokenUsage = {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  contextWindow: number | null;
+};
+
 export type TimelineEntry = {
   id: string;
   kind: TimelineKind;
@@ -64,6 +73,7 @@ export type SessionState = {
   timeline: readonly TimelineEntry[];
   approvals: readonly PendingApproval[];
   diff: string;
+  tokenUsage: TokenUsage | null;
   error: string | null;
 };
 
@@ -128,6 +138,7 @@ const initialState: SessionState = {
   timeline: [],
   approvals: [],
   diff: "",
+  tokenUsage: null,
   error: null,
 };
 
@@ -257,6 +268,7 @@ export class DesktopSessionController {
       timeline: [],
       approvals: [],
       diff: "",
+      tokenUsage: null,
       error: null,
     });
   }
@@ -288,6 +300,7 @@ export class DesktopSessionController {
       timeline: input.timeline,
       approvals: [],
       diff: input.diff,
+      tokenUsage: null,
       error: null,
     });
   }
@@ -393,6 +406,24 @@ export class DesktopSessionController {
       case "turn/diff/updated":
         this.#publish({ diff: stringValue(params?.diff) ?? "" });
         return;
+      case "thread/tokenUsage/updated": {
+        const tokenUsage = asRecord(params?.tokenUsage);
+        const total = asRecord(tokenUsage?.total) ?? tokenUsage;
+        if (!total) {
+          return;
+        }
+        this.#publish({
+          tokenUsage: {
+            inputTokens: numberValue(total.inputTokens),
+            cachedInputTokens: numberValue(total.cachedInputTokens),
+            outputTokens: numberValue(total.outputTokens),
+            reasoningOutputTokens: numberValue(total.reasoningOutputTokens),
+            totalTokens: numberValue(total.totalTokens),
+            contextWindow: optionalNumberValue(tokenUsage?.modelContextWindow),
+          },
+        });
+        return;
+      }
       case "item/started":
       case "item/completed":
         this.#projectItem(params, notification.method === "item/completed");
@@ -577,6 +608,14 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function optionalNumberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function requestIdValue(value: unknown): RequestId | null {

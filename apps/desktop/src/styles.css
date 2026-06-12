@@ -105,7 +105,8 @@ button {
   font-weight: 750;
 }
 
-.credential-form input {
+.credential-form input,
+.credential-form select {
   width: 100%;
   padding: 11px 12px;
   background: #fffefa;
@@ -116,7 +117,8 @@ button {
   font-size: 11px;
 }
 
-.credential-form input:focus {
+.credential-form input:focus,
+.credential-form select:focus {
   border-color: #7b9466;
   box-shadow: 0 0 0 3px rgba(123, 148, 102, 0.12);
 }
@@ -182,6 +184,27 @@ button {
   color: #a0433d;
   font-size: 10px;
   line-height: 1.55;
+}
+
+.provider-settings-form {
+  margin-bottom: 22px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid #dedad1;
+}
+
+.global-error {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 70;
+  max-width: 420px;
+  padding: 11px 13px;
+  color: #7b302b;
+  background: #fff0ed;
+  border: 1px solid #e8c0bb;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(60, 40, 36, 0.15);
+  font-size: 10px;
 }
 
 .loading-panel {
@@ -1134,9 +1157,66 @@ button {
   font-weight: 700;
 }
 
+.diff-review {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.diff-file-list {
+  display: grid;
+  gap: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.diff-file-list button {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 54px 8px 9px;
+  color: #5c6259;
+  background: #eeece5;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  text-align: left;
+}
+
+.diff-file-list button.active {
+  color: #35432e;
+  background: #e7efdc;
+  border-color: #cfdcc1;
+}
+
+.diff-file-list span {
+  overflow: hidden;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-file-list small {
+  color: #8a8e86;
+  font-size: 8px;
+}
+
+.diff-file-list i {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  color: #708461;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 8px;
+  font-style: normal;
+  transform: translateY(-50%);
+}
+
 .diff-panel pre {
   max-height: 46vh;
-  margin: 12px -5px 0;
+  margin: 0 -5px;
   overflow: auto;
   color: #50574d;
   font-family: "Cascadia Mono", Consolas, monospace;

@@ -58,6 +58,21 @@ test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状
     params: { diff: "+ return left + right;" },
   });
   runtime.emitNotification({
+    method: "thread/tokenUsage/updated",
+    params: {
+      tokenUsage: {
+        total: {
+          inputTokens: 120,
+          cachedInputTokens: 20,
+          outputTokens: 30,
+          reasoningOutputTokens: 10,
+          totalTokens: 150,
+        },
+        modelContextWindow: 131072,
+      },
+    },
+  });
+  runtime.emitNotification({
     method: "turn/completed",
     params: { turn: { id: "turn-2", status: "completed" } },
   });
@@ -71,6 +86,14 @@ test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状
   assert.equal(state.timeline.find((item) => item.id === "command-1")?.kind, "command");
   assert.equal(state.timeline.find((item) => item.id === "command-1")?.status, "completed");
   assert.equal(state.diff, "+ return left + right;");
+  assert.deepEqual(state.tokenUsage, {
+    inputTokens: 120,
+    cachedInputTokens: 20,
+    outputTokens: 30,
+    reasoningOutputTokens: 10,
+    totalTokens: 150,
+    contextWindow: 131072,
+  });
 });
 
 test("桌面会话服务展示并回复 Runtime 审批请求", async () => {
@@ -195,6 +218,7 @@ test("新建线程会清空当前投影但保留项目上下文", async () => {
   assert.equal(session.getSnapshot().threadId, null);
   assert.equal(session.getSnapshot().projectPath, "D:\\project");
   assert.deepEqual(session.getSnapshot().timeline, []);
+  assert.equal(session.getSnapshot().tokenUsage, null);
 });
 
 test("归档与恢复归档会调用 Runtime 权威线程 API", async () => {

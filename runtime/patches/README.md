@@ -69,3 +69,9 @@ commit。
    分批交给浏览器绘制，使真实 SSE 文本增量不会被 React 合并成一次整段显示。
    该补丁已通过 Windows Runtime CI 权威验证。验证记录：
    [Runtime CI #27397710384](https://github.com/MorganArthur/mimodex/actions/runs/27397710384)。
+
+9. `0009-configurable-mimo-base-url.patch`
+
+   允许 Mimodex 桌面端通过 `MIMO_BASE_URL` 为内置 MiMo Provider 注入可信的
+   Chat Completions 兼容端点；未配置或值为空时继续使用小米 MiMo 官方端点。
+   API Key 仍沿用独立的 Windows 凭据管理器链路，不写入普通设置文件。

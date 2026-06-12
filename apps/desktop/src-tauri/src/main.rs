@@ -13,6 +13,8 @@ const CREDENTIAL_SERVICE: &str = "com.morganarthur.mimodex";
 const CREDENTIAL_USER: &str = "mimo-api-key";
 const MIMODEX_MANAGED_API_KEY_ENV: &str = "MIMODEX_MANAGED_MIMO_API_KEY";
 const MIMO_API_KEY_ENV: &str = "MIMO_API_KEY";
+const MIMO_BASE_URL_ENV: &str = "MIMO_BASE_URL";
+const DEFAULT_MIMO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
 const MAX_PROJECT_DIFF_CHARS: usize = 500_000;
 const MAX_UNTRACKED_DIFF_FILES: usize = 100;
 
@@ -22,6 +24,24 @@ struct CredentialStatus {
     configured: bool,
     source: &'static str,
     storage: &'static str,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppSettings {
+    api_base_url: String,
+    default_model: String,
+    default_sandbox: String,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            api_base_url: DEFAULT_MIMO_BASE_URL.to_string(),
+            default_model: "mimo-v2.5".to_string(),
+            default_sandbox: "workspace-write".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -173,6 +193,19 @@ fn delete_mimo_credential() -> Result<CredentialStatus, String> {
         }),
         Err(_) => Err(credential_error("删除")),
     }
+}
+
+#[tauri::command]
+fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
+    load_app_settings(&app)
+}
+
+#[tauri::command]
+fn save_app_settings(app: AppHandle, settings: AppSettings) -> Result<AppSettings, String> {
+    let settings = validate_app_settings(settings)?;
+    save_app_settings_file(&app, &settings)?;
+    configure_runtime_base_url(&settings.api_base_url);
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -359,15 +392,21 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            configure_runtime_settings(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             add_project,
             append_runtime_events,
             delete_thread,
             delete_mimo_credential,
+            get_app_settings,
             get_mimo_credential_status,
             list_projects,
             list_threads,
             refresh_project,
+            save_app_settings,
             save_mimo_credential,
             select_project,
             select_thread,
@@ -383,6 +422,72 @@ fn project_state(store: ProjectStore) -> ProjectState {
         projects: store.projects,
         selected_project_id: store.selected_project_id,
     }
+}
+
+fn app_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join("settings.json"))
+        .map_err(|_| "无法确定 Mimodex 应用数据目录。".to_string())
+}
+
+fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
+    let path = app_settings_path(app)?;
+    if !path.exists() {
+        return Ok(AppSettings::default());
+    }
+    let contents = fs::read_to_string(path).map_err(|_| "无法读取应用设置。".to_string())?;
+    let settings = serde_json::from_str(&contents).map_err(|_| "应用设置格式无效。".to_string())?;
+    validate_app_settings(settings)
+}
+
+fn save_app_settings_file(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
+    let path = app_settings_path(app)?;
+    let directory = path
+        .parent()
+        .ok_or_else(|| "应用设置路径无效。".to_string())?;
+    fs::create_dir_all(directory).map_err(|_| "无法创建 Mimodex 应用数据目录。".to_string())?;
+    let contents =
+        serde_json::to_string_pretty(settings).map_err(|_| "无法序列化应用设置。".to_string())?;
+    fs::write(path, contents).map_err(|_| "无法保存应用设置。".to_string())
+}
+
+fn validate_app_settings(mut settings: AppSettings) -> Result<AppSettings, String> {
+    settings.api_base_url = settings
+        .api_base_url
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    let authority = settings
+        .api_base_url
+        .strip_prefix("https://")
+        .or_else(|| settings.api_base_url.strip_prefix("http://"))
+        .unwrap_or_default()
+        .split('/')
+        .next()
+        .unwrap_or_default();
+    if settings.api_base_url.is_empty()
+        || settings.api_base_url.len() > 2048
+        || (!settings.api_base_url.starts_with("https://")
+            && !settings.api_base_url.starts_with("http://"))
+        || settings.api_base_url.chars().any(char::is_whitespace)
+        || settings.api_base_url.contains('?')
+        || settings.api_base_url.contains('#')
+        || authority.is_empty()
+        || authority.contains('@')
+    {
+        return Err("API Base URL 必须是有效的 HTTP 或 HTTPS 基础地址。".to_string());
+    }
+    if settings.default_model != "mimo-v2.5" && settings.default_model != "mimo-v2.5-pro" {
+        return Err("默认模型无效。".to_string());
+    }
+    if settings.default_sandbox != "read-only"
+        && settings.default_sandbox != "workspace-write"
+        && settings.default_sandbox != "danger-full-access"
+    {
+        return Err("默认权限模式无效。".to_string());
+    }
+    Ok(settings)
 }
 
 fn project_store_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1114,6 +1219,18 @@ fn configure_runtime_credential() {
     }
 }
 
+fn configure_runtime_settings(app: &AppHandle) {
+    let settings = load_app_settings(app).unwrap_or_default();
+    configure_runtime_base_url(&settings.api_base_url);
+}
+
+fn configure_runtime_base_url(api_base_url: &str) {
+    // The Runtime sidecar reads this before constructing the built-in MiMo provider.
+    unsafe {
+        std::env::set_var(MIMO_BASE_URL_ENV, api_base_url);
+    }
+}
+
 fn initialize_credential_store() -> Result<(), String> {
     let store =
         windows_native_keyring_store::Store::new().map_err(|_| credential_error("初始化"))?;
@@ -1146,6 +1263,37 @@ fn credential_error(action: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_settings_normalize_trailing_slash_and_accept_supported_defaults() {
+        let settings = validate_app_settings(AppSettings {
+            api_base_url: " https://gateway.example.com/v1/ ".to_string(),
+            default_model: "mimo-v2.5-pro".to_string(),
+            default_sandbox: "read-only".to_string(),
+        })
+        .expect("validate app settings");
+
+        assert_eq!(settings.api_base_url, "https://gateway.example.com/v1");
+        assert_eq!(settings.default_model, "mimo-v2.5-pro");
+        assert_eq!(settings.default_sandbox, "read-only");
+    }
+
+    #[test]
+    fn app_settings_reject_invalid_endpoint() {
+        let result = validate_app_settings(AppSettings {
+            api_base_url: "file:///tmp/mimo".to_string(),
+            ..AppSettings::default()
+        });
+
+        assert!(result.is_err());
+        assert!(
+            validate_app_settings(AppSettings {
+                api_base_url: "https://".to_string(),
+                ..AppSettings::default()
+            })
+            .is_err()
+        );
+    }
 
     #[test]
     fn git_status_includes_staged_new_file_diff() {

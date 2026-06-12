@@ -29,6 +29,12 @@ import { App } from "./App.js";
 import { DesktopRoot } from "./DesktopRoot.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
 import type { ProjectService, ProjectState, ProjectSummary } from "./projects.js";
+import {
+  DEFAULT_APP_SETTINGS,
+  normalizeSettings,
+  type AppSettings,
+  type SettingsService,
+} from "./settings.js";
 import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
 
 afterEach(() => {
@@ -83,6 +89,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={credentials}
         createSession={createSession}
         projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
         threadService={new FakeThreadService()}
       />,
     );
@@ -108,6 +115,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={credentials}
         createSession={createSession}
         projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
         threadService={new FakeThreadService()}
       />,
     );
@@ -117,6 +125,39 @@ describe("Mimodex 桌面壳", () => {
 
     expect(screen.getByRole("dialog", { name: "MiMo 设置" })).toBeTruthy();
     expect(screen.getByText("已安全保存")).toBeTruthy();
+  });
+
+  it("持久化自定义端点与默认模型和权限", async () => {
+    const credentials = new FakeCredentialService(true);
+    const settings = new FakeSettingsService();
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={credentials}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService()}
+        settingsService={settings}
+        threadService={new FakeThreadService()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.clear(screen.getByLabelText("API Base URL"));
+    await user.type(screen.getByLabelText("API Base URL"), "https://gateway.example.com/v1/");
+    await user.selectOptions(screen.getByLabelText("默认模型"), "mimo-v2.5-pro");
+    await user.selectOptions(screen.getByLabelText("默认权限"), "read-only");
+    await user.click(screen.getByRole("button", { name: "保存默认设置并重启" }));
+
+    await waitFor(() =>
+      expect(settings.saved).toEqual([
+        {
+          apiBaseUrl: "https://gateway.example.com/v1",
+          defaultModel: "mimo-v2.5-pro",
+          defaultSandbox: "read-only",
+        },
+      ]),
+    );
+    expect(credentials.restartCount).toBe(1);
   });
 
   it("添加本地项目后使用所选路径提交任务", async () => {
@@ -129,6 +170,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={credentials}
         createSession={() => new DesktopSessionController(runtime)}
         projectService={projects}
+        settingsService={new FakeSettingsService()}
         threadService={new FakeThreadService([])}
       />,
     );
@@ -153,6 +195,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={new FakeCredentialService(true)}
         createSession={() => new DesktopSessionController(runtime)}
         projectService={projectService}
+        settingsService={new FakeSettingsService()}
         threadService={new FakeThreadService([])}
       />,
     );
@@ -196,8 +239,93 @@ describe("Mimodex 桌面壳", () => {
     renderApp(runtime, [project], project);
 
     expect(await screen.findByText("1 个文件 · 1 已暂存")).toBeTruthy();
-    expect(screen.getByText("+2 -0")).toBeTruthy();
+    expect(screen.getAllByText("+2 -0")).toHaveLength(2);
     expect(screen.getByText(/diff --git a\/\.gitignore b\/\.gitignore/)).toBeTruthy();
+  });
+
+  it("右侧可按文件切换审阅 Diff", async () => {
+    const runtime = new UiRuntime();
+    const user = userEvent.setup();
+    const project = {
+      ...fixtureProject(),
+      git: {
+        ...fixtureProject().git,
+        dirty: true,
+        changedFiles: 2,
+        stagedFiles: 1,
+        unstagedFiles: 1,
+        additions: 2,
+        deletions: 1,
+        diff: `## 已暂存
+
+diff --git a/.gitignore b/.gitignore
++++ b/.gitignore
++dist/
+
+## 未暂存
+
+diff --git a/src/app.ts b/src/app.ts
+--- a/src/app.ts
++++ b/src/app.ts
+-old
++next`,
+      },
+    };
+    renderApp(runtime, [project], project);
+
+    await user.click(await screen.findByRole("button", { name: /src\/app\.ts/ }));
+    expect(document.querySelector(".diff-file-detail")?.textContent).toContain("-old\n+next");
+  });
+
+  it("展示 Runtime 上报的 Token 用量", async () => {
+    const runtime = new UiRuntime();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    runtime.emitNotification({
+      method: "thread/tokenUsage/updated",
+      params: {
+        tokenUsage: {
+          total: {
+            inputTokens: 800,
+            cachedInputTokens: 200,
+            outputTokens: 224,
+            reasoningOutputTokens: 24,
+            totalTokens: 1024,
+          },
+          modelContextWindow: 131072,
+        },
+      },
+    });
+
+    expect(await screen.findByText("1,024")).toBeTruthy();
+    expect(screen.getByText("131,072")).toBeTruthy();
+  });
+
+  it("任务完成后自动静默刷新 Git 状态", async () => {
+    const projects = new FakeProjectService();
+    const runtime = new UiRuntime();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtime)}
+        projectService={projects}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService()}
+      />,
+    );
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    runtime.emitNotification({
+      method: "turn/started",
+      params: { turn: { id: "turn-refresh", status: "inProgress" } },
+    });
+    runtime.emitNotification({
+      method: "turn/completed",
+      params: { turn: { id: "turn-refresh", status: "completed" } },
+    });
+
+    await waitFor(() => expect(projects.refreshCount).toBeGreaterThan(0));
   });
 
   it("从真实最近线程列表恢复 Runtime 线程与本地投影", async () => {
@@ -209,6 +337,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={new FakeCredentialService(true)}
         createSession={() => new DesktopSessionController(runtime)}
         projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
         threadService={new FakeThreadService([thread])}
       />,
     );
@@ -242,6 +371,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={new FakeCredentialService(true)}
         createSession={() => new DesktopSessionController(runtime)}
         projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
         threadService={threads}
       />,
     );
@@ -269,6 +399,7 @@ describe("Mimodex 桌面壳", () => {
         credentialService={new FakeCredentialService(true)}
         createSession={() => new DesktopSessionController(runtime)}
         projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
         threadService={threads}
       />,
     );
@@ -312,6 +443,7 @@ function renderApp(
       projectError={null}
       projects={projects}
       session={new DesktopSessionController(runtime)}
+      settings={DEFAULT_APP_SETTINGS}
       threadBusy={false}
       threadError={null}
       threads={[]}
@@ -411,6 +543,12 @@ class UiRuntime implements RuntimeClientPort {
     }
   }
 
+  emitNotification(notification: ServerNotification): void {
+    for (const listener of this.#notifications) {
+      listener(notification);
+    }
+  }
+
   emitProtocolEvent(event: RuntimeProtocolEvent): void {
     for (const listener of this.#protocolEvents) {
       listener(event);
@@ -451,7 +589,28 @@ class FakeCredentialService implements CredentialService {
   }
 }
 
+class FakeSettingsService implements SettingsService {
+  readonly saved: AppSettings[] = [];
+  #settings: AppSettings;
+
+  constructor(settings: AppSettings = DEFAULT_APP_SETTINGS) {
+    this.#settings = settings;
+  }
+
+  async get(): Promise<AppSettings> {
+    return this.#settings;
+  }
+
+  async save(settings: AppSettings): Promise<AppSettings> {
+    const normalized = normalizeSettings(settings);
+    this.saved.push(normalized);
+    this.#settings = normalized;
+    return normalized;
+  }
+}
+
 class FakeProjectService implements ProjectService {
+  refreshCount = 0;
   #state: ProjectState;
 
   constructor(projects: ProjectSummary[] = [fixtureProject()]) {
@@ -481,6 +640,7 @@ class FakeProjectService implements ProjectService {
   }
 
   async refresh(_projectId: string): Promise<ProjectState> {
+    this.refreshCount += 1;
     return this.#state;
   }
 }

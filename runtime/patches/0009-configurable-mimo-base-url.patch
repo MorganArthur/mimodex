@@ -1,0 +1,32 @@
+diff --git a/codex-rs/model-provider-info/src/lib.rs b/codex-rs/model-provider-info/src/lib.rs
+index 5b43db0..27fd158 100644
+--- a/codex-rs/model-provider-info/src/lib.rs
++++ b/codex-rs/model-provider-info/src/lib.rs
+@@ -38,6 +38,7 @@ pub const OPENAI_PROVIDER_ID: &str = "openai";
+ pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
+ const MIMO_PROVIDER_NAME: &str = "MiMo";
+ pub const MIMO_PROVIDER_ID: &str = "mimo";
++pub const MIMO_BASE_URL_ENV_VAR: &str = "MIMO_BASE_URL";
+ pub const MIMO_DEFAULT_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
+ pub const MIMO_API_KEY_ENV_VAR: &str = "MIMO_API_KEY";
+ const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
+@@ -400,10 +401,18 @@ impl ModelProviderInfo {
+         }
+     }
+ 
++    fn mimo_base_url() -> String {
++        std::env::var(MIMO_BASE_URL_ENV_VAR)
++            .ok()
++            .map(|value| value.trim().trim_end_matches('/').to_string())
++            .filter(|value| !value.is_empty())
++            .unwrap_or_else(|| MIMO_DEFAULT_BASE_URL.to_string())
++    }
++
+     pub fn create_mimo_provider() -> ModelProviderInfo {
+         ModelProviderInfo {
+             name: MIMO_PROVIDER_NAME.into(),
+-            base_url: Some(MIMO_DEFAULT_BASE_URL.into()),
++            base_url: Some(Self::mimo_base_url()),
+             env_key: None,
+             env_key_instructions: None,
+             experimental_bearer_token: None,

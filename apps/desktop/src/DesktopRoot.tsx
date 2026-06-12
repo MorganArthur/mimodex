@@ -1,15 +1,17 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { DesktopSessionController, SessionState } from "@mimodex/desktop-core";
 import { App } from "./App.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
 import type { ProjectService, ProjectState } from "./projects.js";
+import { type AppSettings, type SettingsService } from "./settings.js";
 import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
 
 export type DesktopRootProps = {
   credentialService: CredentialService;
   createSession: () => DesktopSessionController;
   projectService: ProjectService;
+  settingsService: SettingsService;
   threadService: ThreadService;
 };
 
@@ -17,18 +19,29 @@ export function DesktopRoot({
   credentialService,
   createSession,
   projectService,
+  settingsService,
   threadService,
 }: DesktopRootProps) {
   const [credentialStatus, setCredentialStatus] = useState<CredentialStatus | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [session, setSession] = useState<DesktopSessionController | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [projectState, setProjectState] = useState<ProjectState | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projectBusy, setProjectBusy] = useState(false);
   const [threadState, setThreadState] = useState<ThreadState | null>(null);
   const [threadError, setThreadError] = useState<string | null>(null);
   const [threadBusy, setThreadBusy] = useState(false);
+  const projectRefreshInFlight = useRef(false);
+
+  useEffect(() => {
+    void settingsService
+      .get()
+      .then(setSettings)
+      .catch((error) => setSettingsError(errorMessage(error)));
+  }, [settingsService]);
 
   useEffect(() => {
     void credentialService
@@ -38,7 +51,7 @@ export function DesktopRoot({
   }, [credentialService]);
 
   useEffect(() => {
-    if (!credentialStatus?.configured) {
+    if (!credentialStatus?.configured || !settings) {
       return;
     }
     const nextSession = createSession();
@@ -47,7 +60,7 @@ export function DesktopRoot({
       setSession(null);
       void nextSession.close();
     };
-  }, [createSession, credentialStatus?.configured]);
+  }, [createSession, credentialStatus?.configured, settings]);
 
   useEffect(() => {
     if (!credentialStatus?.configured) {
@@ -160,7 +173,10 @@ export function DesktopRoot({
     };
   }, [session, threadService]);
 
-  const saveCredential = async (apiKey: string) => {
+  const saveCredential = async (apiKey: string, nextSettings?: AppSettings) => {
+    if (nextSettings) {
+      setSettings(await settingsService.save(nextSettings));
+    }
     const status = await credentialService.save(apiKey);
     await credentialService.restart();
     setCredentialStatus(status);
@@ -170,6 +186,13 @@ export function DesktopRoot({
     const status = await credentialService.delete();
     await credentialService.restart();
     setCredentialStatus(status);
+  };
+
+  const saveSettings = async (nextSettings: AppSettings) => {
+    setSettingsError(null);
+    const saved = await settingsService.save(nextSettings);
+    setSettings(saved);
+    await credentialService.restart();
   };
 
   const addProject = async () => {
@@ -304,29 +327,66 @@ export function DesktopRoot({
     }
   };
 
-  const refreshProject = async () => {
-    if (!projectState?.selectedProjectId) {
+  const refreshSelectedProject = useCallback(async (quiet = false) => {
+    const projectId = projectState?.selectedProjectId;
+    if (!projectId || projectRefreshInFlight.current) {
       return;
     }
-    setProjectBusy(true);
-    setProjectError(null);
-    try {
-      setProjectState(await projectService.refresh(projectState.selectedProjectId));
-    } catch (error) {
-      setProjectError(errorMessage(error));
-    } finally {
-      setProjectBusy(false);
+    projectRefreshInFlight.current = true;
+    if (!quiet) {
+      setProjectBusy(true);
+      setProjectError(null);
     }
-  };
+    try {
+      setProjectState(await projectService.refresh(projectId));
+    } catch (error) {
+      if (!quiet) {
+        setProjectError(errorMessage(error));
+      }
+    } finally {
+      projectRefreshInFlight.current = false;
+      if (!quiet) {
+        setProjectBusy(false);
+      }
+    }
+  }, [projectService, projectState?.selectedProjectId]);
 
-  if (credentialError) {
-    return <CredentialErrorPanel message={credentialError} />;
+  useEffect(() => {
+    if (!session || !projectState?.selectedProjectId) {
+      return;
+    }
+    let previous = session.getSnapshot().turnStatus;
+    const unsubscribe = session.subscribe(() => {
+      const current = session.getSnapshot().turnStatus;
+      if (previous === "inProgress" && current !== "inProgress") {
+        void refreshSelectedProject(true);
+      }
+      previous = current;
+    });
+    const refreshWhenIdle = () => {
+      if (session.getSnapshot().turnStatus !== "inProgress") {
+        void refreshSelectedProject(true);
+      }
+    };
+    const timer = window.setInterval(refreshWhenIdle, 10_000);
+    window.addEventListener("focus", refreshWhenIdle);
+    return () => {
+      unsubscribe();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenIdle);
+    };
+  }, [projectState?.selectedProjectId, refreshSelectedProject, session]);
+
+  const refreshProject = () => refreshSelectedProject(false);
+
+  if (credentialError || (settingsError && !settings)) {
+    return <CredentialErrorPanel message={credentialError ?? settingsError ?? "无法读取设置。"} />;
   }
-  if (!credentialStatus) {
+  if (!credentialStatus || !settings) {
     return <LoadingPanel />;
   }
   if (!credentialStatus.configured) {
-    return <CredentialSetup status={credentialStatus} onSave={saveCredential} />;
+    return <CredentialSetup settings={settings} status={credentialStatus} onSave={saveCredential} />;
   }
   if (!session || !projectState || !threadState) {
     return <LoadingPanel />;
@@ -358,6 +418,7 @@ export function DesktopRoot({
         projectError={projectError}
         projects={projectState.projects}
         session={session}
+        settings={settings}
         threadBusy={threadBusy}
         threadError={threadError}
         threads={projectThreads}
@@ -365,11 +426,14 @@ export function DesktopRoot({
       {settingsOpen && (
         <CredentialSettings
           status={credentialStatus}
+          settings={settings}
           onClose={() => setSettingsOpen(false)}
           onDelete={deleteCredential}
           onSave={saveCredential}
+          onSaveSettings={saveSettings}
         />
       )}
+      {settingsError && <div className="global-error">{settingsError}</div>}
     </>
   );
 }
@@ -405,11 +469,13 @@ function sameProjectPath(left: string, right: string | null): boolean {
 }
 
 function CredentialSetup({
+  settings,
   status,
   onSave,
 }: {
+  settings: AppSettings;
   status: CredentialStatus;
-  onSave: (apiKey: string) => Promise<void>;
+  onSave: (apiKey: string, settings?: AppSettings) => Promise<void>;
 }) {
   return (
     <main className="setup-screen">
@@ -423,22 +489,31 @@ function CredentialSetup({
         <p className="setup-description">
           API Key 将保存在 Windows 凭据管理器中，不会写入项目、日志或普通配置文件。
         </p>
-        <CredentialForm status={status} submitLabel="保存并重启 Mimodex" onSave={onSave} />
+        <CredentialForm
+          settings={settings}
+          status={status}
+          submitLabel="保存并重启 Mimodex"
+          onSave={onSave}
+        />
       </section>
     </main>
   );
 }
 
 function CredentialSettings({
+  settings,
   status,
   onClose,
   onDelete,
   onSave,
+  onSaveSettings,
 }: {
+  settings: AppSettings;
   status: CredentialStatus;
   onClose: () => void;
   onDelete: () => Promise<void>;
   onSave: (apiKey: string) => Promise<void>;
+  onSaveSettings: (settings: AppSettings) => Promise<void>;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -461,6 +536,7 @@ function CredentialSettings({
           <div><p className="eyebrow">设置</p><h2>MiMo Provider</h2></div>
           <button aria-label="关闭设置" type="button" onClick={onClose}>×</button>
         </header>
+        <ProviderSettingsForm settings={settings} onSave={onSaveSettings} />
         <CredentialForm status={status} submitLabel="更换 Key 并重启" onSave={onSave} />
         {status.source === "windowsCredentialManager" ? (
           <div className="danger-zone">
@@ -485,15 +561,22 @@ function CredentialSettings({
 }
 
 function CredentialForm({
+  settings,
   status,
   submitLabel,
   onSave,
 }: {
+  settings?: AppSettings;
   status: CredentialStatus;
   submitLabel: string;
-  onSave: (apiKey: string) => Promise<void>;
+  onSave: (apiKey: string, settings?: AppSettings) => Promise<void>;
 }) {
   const [apiKey, setApiKey] = useState("");
+  const [apiBaseUrl, setApiBaseUrl] = useState(settings?.apiBaseUrl ?? "");
+  const [defaultModel, setDefaultModel] = useState(settings?.defaultModel ?? "mimo-v2.5");
+  const [defaultSandbox, setDefaultSandbox] = useState(
+    settings?.defaultSandbox ?? "workspace-write",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -505,7 +588,10 @@ function CredentialForm({
     setSaving(true);
     setError(null);
     try {
-      await onSave(apiKey);
+      await onSave(
+        apiKey,
+        settings ? { apiBaseUrl, defaultModel, defaultSandbox } : undefined,
+      );
     } catch (saveError) {
       setError(errorMessage(saveError));
       setSaving(false);
@@ -514,11 +600,16 @@ function CredentialForm({
 
   return (
     <form className="credential-form" onSubmit={(event) => void submit(event)}>
-      <label>
-        <span>API Base URL</span>
-        <input disabled value="https://api.xiaomimimo.com/v1" />
-        <small>首版使用官方端点；自定义兼容端点将在连接诊断阶段开放。</small>
-      </label>
+      {settings && (
+        <SettingsFields
+          apiBaseUrl={apiBaseUrl}
+          defaultModel={defaultModel}
+          defaultSandbox={defaultSandbox}
+          onApiBaseUrlChange={setApiBaseUrl}
+          onDefaultModelChange={setDefaultModel}
+          onDefaultSandboxChange={setDefaultSandbox}
+        />
+      )}
       <label>
         <span>MiMo API Key</span>
         <input
@@ -543,6 +634,110 @@ function CredentialForm({
       </button>
       <p className="restart-note">保存后应用会重启一次，Runtime 才能安全读取新凭据。</p>
     </form>
+  );
+}
+
+function ProviderSettingsForm({
+  settings,
+  onSave,
+}: {
+  settings: AppSettings;
+  onSave: (settings: AppSettings) => Promise<void>;
+}) {
+  const [apiBaseUrl, setApiBaseUrl] = useState(settings.apiBaseUrl);
+  const [defaultModel, setDefaultModel] = useState(settings.defaultModel);
+  const [defaultSandbox, setDefaultSandbox] = useState(settings.defaultSandbox);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setApiBaseUrl(settings.apiBaseUrl);
+    setDefaultModel(settings.defaultModel);
+    setDefaultSandbox(settings.defaultSandbox);
+  }, [settings]);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({ apiBaseUrl, defaultModel, defaultSandbox });
+      setSaving(false);
+    } catch (saveError) {
+      setError(errorMessage(saveError));
+      setSaving(false);
+    }
+  };
+  return (
+    <form className="credential-form provider-settings-form" onSubmit={(event) => void submit(event)}>
+      <SettingsFields
+        apiBaseUrl={apiBaseUrl}
+        defaultModel={defaultModel}
+        defaultSandbox={defaultSandbox}
+        onApiBaseUrlChange={setApiBaseUrl}
+        onDefaultModelChange={setDefaultModel}
+        onDefaultSandboxChange={setDefaultSandbox}
+      />
+      {error && <p className="form-error">{error}</p>}
+      <button className="credential-submit" disabled={saving} type="submit">
+        {saving ? "正在保存…" : "保存默认设置并重启"}
+      </button>
+    </form>
+  );
+}
+
+function SettingsFields({
+  apiBaseUrl,
+  defaultModel,
+  defaultSandbox,
+  onApiBaseUrlChange,
+  onDefaultModelChange,
+  onDefaultSandboxChange,
+}: {
+  apiBaseUrl: string;
+  defaultModel: AppSettings["defaultModel"];
+  defaultSandbox: AppSettings["defaultSandbox"];
+  onApiBaseUrlChange: (value: string) => void;
+  onDefaultModelChange: (value: AppSettings["defaultModel"]) => void;
+  onDefaultSandboxChange: (value: AppSettings["defaultSandbox"]) => void;
+}) {
+  return (
+    <>
+      <label>
+        <span>API Base URL</span>
+        <input
+          aria-label="API Base URL"
+          value={apiBaseUrl}
+          onChange={(event) => onApiBaseUrlChange(event.target.value)}
+        />
+        <small>自定义端点会收到你的 API Key 与任务上下文，请仅使用可信服务。</small>
+      </label>
+      <label>
+        <span>默认模型</span>
+        <select
+          aria-label="默认模型"
+          value={defaultModel}
+          onChange={(event) =>
+            onDefaultModelChange(event.target.value as AppSettings["defaultModel"])
+          }
+        >
+          <option value="mimo-v2.5">mimo-v2.5</option>
+          <option value="mimo-v2.5-pro">mimo-v2.5-pro（高级）</option>
+        </select>
+      </label>
+      <label>
+        <span>默认权限</span>
+        <select
+          aria-label="默认权限"
+          value={defaultSandbox}
+          onChange={(event) =>
+            onDefaultSandboxChange(event.target.value as AppSettings["defaultSandbox"])
+          }
+        >
+          <option value="read-only">只读</option>
+          <option value="workspace-write">工作区写入</option>
+          <option value="danger-full-access">完全访问</option>
+        </select>
+      </label>
+    </>
   );
 }
 

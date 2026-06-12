@@ -228,6 +228,21 @@ export class DemoRuntimeClient implements RuntimeClientPort {
         delta: "验证命令全部通过。",
       }),
     );
+    this.#schedule(1_160, () =>
+      this.#emitNotification("thread/tokenUsage/updated", {
+        threadId: this.#threadId,
+        tokenUsage: {
+          total: {
+            inputTokens: 1460,
+            cachedInputTokens: 840,
+            outputTokens: 280,
+            reasoningOutputTokens: 96,
+            totalTokens: 1740,
+          },
+          modelContextWindow: 131072,
+        },
+      }),
+    );
     this.#schedule(1_260, () =>
       this.#emitNotification("turn/completed", {
         threadId: this.#threadId,
