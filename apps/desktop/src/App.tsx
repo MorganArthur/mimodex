@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import {
   type ApprovalDecision,
@@ -74,6 +74,7 @@ export function App({
   );
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const conversationRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     void session.connect().catch(() => undefined);
@@ -85,6 +86,16 @@ export function App({
       setSandbox(state.sandbox);
     }
   }, [state.model, state.sandbox, state.threadId]);
+
+  useEffect(() => {
+    if (state.turnStatus !== "inProgress") {
+      return;
+    }
+    const conversation = conversationRef.current;
+    if (conversation) {
+      conversation.scrollTop = conversation.scrollHeight;
+    }
+  }, [state.timeline, state.approvals, state.turnStatus]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -255,7 +266,7 @@ export function App({
           </div>
         </header>
 
-        <section className="conversation">
+        <section className="conversation" ref={conversationRef}>
           {!currentProject ? (
             <ProjectWelcome onAdd={() => void onAddProject()} />
           ) : !currentProject.available ? (

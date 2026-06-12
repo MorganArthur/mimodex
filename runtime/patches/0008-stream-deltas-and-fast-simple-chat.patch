@@ -1,0 +1,190 @@
+diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+index b3c34e6bc..831b6c560 100644
+--- a/codex-rs/core/src/client.rs
++++ b/codex-rs/core/src/client.rs
+@@ -77,6 +77,7 @@ use codex_protocol::SessionId;
+ use codex_protocol::ThreadId;
+ use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
+ use codex_protocol::config_types::Verbosity as VerbosityConfig;
++use codex_protocol::models::ContentItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::openai_models::ModelInfo;
+ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
+@@ -840,8 +841,12 @@ impl ModelClient {
+ 
+         let messages = encode_chat_messages(&prompt.base_instructions.text, &prompt.input)
+             .map_err(|error| CodexErr::UnsupportedOperation(error.to_string()))?;
+-        let tools = create_tools_for_chat_completions(&prompt.tools)
+-            .map_err(|error| CodexErr::UnsupportedOperation(error.to_string()))?;
++        let tools = if should_include_chat_completions_tools(&prompt.input) {
++            create_tools_for_chat_completions(&prompt.tools)
++                .map_err(|error| CodexErr::UnsupportedOperation(error.to_string()))?
++        } else {
++            Vec::new()
++        };
+         let mut request = json!({
+             "model": model_info.slug,
+             "messages": messages,
+@@ -1017,6 +1022,85 @@ impl ModelClient {
+     }
+ }
+ 
++fn should_include_chat_completions_tools(input: &[ResponseItem]) -> bool {
++    if input.iter().any(|item| {
++        matches!(
++            item,
++            ResponseItem::LocalShellCall { .. }
++                | ResponseItem::FunctionCall { .. }
++                | ResponseItem::FunctionCallOutput { .. }
++                | ResponseItem::CustomToolCall { .. }
++                | ResponseItem::CustomToolCallOutput { .. }
++                | ResponseItem::ToolSearchCall { .. }
++                | ResponseItem::ToolSearchOutput { .. }
++                | ResponseItem::WebSearchCall { .. }
++                | ResponseItem::ImageGenerationCall { .. }
++        )
++    }) {
++        return true;
++    }
++
++    let Some(latest_user_text) = input.iter().rev().find_map(|item| {
++        let ResponseItem::Message { role, content, .. } = item else {
++            return None;
++        };
++        if role != "user" {
++            return None;
++        }
++        Some(
++            content
++                .iter()
++                .filter_map(|item| match item {
++                    ContentItem::InputText { text } => Some(text.as_str()),
++                    _ => None,
++                })
++                .collect::<Vec<_>>()
++                .join("\n"),
++        )
++    }) else {
++        return true;
++    };
++
++    !is_simple_conversation(&latest_user_text)
++}
++
++fn is_simple_conversation(text: &str) -> bool {
++    let normalized = text
++        .chars()
++        .filter(|character| {
++            !character.is_whitespace()
++                && !matches!(
++                    character,
++                    '.' | ',' | '?' | '!' | ';' | ':' | '，' | '。' | '？' | '！' | '；' | '：'
++                )
++        })
++        .flat_map(char::to_lowercase)
++        .collect::<String>();
++
++    matches!(
++        normalized.as_str(),
++        "你好"
++            | "您好"
++            | "嗨"
++            | "哈喽"
++            | "你是谁"
++            | "你是什么模型"
++            | "你叫什么"
++            | "介绍一下你自己"
++            | "你能做什么"
++            | "谢谢"
++            | "感谢"
++            | "hi"
++            | "hello"
++            | "hey"
++            | "whoareyou"
++            | "whatmodelareyou"
++            | "whatcanyoudo"
++            | "thanks"
++            | "thankyou"
++    )
++}
++
+ impl Drop for ModelClientSession {
+     fn drop(&mut self) {
+         let websocket_session = std::mem::take(&mut self.websocket_session);
+diff --git a/codex-rs/core/src/client_tests.rs b/codex-rs/core/src/client_tests.rs
+index ea8a8c4ee..f4522058f 100644
+--- a/codex-rs/core/src/client_tests.rs
++++ b/codex-rs/core/src/client_tests.rs
+@@ -40,6 +40,9 @@ use codex_rollout_trace::RawTraceEventPayload;
+ use codex_rollout_trace::RolloutTrace;
+ use codex_rollout_trace::TraceWriter;
+ use codex_rollout_trace::replay_bundle;
++use codex_tools::JsonSchema;
++use codex_tools::ResponsesApiTool;
++use codex_tools::ToolSpec;
+ use futures::StreamExt;
+ use pretty_assertions::assert_eq;
+ use serde_json::json;
+@@ -279,6 +282,62 @@ fn chat_completions_rejects_unverified_request_capabilities() {
+     );
+ }
+ 
++#[test]
++fn chat_completions_skips_tools_for_simple_conversation() {
++    let client = test_model_client_with_wire_api(SessionSource::Exec, WireApi::ChatCompletions);
++    let prompt = Prompt {
++        input: vec![user_message("你是什么模型？")],
++        tools: vec![test_function_tool()],
++        ..Prompt::default()
++    };
++
++    let request = client
++        .build_chat_completions_request(&prompt, &test_model_info(), /*service_tier*/ None)
++        .expect("simple conversation request should build");
++
++    assert_eq!(request.get("tools"), None);
++    assert_eq!(request.get("tool_choice"), None);
++}
++
++#[test]
++fn chat_completions_keeps_tools_for_agent_tasks() {
++    let client = test_model_client_with_wire_api(SessionSource::Exec, WireApi::ChatCompletions);
++    let prompt = Prompt {
++        input: vec![user_message("创建一个 .gitignore 文件")],
++        tools: vec![test_function_tool()],
++        ..Prompt::default()
++    };
++
++    let request = client
++        .build_chat_completions_request(&prompt, &test_model_info(), /*service_tier*/ None)
++        .expect("agent task request should build");
++
++    assert_eq!(request["tool_choice"], json!("auto"));
++    assert_eq!(request["tools"][0]["function"]["name"], json!("shell_command"));
++}
++
++fn user_message(text: &str) -> ResponseItem {
++    ResponseItem::Message {
++        id: None,
++        role: "user".to_string(),
++        content: vec![ContentItem::InputText {
++            text: text.to_string(),
++        }],
++        phase: None,
++    }
++}
++
++fn test_function_tool() -> ToolSpec {
++    ToolSpec::Function(ResponsesApiTool {
++        name: "shell_command".to_string(),
++        description: "Run a shell command".to_string(),
++        strict: false,
++        defer_loading: None,
++        parameters: JsonSchema::object(BTreeMap::new(), None, Some(false.into())),
++        output_schema: None,
++    })
++}
++
+ fn test_model_info() -> ModelInfo {
+     serde_json::from_value(json!({
+         "slug": "gpt-test",

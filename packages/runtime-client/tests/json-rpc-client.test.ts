@@ -41,6 +41,34 @@ test("JSON-RPC 客户端关联乱序响应并转发通知", async () => {
   ]);
 });
 
+test("同一 stdout 批次中的流式通知会分批交给界面绘制", async () => {
+  const transport = new FakeTransport();
+  const client = new JsonRpcClient(transport, { maxMessagesPerDrain: 2 });
+  const deltas: string[] = [];
+  client.onNotification((notification) => {
+    if (notification.method === "item/agentMessage/delta") {
+      const params = notification.params as { delta?: string };
+      deltas.push(params.delta ?? "");
+    }
+  });
+  await client.start();
+
+  transport.emitStdout(
+    ["第一段", "第二段", "第三段", "第四段"]
+      .map((delta) =>
+        JSON.stringify({
+          method: "item/agentMessage/delta",
+          params: { itemId: "message-1", delta },
+        }),
+      )
+      .join("\n") + "\n",
+  );
+
+  assert.deepEqual(deltas, ["第一段", "第二段"]);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(deltas, ["第一段", "第二段", "第三段", "第四段"]);
+});
+
 test("JSON-RPC 客户端暴露服务端反向请求并可回复", async () => {
   const transport = new FakeTransport();
   const client = new JsonRpcClient(transport);

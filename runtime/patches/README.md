@@ -60,3 +60,10 @@ commit。
    简单交互首字等待并提高工具调用稳定性。补丁同时验证实际请求中的身份提示和
    thinking 参数。该补丁已通过 Windows Runtime CI 权威验证。验证记录：
    [Runtime CI #27393023486](https://github.com/MorganArthur/mimodex/actions/runs/27393023486)。
+
+8. `0008-stream-deltas-and-fast-simple-chat.patch`
+
+   对明确的寒暄、身份和能力问答使用无工具 Chat Completions 快速路径，避免简单
+   对话仍携带完整 Agent 工具定义；编码任务以及已有工具调用历史的线程继续保留
+   完整工具能力。同一阶段的桌面 Runtime 客户端将单个 stdout 批次中的协议消息
+   分批交给浏览器绘制，使真实 SSE 文本增量不会被 React 合并成一次整段显示。

@@ -31,12 +31,14 @@ type PendingRequest = {
 export type JsonRpcClientOptions = {
   requestTimeoutMs?: number;
   maxBufferedCharacters?: number;
+  maxMessagesPerDrain?: number;
 };
 
 export class JsonRpcClient {
   readonly #transport: RuntimeTransport;
   readonly #decoder: NdjsonDecoder;
   readonly #requestTimeoutMs: number;
+  readonly #maxMessagesPerDrain: number;
   readonly #pending = new Map<RequestId, PendingRequest>();
   readonly #notificationListeners = new Set<Listener<JsonRpcNotification>>();
   readonly #requestListeners = new Set<Listener<JsonRpcRequest>>();
@@ -50,10 +52,13 @@ export class JsonRpcClient {
   #starting = false;
   #started = false;
   #closed = false;
+  #stdoutDrainTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly #stdoutLines: string[] = [];
 
   constructor(transport: RuntimeTransport, options: JsonRpcClientOptions = {}) {
     this.#transport = transport;
     this.#requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
+    this.#maxMessagesPerDrain = Math.max(1, options.maxMessagesPerDrain ?? 4);
     this.#decoder = new NdjsonDecoder(options.maxBufferedCharacters);
   }
 
@@ -197,17 +202,36 @@ export class JsonRpcClient {
       return;
     }
     this.#closed = true;
+    if (this.#stdoutDrainTimer !== undefined) {
+      clearTimeout(this.#stdoutDrainTimer);
+      this.#stdoutDrainTimer = undefined;
+    }
+    this.#stdoutLines.splice(0);
     this.#rejectAll(new RuntimeDisconnectedError("Runtime connection closed by client"));
     await this.#transport.close();
   }
 
   #handleStdout(chunk: string | Uint8Array): void {
     try {
-      for (const line of this.#decoder.push(chunk)) {
-        this.#handleLine(line);
-      }
+      this.#stdoutLines.push(...this.#decoder.push(chunk));
+      this.#drainStdout();
     } catch (error) {
       this.#handleProtocolError(error);
+    }
+  }
+
+  #drainStdout(): void {
+    if (this.#stdoutDrainTimer !== undefined) {
+      return;
+    }
+    for (let index = 0; index < this.#maxMessagesPerDrain && this.#stdoutLines.length > 0; index += 1) {
+      this.#handleLine(this.#stdoutLines.shift() ?? "");
+    }
+    if (this.#stdoutLines.length > 0) {
+      this.#stdoutDrainTimer = setTimeout(() => {
+        this.#stdoutDrainTimer = undefined;
+        this.#drainStdout();
+      }, 0);
     }
   }
 
@@ -295,7 +319,11 @@ export class JsonRpcClient {
 
   #handleExit(details?: { code?: number; signal?: string }): void {
     try {
-      for (const line of this.#decoder.finish()) {
+      if (this.#stdoutDrainTimer !== undefined) {
+        clearTimeout(this.#stdoutDrainTimer);
+        this.#stdoutDrainTimer = undefined;
+      }
+      for (const line of [...this.#stdoutLines.splice(0), ...this.#decoder.finish()]) {
         this.#handleLine(line);
       }
     } catch (error) {

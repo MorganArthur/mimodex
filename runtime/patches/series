@@ -6,3 +6,4 @@
 0005-add-mimo-tool-loop-and-recovery.patch
 0006-accept-null-mimo-sse-collections.patch
 0007-use-mimo-identity-and-disable-thinking.patch
+0008-stream-deltas-and-fast-simple-chat.patch
