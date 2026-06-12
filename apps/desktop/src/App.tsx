@@ -7,12 +7,14 @@ import {
   type SessionState,
   type TimelineEntry,
 } from "@mimodex/desktop-core";
-import { parseUnifiedDiff } from "./diff.js";
+import { parseUnifiedDiff, type DiffFile } from "./diff.js";
 import type { ProjectSummary } from "./projects.js";
 import type { AppSettings } from "./settings.js";
-import type { ThreadRecord } from "./threads.js";
+import type { ThreadActivityEvent, ThreadRecord } from "./threads.js";
 
 export type AppProps = {
+  activityError: string | null;
+  activityEvents: ThreadActivityEvent[];
   archivedThreads: ThreadRecord[];
   currentProject: ProjectSummary | null;
   onAddProject: () => void | Promise<void>;
@@ -52,6 +54,8 @@ const entryLabels: Record<TimelineEntry["kind"], string> = {
 };
 
 export function App({
+  activityError,
+  activityEvents,
   archivedThreads,
   currentProject,
   onAddProject,
@@ -80,6 +84,7 @@ export function App({
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [selectedDiffFileId, setSelectedDiffFileId] = useState<string | null>(null);
+  const [contextTab, setContextTab] = useState<"activity" | "changes">("changes");
   const conversationRef = useRef<HTMLElement>(null);
   const gitDiff = currentProject?.git.diff ?? "";
   const visibleDiff = currentProject?.git.dirty ? gitDiff : state.diff;
@@ -383,50 +388,53 @@ export function App({
 
       <aside className="context-panel">
         <div className="context-tabs">
-          <button className="active" type="button">变更</button>
-          <button type="button">活动</button>
+          <button
+            className={contextTab === "changes" ? "active" : ""}
+            type="button"
+            onClick={() => setContextTab("changes")}
+          >
+            变更
+          </button>
+          <button
+            className={contextTab === "activity" ? "active" : ""}
+            type="button"
+            onClick={() => setContextTab("activity")}
+          >
+            活动
+          </button>
         </div>
         <section className="context-summary">
-          <p className="eyebrow">当前项目</p>
-          <h2>{currentProject?.name ?? "尚未选择"}</h2>
-          <p>{currentProject ? projectSummary(currentProject) : "添加项目后才能创建 Agent 任务。"}</p>
+          <p className="eyebrow">{contextTab === "changes" ? "当前项目" : "当前线程"}</p>
+          <h2>
+            {contextTab === "changes"
+              ? currentProject?.name ?? "尚未选择"
+              : state.threadId
+                ? "Runtime 活动审计"
+                : "尚未创建线程"}
+          </h2>
+          <p>
+            {contextTab === "changes"
+              ? currentProject
+                ? projectSummary(currentProject)
+                : "添加项目后才能创建 Agent 任务。"
+              : state.threadId
+                ? `已记录最近 ${activityEvents.length} 条线程协议事件。`
+                : "提交任务或恢复历史线程后，这里会显示持久化活动。"}
+          </p>
         </section>
-        <section className="diff-panel">
-          <div className="diff-heading">
-            <div>
-              <span>工作区 Diff</span>
-              <strong>{diffFiles > 0 ? gitChangeSummary(currentProject, diffFiles) : "等待变更"}</strong>
-            </div>
-            <span className="diff-count">{diffCount}</span>
-          </div>
-          {visibleDiff ? (
-            <div className="diff-review">
-              <div className="diff-file-list">
-                {parsedDiffFiles.map((file) => (
-                  <button
-                    className={file.id === selectedDiffFile?.id ? "active" : ""}
-                    key={file.id}
-                    type="button"
-                    onClick={() => setSelectedDiffFileId(file.id)}
-                  >
-                    <span title={file.path}>{file.path}</span>
-                    <small>{file.section ?? "Runtime Diff"}</small>
-                    <i>+{file.additions} -{file.deletions}</i>
-                  </button>
-                ))}
-              </div>
-              {selectedDiffFile && (
-                <pre className="diff-file-detail">{selectedDiffFile.diff}</pre>
-              )}
-            </div>
-          ) : (
-            <div className="empty-diff">
-              <span>±</span>
-              <strong>尚无文件变更</strong>
-              <p>Agent 产生的修改会在这里实时显示。</p>
-            </div>
-          )}
-        </section>
+        {contextTab === "changes" ? (
+          <DiffPanel
+            currentProject={currentProject}
+            diffCount={diffCount}
+            diffFiles={diffFiles}
+            files={parsedDiffFiles}
+            selectedFile={selectedDiffFile}
+            setSelectedFileId={setSelectedDiffFileId}
+            visibleDiff={visibleDiff}
+          />
+        ) : (
+          <ActivityPanel error={activityError} events={activityEvents} />
+        )}
         <section className="runtime-card">
           <div>
             <span className={`connection-dot ${state.connection}`} />
@@ -664,6 +672,120 @@ function relativeTime(timestamp: number): string {
 
 function formatTokens(value: number | null | undefined): string {
   return value === null || value === undefined ? "等待统计" : value.toLocaleString("zh-CN");
+}
+
+function DiffPanel({
+  currentProject,
+  diffCount,
+  diffFiles,
+  files,
+  selectedFile,
+  setSelectedFileId,
+  visibleDiff,
+}: {
+  currentProject: ProjectSummary | null;
+  diffCount: string;
+  diffFiles: number;
+  files: DiffFile[];
+  selectedFile: DiffFile | null;
+  setSelectedFileId: (id: string) => void;
+  visibleDiff: string;
+}) {
+  return (
+    <section className="diff-panel">
+      <div className="diff-heading">
+        <div>
+          <span>工作区 Diff</span>
+          <strong>{diffFiles > 0 ? gitChangeSummary(currentProject, diffFiles) : "等待变更"}</strong>
+        </div>
+        <span className="diff-count">{diffCount}</span>
+      </div>
+      {visibleDiff ? (
+        <div className="diff-review">
+          <div className="diff-file-list">
+            {files.map((file) => (
+              <button
+                className={file.id === selectedFile?.id ? "active" : ""}
+                key={file.id}
+                type="button"
+                onClick={() => setSelectedFileId(file.id)}
+              >
+                <span title={file.path}>{file.path}</span>
+                <small>{file.section ?? "Runtime Diff"}</small>
+                <i>+{file.additions} -{file.deletions}</i>
+              </button>
+            ))}
+          </div>
+          {selectedFile && <pre className="diff-file-detail">{selectedFile.diff}</pre>}
+        </div>
+      ) : (
+        <div className="empty-diff">
+          <span>±</span>
+          <strong>尚无文件变更</strong>
+          <p>Agent 产生的修改会在这里实时显示。</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActivityPanel({
+  error,
+  events,
+}: {
+  error: string | null;
+  events: ThreadActivityEvent[];
+}) {
+  return (
+    <section className="activity-panel">
+      <div className="activity-heading">
+        <div>
+          <span>Runtime 审计记录</span>
+          <strong>{events.length > 0 ? "最新事件优先" : "等待线程活动"}</strong>
+        </div>
+        <span>{events.length}</span>
+      </div>
+      {error && <p className="activity-error">{error}</p>}
+      {events.length > 0 ? (
+        <div className="activity-list">
+          {events.map((event) => (
+            <details className="activity-event" key={event.eventId}>
+              <summary>
+                <span className={`activity-direction ${event.protocol.direction}`}>
+                  {event.protocol.direction === "clientToRuntime" ? "发送" : "接收"}
+                </span>
+                <div>
+                  <strong>{event.protocol.method ?? "JSON-RPC 响应"}</strong>
+                  <small>
+                    {activityKindLabel(event.protocol.kind)} · {formatActivityTime(event.occurredAt)}
+                  </small>
+                </div>
+              </summary>
+              <pre>{JSON.stringify(event.protocol.message, null, 2)}</pre>
+            </details>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-activity">
+          <span>◎</span>
+          <strong>尚无活动记录</strong>
+          <p>提交任务后，模型轮次、工具、审批与结果会在这里持久化展示。</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function activityKindLabel(kind: ThreadActivityEvent["protocol"]["kind"]): string {
+  return kind === "request" ? "请求" : kind === "response" ? "响应" : "通知";
+}
+
+function formatActivityTime(value: number): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(value);
 }
 
 function Timeline({ entries }: { entries: readonly TimelineEntry[] }) {

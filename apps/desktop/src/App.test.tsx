@@ -37,7 +37,12 @@ import {
   type ConnectionDiagnosticInput,
   type SettingsService,
 } from "./settings.js";
-import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
+import type {
+  ThreadActivityEvent,
+  ThreadRecord,
+  ThreadService,
+  ThreadState,
+} from "./threads.js";
 
 afterEach(() => {
   cleanup();
@@ -452,6 +457,70 @@ diff --git a/src/app.ts b/src/app.ts
     expect(await screen.findByText("已恢复的历史回复")).toBeTruthy();
   });
 
+  it("恢复历史线程后读取持久化活动记录", async () => {
+    const runtime = new UiRuntime();
+    const threads = new FakeThreadService([fixtureThread()], [fixtureActivityEvent()]);
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtime)}
+        projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
+        threadService={threads}
+      />,
+    );
+
+    await user.click(await screen.findByTitle("修复历史测试"));
+    await user.click(screen.getByRole("button", { name: "活动" }));
+
+    expect(await screen.findByText("item/commandExecution/requestApproval")).toBeTruthy();
+    expect(screen.getByText("已记录最近 1 条线程协议事件。")).toBeTruthy();
+  });
+
+  it("切换线程后只展示当前线程的活动记录", async () => {
+    const runtime = new UiRuntime();
+    const secondThread = {
+      ...fixtureThread(),
+      id: "thread-second",
+      title: "第二个历史线程",
+      timeline: [],
+      updatedAt: 3,
+    };
+    const secondActivity = {
+      ...fixtureActivityEvent(),
+      eventId: "activity-second-1",
+      threadId: secondThread.id,
+      protocol: {
+        ...fixtureActivityEvent().protocol,
+        threadId: secondThread.id,
+        method: "turn/completed",
+      },
+    };
+    const threads = new FakeThreadService(
+      [fixtureThread(), secondThread],
+      [fixtureActivityEvent(), secondActivity],
+    );
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtime)}
+        projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
+        threadService={threads}
+      />,
+    );
+
+    await user.click(await screen.findByTitle("修复历史测试"));
+    await user.click(screen.getByRole("button", { name: "活动" }));
+    expect(await screen.findByText("item/commandExecution/requestApproval")).toBeTruthy();
+
+    await user.click(screen.getByTitle("第二个历史线程"));
+    expect(await screen.findByText("turn/completed")).toBeTruthy();
+    expect(screen.queryByText("item/commandExecution/requestApproval")).toBeNull();
+  });
+
   it("可以归档、恢复并移除本地线程索引", async () => {
     const runtime = new UiRuntime();
     const threads = new FakeThreadService([fixtureThread()]);
@@ -482,9 +551,10 @@ diff --git a/src/app.ts b/src/app.ts
     expect(confirm).toHaveBeenCalledOnce();
   });
 
-  it("将 Runtime 原始协议事件批量写入线程服务", async () => {
+  it("将 Runtime 原始协议事件批量写入线程服务并实时展示活动", async () => {
     const runtime = new UiRuntime();
     const threads = new FakeThreadService();
+    const user = userEvent.setup();
     render(
       <DesktopRoot
         credentialService={new FakeCredentialService(true)}
@@ -496,21 +566,26 @@ diff --git a/src/app.ts b/src/app.ts
     );
 
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    await user.type(screen.getByLabelText("任务内容"), "检查活动记录");
+    await user.click(screen.getByRole("button", { name: /开始任务/ }));
+    await waitFor(() => expect(runtime.turnStarts).toHaveLength(1));
     runtime.emitProtocolEvent({
       sequence: 1,
       direction: "runtimeToClient",
       kind: "notification",
       method: "turn/started",
       requestId: null,
-      threadId: "thread-raw",
+      threadId: "thread-1",
       message: {
         method: "turn/started",
-        params: { threadId: "thread-raw", turn: { id: "turn-raw", status: "inProgress" } },
+        params: { threadId: "thread-1", turn: { id: "turn-raw", status: "inProgress" } },
       },
     });
 
     await waitFor(() => expect(threads.runtimeEvents).toHaveLength(1));
-    expect(threads.runtimeEvents[0]?.threadId).toBe("thread-raw");
+    expect(threads.runtimeEvents[0]?.threadId).toBe("thread-1");
+    await user.click(screen.getByRole("button", { name: "活动" }));
+    expect(await screen.findByText("turn/started")).toBeTruthy();
   });
 });
 
@@ -521,6 +596,8 @@ function renderApp(
 ) {
   return render(
     <App
+      activityError={null}
+      activityEvents={[]}
       archivedThreads={[]}
       currentProject={currentProject}
       onAddProject={() => undefined}
@@ -753,14 +830,25 @@ class FakeProjectService implements ProjectService {
 class FakeThreadService implements ThreadService {
   readonly deletedIds: string[] = [];
   readonly runtimeEvents: SessionRuntimeEvent[] = [];
+  readonly activityEvents: ThreadActivityEvent[];
   #state: ThreadState;
 
-  constructor(threads: ThreadRecord[] = []) {
+  constructor(threads: ThreadRecord[] = [], activityEvents: ThreadActivityEvent[] = []) {
     this.#state = { threads, selectedThreadId: null };
+    this.activityEvents = activityEvents;
   }
 
   async list(): Promise<ThreadState> {
     return this.#state;
+  }
+
+  async listActivity(threadId: string): Promise<ThreadActivityEvent[]> {
+    return [
+      ...this.activityEvents.filter((event) => event.threadId === threadId),
+      ...this.runtimeEvents
+        .filter((event) => event.threadId === threadId)
+        .map((event, index) => ({ ...event, occurredAt: index + 1 })),
+    ];
   }
 
   async upsert(thread: ThreadRecord): Promise<ThreadState> {
@@ -866,5 +954,26 @@ function fixtureThread(): ThreadRecord {
     createdAt: 1,
     updatedAt: 2,
     archived: false,
+  };
+}
+
+function fixtureActivityEvent(): ThreadActivityEvent {
+  return {
+    eventId: "activity-history-1",
+    threadId: "thread-history",
+    occurredAt: 1,
+    protocol: {
+      sequence: 1,
+      direction: "runtimeToClient",
+      kind: "request",
+      method: "item/commandExecution/requestApproval",
+      requestId: "approval-history",
+      threadId: "thread-history",
+      message: {
+        id: "approval-history",
+        method: "item/commandExecution/requestApproval",
+        params: { command: "npm test", reason: "运行验证" },
+      },
+    },
   };
 }

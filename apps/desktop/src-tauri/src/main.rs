@@ -152,6 +152,15 @@ struct RuntimeEventRecord {
     protocol: serde_json::Value,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadActivityEvent {
+    event_id: String,
+    thread_id: String,
+    protocol: serde_json::Value,
+    occurred_at: i64,
+}
+
 #[tauri::command]
 fn get_mimo_credential_status() -> Result<CredentialStatus, String> {
     if stored_api_key()?.is_some() {
@@ -386,6 +395,18 @@ fn list_threads(app: AppHandle) -> Result<ThreadState, String> {
 }
 
 #[tauri::command]
+fn list_thread_activity(
+    app: AppHandle,
+    thread_id: String,
+) -> Result<Vec<ThreadActivityEvent>, String> {
+    if thread_id.is_empty() || thread_id.len() > 512 {
+        return Err("线程标识无效。".to_string());
+    }
+    let connection = open_thread_database(&app)?;
+    load_thread_activity(&connection, &thread_id)
+}
+
+#[tauri::command]
 fn append_runtime_events(app: AppHandle, events: Vec<RuntimeEventRecord>) -> Result<(), String> {
     if events.len() > 1_000 {
         return Err("单批 Runtime 原始事件数量超出限制。".to_string());
@@ -513,6 +534,7 @@ fn main() {
             get_app_settings,
             get_mimo_credential_status,
             list_projects,
+            list_thread_activity,
             list_threads,
             refresh_project,
             save_app_settings,
@@ -957,6 +979,43 @@ fn append_runtime_events_to_connection(
             .map_err(|_| thread_database_error("追加 Runtime 原始事件"))?;
     }
     Ok(())
+}
+
+fn load_thread_activity(
+    connection: &Connection,
+    thread_id: &str,
+) -> Result<Vec<ThreadActivityEvent>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT payload_json, occurred_at
+            FROM thread_events
+            WHERE thread_id = ?1 AND event_type = 'runtimeProtocolEvent'
+            ORDER BY sequence DESC
+            LIMIT 300
+            ",
+        )
+        .map_err(|_| thread_database_error("准备活动记录查询"))?;
+    let records = statement
+        .query_map([thread_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(|_| thread_database_error("查询活动记录"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| thread_database_error("读取活动记录"))?;
+    records
+        .into_iter()
+        .map(|(payload, occurred_at)| {
+            let event = serde_json::from_str::<RuntimeEventRecord>(&payload)
+                .map_err(|_| "Runtime 活动记录格式无效。".to_string())?;
+            Ok(ThreadActivityEvent {
+                event_id: event.event_id,
+                thread_id: event.thread_id,
+                protocol: event.protocol,
+                occurred_at,
+            })
+        })
+        .collect()
 }
 
 fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> Result<(), String> {
@@ -1647,6 +1706,12 @@ mod tests {
             .expect("read events");
 
         assert_eq!(event_ids, vec!["session-1-1", "session-1-2"]);
+
+        let activity = load_thread_activity(&connection, "thread-test").expect("load activity");
+        assert_eq!(activity.len(), 2);
+        assert_eq!(activity[0].event_id, "session-1-2");
+        assert_eq!(activity[1].event_id, "session-1-1");
+        assert_eq!(activity[0].protocol["method"], "turn/started");
     }
 
     #[test]

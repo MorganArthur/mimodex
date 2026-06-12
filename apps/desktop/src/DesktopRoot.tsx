@@ -9,7 +9,12 @@ import {
   type ConnectionDiagnostic,
   type SettingsService,
 } from "./settings.js";
-import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
+import type {
+  ThreadActivityEvent,
+  ThreadRecord,
+  ThreadService,
+  ThreadState,
+} from "./threads.js";
 
 export type DesktopRootProps = {
   credentialService: CredentialService;
@@ -38,6 +43,8 @@ export function DesktopRoot({
   const [threadState, setThreadState] = useState<ThreadState | null>(null);
   const [threadError, setThreadError] = useState<string | null>(null);
   const [threadBusy, setThreadBusy] = useState(false);
+  const [activityEvents, setActivityEvents] = useState<ThreadActivityEvent[]>([]);
+  const [activityError, setActivityError] = useState<string | null>(null);
   const projectRefreshInFlight = useRef(false);
 
   useEffect(() => {
@@ -141,6 +148,45 @@ export function DesktopRoot({
       return;
     }
     let disposed = false;
+    let activeThreadId: string | null = null;
+    const syncActivity = () => {
+      const threadId = session.getSnapshot().threadId;
+      if (threadId === activeThreadId) {
+        return;
+      }
+      activeThreadId = threadId;
+      setActivityError(null);
+      if (!threadId) {
+        setActivityEvents([]);
+        return;
+      }
+      setActivityEvents([]);
+      void threadService
+        .listActivity(threadId)
+        .then((events) => {
+          if (!disposed && activeThreadId === threadId) {
+            setActivityEvents((current) => mergeActivityEvents(current, events));
+          }
+        })
+        .catch((error) => {
+          if (!disposed && activeThreadId === threadId) {
+            setActivityError(errorMessage(error));
+          }
+        });
+    };
+    const unsubscribe = session.subscribe(syncActivity);
+    syncActivity();
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [session, threadService]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    let disposed = false;
     let writeQueue = Promise.resolve();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pending: Parameters<ThreadService["appendRuntimeEvents"]>[0] = [];
@@ -164,6 +210,11 @@ export function DesktopRoot({
     };
     const unsubscribe = session.subscribeRuntimeEvents((event) => {
       pending.push(event);
+      if (session.getSnapshot().threadId === event.threadId) {
+        setActivityEvents((current) =>
+          mergeActivityEvents(current, [{ ...event, occurredAt: Date.now() }]),
+        );
+      }
       if (pending.length >= 100) {
         flush();
       } else if (!timer) {
@@ -414,6 +465,8 @@ export function DesktopRoot({
   return (
     <>
       <App
+        activityError={activityError}
+        activityEvents={activityEvents}
         archivedThreads={archivedThreads}
         currentProject={currentProject}
         onAddProject={addProject}
@@ -887,4 +940,16 @@ function assertDiagnosticSucceeded(diagnostic: ConnectionDiagnostic): void {
   if (!diagnostic.ok) {
     throw new Error(`${diagnostic.message}：${diagnostic.detail}`);
   }
+}
+
+function mergeActivityEvents(
+  ...groups: readonly ThreadActivityEvent[][]
+): ThreadActivityEvent[] {
+  const events = new Map<string, ThreadActivityEvent>();
+  for (const event of groups.flat()) {
+    events.set(event.eventId, event);
+  }
+  return [...events.values()]
+    .sort((left, right) => right.occurredAt - left.occurredAt)
+    .slice(0, 300);
 }

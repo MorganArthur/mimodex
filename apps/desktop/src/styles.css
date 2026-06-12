@@ -1264,12 +1264,162 @@ button {
 
 .context-summary,
 .diff-panel,
+.activity-panel,
 .runtime-card {
   margin: 16px;
   padding: 15px;
   background: #f7f5f0;
   border: 1px solid #dcd8cf;
   border-radius: 11px;
+}
+
+.activity-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e1ddd5;
+}
+
+.activity-heading span,
+.activity-heading strong {
+  display: block;
+}
+
+.activity-heading div span {
+  color: #8a8e86;
+  font-size: 9px;
+}
+
+.activity-heading strong {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.activity-heading > span {
+  color: #657e50;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.activity-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.activity-event {
+  background: #eeece5;
+  border: 1px solid #ded9cf;
+  border-radius: 8px;
+}
+
+.activity-event summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.activity-event summary::-webkit-details-marker {
+  display: none;
+}
+
+.activity-event summary div {
+  min-width: 0;
+}
+
+.activity-event summary strong,
+.activity-event summary small {
+  display: block;
+}
+
+.activity-event summary strong {
+  overflow: hidden;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-event summary small {
+  margin-top: 3px;
+  color: #8a8e86;
+  font-size: 8px;
+}
+
+.activity-direction {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  border-radius: 5px;
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.activity-direction.clientToRuntime {
+  color: #516641;
+  background: #dce8d1;
+}
+
+.activity-direction.runtimeToClient {
+  color: #53616c;
+  background: #dbe3e7;
+}
+
+.activity-event pre {
+  max-height: 280px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  color: #50574d;
+  background: #e7e4dc;
+  border-top: 1px solid #d9d4ca;
+  border-radius: 0 0 8px 8px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 8px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.activity-error {
+  margin: 10px 0 0;
+  color: #9a433c;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.empty-activity {
+  padding: 42px 12px 30px;
+  color: #8c9088;
+  text-align: center;
+}
+
+.empty-activity span {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  place-items: center;
+  margin: 0 auto 11px;
+  color: #6f7869;
+  background: #e8e6df;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.empty-activity strong {
+  display: block;
+  color: #6a7067;
+  font-size: 10px;
+}
+
+.empty-activity p {
+  margin: 5px 0 0;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .context-summary h2 {

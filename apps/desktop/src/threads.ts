@@ -28,8 +28,13 @@ export type ThreadState = {
   selectedThreadId: string | null;
 };
 
+export type ThreadActivityEvent = SessionRuntimeEvent & {
+  occurredAt: number;
+};
+
 export interface ThreadService {
   list(): Promise<ThreadState>;
+  listActivity(threadId: string): Promise<ThreadActivityEvent[]>;
   upsert(thread: ThreadRecord): Promise<ThreadState>;
   select(threadId: string | null): Promise<ThreadState>;
   setArchived(threadId: string, archived: boolean): Promise<ThreadState>;
@@ -44,6 +49,10 @@ export function createThreadService(): ThreadService {
 class TauriThreadService implements ThreadService {
   list(): Promise<ThreadState> {
     return invoke("list_threads");
+  }
+
+  listActivity(threadId: string): Promise<ThreadActivityEvent[]> {
+    return invoke("list_thread_activity", { threadId });
   }
 
   upsert(thread: ThreadRecord): Promise<ThreadState> {
@@ -79,6 +88,14 @@ class DemoThreadService implements ThreadService {
 
   async list(): Promise<ThreadState> {
     return this.#state;
+  }
+
+  async listActivity(threadId: string): Promise<ThreadActivityEvent[]> {
+    return this.runtimeEvents
+      .filter((event) => event.threadId === threadId)
+      .slice(-300)
+      .reverse()
+      .map((event, index) => ({ ...event, occurredAt: Date.now() - index }));
   }
 
   async upsert(thread: ThreadRecord): Promise<ThreadState> {
