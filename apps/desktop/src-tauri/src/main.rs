@@ -654,8 +654,8 @@ fn append_runtime_events_to_connection(
 ) -> Result<(), String> {
     for event in events {
         validate_runtime_event(event)?;
-        let payload =
-            serde_json::to_string(event).map_err(|_| "无法序列化 Runtime 原始事件。".to_string())?;
+        let payload = serde_json::to_string(event)
+            .map_err(|_| "无法序列化 Runtime 原始事件。".to_string())?;
         connection
             .execute(
                 "
@@ -1082,7 +1082,9 @@ mod tests {
 
         migrate_thread_database(&connection).expect("migrate schema v1 to v2");
 
-        assert!(table_has_column(&connection, "thread_events", "event_id").expect("check event id"));
+        assert!(
+            table_has_column(&connection, "thread_events", "event_id").expect("check event id")
+        );
         let migration_count: i64 = connection
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
                 row.get(0)
@@ -1131,8 +1133,11 @@ mod tests {
 
         append_runtime_events_to_connection(&connection, &[first, second])
             .expect("append runtime events");
-        append_runtime_events_to_connection(&connection, &[fixture_runtime_event("session-1-1", 1)])
-            .expect("deduplicate first event");
+        append_runtime_events_to_connection(
+            &connection,
+            &[fixture_runtime_event("session-1-1", 1)],
+        )
+        .expect("deduplicate first event");
 
         let event_ids = connection
             .prepare(
