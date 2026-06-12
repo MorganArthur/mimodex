@@ -1,6 +1,6 @@
 # Tauri Sidecar Windows 技术预览说明
 
-- 状态：Runtime 原始事件账本版正在等待 Windows 技术预览权威构建
+- 状态：Runtime 原始事件账本版 Windows 技术预览已通过权威构建
 - 最后更新：2026-06-12
 - 对应目录：`apps/desktop/src-tauri`、`apps/desktop/src/runtime`
 - 对应工作流：`.github/workflows/windows-preview.yml`
@@ -8,7 +8,7 @@
 - Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
 - 凭据设置构建：[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)
 - 项目管理构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
-- 当前可用构建：[Windows Preview #27353878773](https://github.com/MorganArthur/mimodex/actions/runs/27353878773)
+- 当前可用构建：[Windows Preview #27385722233](https://github.com/MorganArthur/mimodex/actions/runs/27385722233)
 
 ## 1. 本阶段目标
 
@@ -82,6 +82,14 @@ SHA256 为
 单测、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包大小为 `56.88 MiB`，
 SHA256 为
 `3CE761AAA61AFB30487310223C87127698A70E15B904CDC8A5586F8EAE3A549C`。
+
+当前 Runtime 原始事件账本版 Artifact：
+[mimodex-windows-preview-1b856680b18af16b1b7d74fd68259d7c1d72919b](https://github.com/MorganArthur/mimodex/actions/runs/27385722233/artifacts/7580976530)。
+该构建记录线程相关双向 Runtime 原始 JSON-RPC 事件，支持请求响应线程关联、批量顺序
+写入、唯一事件去重、Schema v1 到 v2 迁移，并在启动时从只追加账本重建线程查询投影。
+该构建通过新增 Rust 持久化单测、Runtime 握手、NSIS 打包与独立 SHA256 校验。
+安装包大小为 `56.89 MiB`，SHA256 为
+`D97FFBE3BE7716F4E1FF0EBDA1887E803FB4B04F9E254E35BB7F56001812551B`。
 
 ## 4. 当前使用限制
 

@@ -1,6 +1,6 @@
 # SQLite 线程事件账本与查询投影
 
-- 状态：Runtime 原始事件账本版正在等待 Windows Preview 权威构建
+- 状态：Runtime 原始事件账本版已通过 Windows Preview 权威构建
 - 最后更新：2026-06-12
 - 对应目录：`apps/desktop/src-tauri/src/main.rs`
 - 架构依据：`docs/architecture/decisions/ADR-0005-local-thread-persistence.md`
@@ -101,5 +101,5 @@ SQLite `thread_events` 当前记录桌面投影快照、生命周期事件，以
 - [x] Runtime 双向原始 JSON-RPC 事件具备严格连接内顺序；
 - [x] 原始事件按线程关联、批量写入并通过唯一事件 ID 去重；
 - [x] 查询投影在启动时从只追加账本重建；
-- [ ] Windows CI 执行 Schema v2、原始事件和投影重建 Rust 单测并通过；
+- [x] Windows CI 执行 Schema v2、原始事件和投影重建 Rust 单测并通过；
 - [ ] Windows 11 安装后完成 JSON 迁移、归档与恢复验收。

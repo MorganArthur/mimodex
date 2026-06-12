@@ -4,7 +4,7 @@
 - 最后更新：2026-06-12
 - 对应目录：`apps/desktop/src/threads.ts`、`packages/desktop-core/src/session-controller.ts`
 - 架构依据：`docs/architecture/decisions/ADR-0005-local-thread-persistence.md`
-- 权威构建：[Windows Preview #27342769848](https://github.com/MorganArthur/mimodex/actions/runs/27342769848)
+- 权威构建：[Windows Preview #27385722233](https://github.com/MorganArthur/mimodex/actions/runs/27385722233)
 
 ## 1. 本阶段目标
 
