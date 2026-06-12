@@ -19,4 +19,6 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-shell = "2.3.5"
+# time 0.3.48 conflicts with tauri-utils 2.9.2 under the locked Rust 1.95 toolchain.
+time = "=0.3.47"
 windows-native-keyring-store = "1.1.0"
