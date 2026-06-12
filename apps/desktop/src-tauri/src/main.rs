@@ -906,11 +906,8 @@ fn inspect_git_status(path: &Path) -> GitStatus {
 
     let branch = run_git(path, &["branch", "--show-current"]).filter(|value| !value.is_empty());
     let head = run_git(path, &["rev-parse", "--short", "HEAD"]).filter(|value| !value.is_empty());
-    let status = run_git(
-        path,
-        &["status", "--porcelain=v1", "--untracked-files=all"],
-    )
-    .unwrap_or_default();
+    let status =
+        run_git(path, &["status", "--porcelain=v1", "--untracked-files=all"]).unwrap_or_default();
     let mut changed_files = 0;
     let mut untracked_files = 0;
     let mut staged_files = 0;
@@ -921,10 +918,16 @@ fn inspect_git_status(path: &Path) -> GitStatus {
         } else {
             changed_files += 1;
             let bytes = line.as_bytes();
-            if bytes.first().is_some_and(|value| *value != b' ' && *value != b'?') {
+            if bytes
+                .first()
+                .is_some_and(|value| *value != b' ' && *value != b'?')
+            {
                 staged_files += 1;
             }
-            if bytes.get(1).is_some_and(|value| *value != b' ' && *value != b'?') {
+            if bytes
+                .get(1)
+                .is_some_and(|value| *value != b' ' && *value != b'?')
+            {
                 unstaged_files += 1;
             }
         }
@@ -934,11 +937,8 @@ fn inspect_git_status(path: &Path) -> GitStatus {
         &["diff", "--cached", "--no-ext-diff", "--no-color", "--", "."],
     )
     .unwrap_or_default();
-    let unstaged_diff = run_git(
-        path,
-        &["diff", "--no-ext-diff", "--no-color", "--", "."],
-    )
-    .unwrap_or_default();
+    let unstaged_diff =
+        run_git(path, &["diff", "--no-ext-diff", "--no-color", "--", "."]).unwrap_or_default();
     let untracked_diff = untracked_git_diff(path);
     let full_diff = join_git_diffs(&[
         ("已暂存", &staged_diff),
@@ -999,8 +999,18 @@ fn run_git_with_exit_codes(
 }
 
 fn untracked_git_diff(path: &Path) -> String {
-    let files = run_git(path, &["ls-files", "--others", "--exclude-standard", "-z", "--", "."])
-        .unwrap_or_default();
+    let files = run_git(
+        path,
+        &[
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+        ],
+    )
+    .unwrap_or_default();
     let files = files
         .split('\0')
         .filter(|file| !file.is_empty())
@@ -1139,10 +1149,8 @@ mod tests {
 
     #[test]
     fn git_status_includes_staged_new_file_diff() {
-        let directory = std::env::temp_dir().join(format!(
-            "mimodex-git-status-{}",
-            unix_timestamp_ms()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("mimodex-git-status-{}", unix_timestamp_ms()));
         fs::create_dir_all(&directory).expect("create temporary repository");
         run_git(&directory, &["init"]).expect("initialize repository");
         fs::write(directory.join(".gitignore"), "node_modules/\ndist/\n")
