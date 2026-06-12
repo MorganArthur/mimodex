@@ -24,6 +24,15 @@ MiMo `thinking` 参数。该提示包含 Codex CLI 与 OpenAI 身份语境，导
    执行无必要的深度思考。
 4. 轮次结束时将流式消息状态从 `inProgress` 收口为最终状态。
 
+## 验证结果
+
+- [Runtime CI #27393023486](https://github.com/MorganArthur/mimodex/actions/runs/27393023486)
+  已验证 Provider 身份提示、Chat Completions 请求体、工具闭环和 app-server 生命周期。
+- [Windows Preview #27393023482](https://github.com/MorganArthur/mimodex/actions/runs/27393023482)
+  已验证桌面测试、Tauri 后端、Runtime 握手和 NSIS 打包。
+- 安装包大小：`56.89 MiB`
+- 安装包 SHA256：`F51CA54F0B04BA8870F3DD2228E82E244923AFFF7BD758E4DB1DB4F18BF010F8`
+
 参考：
 
 - [小米 MiMo OpenAI API 兼容文档](https://platform.xiaomimimo.com/docs/zh-CN/api/chat/openai-api)

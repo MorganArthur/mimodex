@@ -8,7 +8,7 @@
 - Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
 - 凭据设置构建：[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)
 - 项目管理构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
-- 当前可用构建：[Windows Preview #27388925489](https://github.com/MorganArthur/mimodex/actions/runs/27388925489)
+- 当前可用构建：[Windows Preview #27393023482](https://github.com/MorganArthur/mimodex/actions/runs/27393023482)
 
 ## 1. 本阶段目标
 
@@ -98,6 +98,15 @@ SHA256 为
 通过 Runtime 回归测试、Tauri Rust 后端编译、Runtime 握手、NSIS 打包与独立 SHA256
 校验。安装包大小为 `56.90 MiB`，SHA256 为
 `6A4EC131DA5289430D2E4AE9B9C4E73441CACEF361B69A49FCC938773A6B9E5D`。
+
+当前 MiMo 身份与低延迟请求策略版 Artifact：
+[mimodex-windows-preview-d229038d130e230596fd1ba777eaf6b093d5924e](https://github.com/MorganArthur/mimodex/actions/runs/27393023482/artifacts/7583485663)。
+该构建使用简短的 Mimodex 专属 MiMo 身份提示，恢复历史线程时主动覆盖旧提示，并按
+小米官方工具调用建议设置 `thinking.type = disabled`。同时修复流式回答完成后仍显示
+`inProgress` 的桌面投影问题。该构建通过 Runtime 请求体测试、工具闭环、Tauri Rust
+后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包大小为 `56.89 MiB`，
+SHA256 为
+`F51CA54F0B04BA8870F3DD2228E82E244923AFFF7BD758E4DB1DB4F18BF010F8`。
 
 ## 4. 当前使用限制
 

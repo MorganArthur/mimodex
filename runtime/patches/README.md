@@ -58,4 +58,5 @@ commit。
    错误声称自己是 Claude、Anthropic、Codex 或 OpenAI；按照小米 MiMo 官方对工具
    调用场景的建议，为 Chat Completions 请求设置 `thinking.type = disabled`，缩短
    简单交互首字等待并提高工具调用稳定性。补丁同时验证实际请求中的身份提示和
-   thinking 参数。
+   thinking 参数。该补丁已通过 Windows Runtime CI 权威验证。验证记录：
+   [Runtime CI #27393023486](https://github.com/MorganArthur/mimodex/actions/runs/27393023486)。
