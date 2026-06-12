@@ -51,9 +51,10 @@ Windows 凭据条目使用：
 
 ## 4. 当前限制
 
-- 首版固定使用官方端点 `https://api.xiaomimimo.com/v1`；
-- 保存动作只验证 Key 非空和长度，真实 Provider 认证由首次任务验证；
-- 自定义 Base URL、独立连接诊断和认证错误引导将在后续阶段实现；
+- 默认使用官方端点 `https://api.xiaomimimo.com/v1`，也可保存可信自定义端点；
+- 保存 Key 或 Provider 设置前会发送最小诊断请求，只有认证成功后才会持久化；
+- 已支持自定义 Base URL、独立连接诊断和认证错误引导；诊断会区分认证、端点、限流、
+  超时、模型和 Provider 服务异常；
 - Windows CI-only 构建意味着 Rust 后端需要由 Windows Preview 工作流完成权威验证。
 
 ## 5. 验收

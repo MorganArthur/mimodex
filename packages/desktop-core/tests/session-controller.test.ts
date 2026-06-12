@@ -108,9 +108,15 @@ test("桌面会话服务展示并回复 Runtime 审批请求", async () => {
       itemId: "command-1",
       command: "npm test",
       reason: "需要运行验证",
+      cwd: "D:\\project",
+      grantRoot: "D:\\project",
+      networkAccess: true,
     },
   });
   assert.equal(session.getSnapshot().approvals[0]?.detail, "npm test");
+  assert.equal(session.getSnapshot().approvals[0]?.cwd, "D:\\project");
+  assert.equal(session.getSnapshot().approvals[0]?.boundary, "D:\\project");
+  assert.equal(session.getSnapshot().approvals[0]?.network, true);
 
   await session.resolveApproval("approval-1", "accept");
 
@@ -136,6 +142,7 @@ test("普通轮次错误保留 Runtime 连接，切换项目时创建新线程",
 
   assert.equal(session.getSnapshot().connection, "ready");
   assert.equal(session.getSnapshot().turnStatus, "failed");
+  assert.equal(session.getSnapshot().structuredError?.category, "provider");
 
   await session.startTask({
     text: "第二个任务",
@@ -157,6 +164,7 @@ test("单条协议诊断不会立即锁死已连接会话", async () => {
 
   assert.equal(session.getSnapshot().connection, "ready");
   assert.equal(session.getSnapshot().timeline.at(-1)?.title, "Runtime 协议异常");
+  assert.equal(session.getSnapshot().structuredError?.category, "protocol");
 });
 
 test("恢复历史线程后继续使用同一个 Runtime 线程", async () => {

@@ -76,6 +76,7 @@ export function App({
   const [sandbox, setSandbox] = useState<"danger-full-access" | "read-only" | "workspace-write">(
     settings.defaultSandbox,
   );
+  const [fullAccessWarningOpen, setFullAccessWarningOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [selectedDiffFileId, setSelectedDiffFileId] = useState<string | null>(null);
@@ -290,6 +291,7 @@ export function App({
               </button>
             )}
             <span className="model-pill">{model}</span>
+            {sandbox === "danger-full-access" && <span className="danger-pill">完全访问</span>}
             <span className={`run-status ${state.turnStatus}`}>
               {state.turnStatus === "inProgress" ? "执行中" : "就绪"}
             </span>
@@ -318,6 +320,7 @@ export function App({
               onDecision={(decision) => void session.resolveApproval(approval.id, decision)}
             />
           ))}
+          {state.structuredError && <RuntimeErrorCard error={state.structuredError} />}
         </section>
 
         <form className="composer" onSubmit={(event) => void submit(event)}>
@@ -341,11 +344,17 @@ export function App({
                 <select
                   aria-label="权限模式"
                   value={sandbox}
-                  onChange={(event) =>
-                    setSandbox(
-                      event.target.value as "danger-full-access" | "read-only" | "workspace-write",
-                    )
-                  }
+                  onChange={(event) => {
+                    const next = event.target.value as
+                      | "danger-full-access"
+                      | "read-only"
+                      | "workspace-write";
+                    if (next === "danger-full-access" && sandbox !== "danger-full-access") {
+                      setFullAccessWarningOpen(true);
+                    } else {
+                      setSandbox(next);
+                    }
+                  }}
                 >
                   <option value="read-only">只读</option>
                   <option value="workspace-write">工作区写入</option>
@@ -438,6 +447,15 @@ export function App({
           </dl>
         </section>
       </aside>
+      {fullAccessWarningOpen && (
+        <FullAccessWarning
+          onCancel={() => setFullAccessWarningOpen(false)}
+          onConfirm={() => {
+            setSandbox("danger-full-access");
+            setFullAccessWarningOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -684,12 +702,68 @@ function ApprovalCard({
         </div>
       </div>
       <code>{approval.detail}</code>
+      {(approval.cwd || approval.boundary || approval.network !== null) && (
+        <dl className="approval-details">
+          {approval.cwd && <><dt>工作目录</dt><dd>{approval.cwd}</dd></>}
+          {approval.boundary && <><dt>授权边界</dt><dd>{approval.boundary}</dd></>}
+          {approval.network !== null && (
+            <><dt>网络访问</dt><dd>{approval.network ? "需要" : "不需要"}</dd></>
+          )}
+        </dl>
+      )}
       <div className="approval-actions">
         <button type="button" onClick={() => onDecision("decline")}>拒绝</button>
         <button type="button" onClick={() => onDecision("acceptForSession")}>本次会话允许</button>
         <button className="primary" type="button" onClick={() => onDecision("accept")}>允许一次</button>
       </div>
     </article>
+  );
+}
+
+function RuntimeErrorCard({
+  error,
+}: {
+  error: NonNullable<SessionState["structuredError"]>;
+}) {
+  return (
+    <article className="runtime-error-card" role="alert">
+      <div>
+        <span>{error.category}</span>
+        <strong>{error.title}</strong>
+      </div>
+      <p>{error.message}</p>
+      <small>处理建议：{error.hint}</small>
+    </article>
+  );
+}
+
+function FullAccessWarning({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="settings-backdrop full-access-backdrop" role="presentation">
+      <section
+        aria-label="启用完全访问"
+        aria-modal="true"
+        className="full-access-dialog"
+        role="dialog"
+      >
+        <p className="eyebrow">高风险权限</p>
+        <h2>启用完全访问？</h2>
+        <p>
+          Agent 将能够访问当前项目之外的文件并运行具有系统级副作用的命令。请只在明确需要时启用，
+          并仔细审阅每项操作。
+        </p>
+        <div>
+          <button type="button" onClick={onCancel}>保持工作区写入</button>
+          <button className="danger-confirm" type="button" onClick={onConfirm}>确认启用完全访问</button>
+        </div>
+      </section>
+    </div>
   );
 }
 

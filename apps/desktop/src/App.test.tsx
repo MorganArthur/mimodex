@@ -33,6 +33,8 @@ import {
   DEFAULT_APP_SETTINGS,
   normalizeSettings,
   type AppSettings,
+  type ConnectionDiagnostic,
+  type ConnectionDiagnosticInput,
   type SettingsService,
 } from "./settings.js";
 import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
@@ -69,9 +71,18 @@ describe("Mimodex 桌面壳", () => {
     runtime.emitRequest({
       id: "approval-1",
       method: "item/commandExecution/requestApproval",
-      params: { itemId: "command-1", command: "npm test", reason: "运行验证" },
+      params: {
+        itemId: "command-1",
+        command: "npm test",
+        reason: "运行验证",
+        cwd: "D:\\projects\\fixture",
+        grantRoot: "D:\\projects\\fixture",
+        networkAccess: false,
+      },
     });
     expect(await screen.findByText("命令需要审批")).toBeTruthy();
+    expect(screen.getAllByText("D:\\projects\\fixture").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("不需要")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "允许一次" }));
 
     await waitFor(() =>
@@ -103,6 +114,35 @@ describe("Mimodex 桌面壳", () => {
     await waitFor(() => expect(credentials.savedKeys).toEqual(["test-mimo-key"]));
     await waitFor(() => expect(credentials.restartCount).toBe(1));
     await waitFor(() => expect(runtime.initializeCount).toBe(1));
+  });
+
+  it("诊断失败时不会保存无效凭据", async () => {
+    const credentials = new FakeCredentialService(false);
+    const settings = new FakeSettingsService();
+    settings.diagnosticResult = {
+      ok: false,
+      category: "authentication",
+      message: "认证失败",
+      detail: "API Key 无效。",
+      latencyMs: 30,
+      statusCode: 401,
+    };
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={credentials}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService()}
+        settingsService={settings}
+        threadService={new FakeThreadService()}
+      />,
+    );
+
+    await user.type(await screen.findByLabelText("MiMo API Key"), "invalid-key");
+    await user.click(screen.getByRole("button", { name: "保存并重启 Mimodex" }));
+
+    expect(await screen.findByText("认证失败：API Key 无效。")).toBeTruthy();
+    expect(credentials.savedKeys).toEqual([]);
   });
 
   it("可以从左下角设置入口管理已保存凭据", async () => {
@@ -158,6 +198,57 @@ describe("Mimodex 桌面壳", () => {
       ]),
     );
     expect(credentials.restartCount).toBe(1);
+  });
+
+  it("可在设置页诊断端点与已保存凭据", async () => {
+    const settings = new FakeSettingsService();
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService()}
+        settingsService={settings}
+        threadService={new FakeThreadService()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByRole("button", { name: "测试端点与已保存 Key" }));
+
+    expect(await screen.findByText("测试连接成功。")).toBeTruthy();
+    expect(settings.diagnosed).toHaveLength(1);
+  });
+
+  it("启用完全访问前要求明确确认", async () => {
+    const runtime = new UiRuntime();
+    const user = userEvent.setup();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    await user.selectOptions(screen.getByLabelText("权限模式"), "danger-full-access");
+    expect(screen.getByRole("dialog", { name: "启用完全访问" })).toBeTruthy();
+    expect((screen.getByLabelText("权限模式") as HTMLSelectElement).value).toBe("workspace-write");
+
+    await user.click(screen.getByRole("button", { name: "确认启用完全访问" }));
+    expect((screen.getByLabelText("权限模式") as HTMLSelectElement).value).toBe(
+      "danger-full-access",
+    );
+    expect(screen.getByText("完全访问", { selector: ".danger-pill" })).toBeTruthy();
+  });
+
+  it("将 Runtime 原始错误展示为可操作的分类提示", async () => {
+    const runtime = new UiRuntime();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    runtime.emitNotification({
+      method: "error",
+      params: { error: { message: "401 unauthorized API key" } },
+    });
+
+    expect((await screen.findAllByText("MiMo 认证失败")).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/打开设置验证 API Key/).length).toBeGreaterThanOrEqual(1);
   });
 
   it("添加本地项目后使用所选路径提交任务", async () => {
@@ -590,7 +681,16 @@ class FakeCredentialService implements CredentialService {
 }
 
 class FakeSettingsService implements SettingsService {
+  readonly diagnosed: ConnectionDiagnosticInput[] = [];
   readonly saved: AppSettings[] = [];
+  diagnosticResult: ConnectionDiagnostic = {
+    ok: true,
+    category: "success",
+    message: "连接成功",
+    detail: "测试连接成功。",
+    latencyMs: 42,
+    statusCode: 200,
+  };
   #settings: AppSettings;
 
   constructor(settings: AppSettings = DEFAULT_APP_SETTINGS) {
@@ -606,6 +706,11 @@ class FakeSettingsService implements SettingsService {
     this.saved.push(normalized);
     this.#settings = normalized;
     return normalized;
+  }
+
+  async diagnose(input: ConnectionDiagnosticInput): Promise<ConnectionDiagnostic> {
+    this.diagnosed.push(input);
+    return this.diagnosticResult;
   }
 }
 

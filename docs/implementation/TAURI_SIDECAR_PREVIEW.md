@@ -121,7 +121,7 @@ Runtime CI、真实 Runtime sidecar、Tauri 后端和 NSIS 安装包构建。
 - Runtime IPC 修复版仍需通过应用内凭据设置与 Windows 凭据管理器的真实安装验收；
 - 真实项目管理版新增文件夹选择、项目持久化、Git 摘要和项目切换，仍需完成安装验收；
 - SQLite 线程账本版仍需在真实安装环境验证旧 JSON 导入、归档、恢复归档和本地索引移除；
-- 尚未提供连接诊断、自定义 API Base URL 和正式代码签名；
+- 已提供连接诊断、自定义 API Base URL 和结构化错误引导；正式代码签名仍未提供；
 - CI 会执行 Runtime `initialize` 握手，但正式发布前仍需执行真实 Windows 11 安装、
   启动、Agent 闭环和卸载验收。
 
@@ -129,5 +129,5 @@ Runtime CI、真实 Runtime sidecar、Tauri 后端和 NSIS 安装包构建。
 
 1. 在真实 Windows 11 环境验证旧 JSON 迁移、归档、恢复归档和本地索引移除；
 2. 实现只依赖 Runtime 原始事件的完整桌面投影语义 reducer；
-3. 增加连接诊断与自定义 API Base URL；
+3. 按 `docs/validation/WINDOWS_11_PRIVATE_BETA_ACCEPTANCE.md` 完成 Provider 诊断和权限边界验收；
 4. 为签名发布工作流补齐安装、启动和卸载冒烟测试。

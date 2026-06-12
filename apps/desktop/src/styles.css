@@ -175,6 +175,51 @@ button {
   opacity: 0.45;
 }
 
+.credential-secondary {
+  padding: 10px 14px;
+  color: #46533e;
+  background: #f2f0e9;
+  border: 1px solid #d5d1c6;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.credential-secondary:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.diagnostic-result {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.diagnostic-result.success {
+  color: #3e5934;
+  background: #eef7e7;
+  border-color: #cde1bd;
+}
+
+.diagnostic-result.failure {
+  color: #7b3832;
+  background: #fff0ed;
+  border-color: #e9c2bd;
+}
+
+.diagnostic-result span,
+.diagnostic-result small {
+  line-height: 1.5;
+}
+
+.danger-setting-note {
+  color: #a04b43 !important;
+}
+
 .restart-note,
 .form-error {
   margin: 0;
@@ -682,6 +727,16 @@ button {
   border-radius: 999px;
 }
 
+.danger-pill {
+  padding: 6px 9px;
+  color: #8b3730;
+  background: #ffebe7;
+  border: 1px solid #e7b8b2;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .run-status.inProgress {
   color: #355627;
   background: #e2f0d3;
@@ -885,6 +940,107 @@ button {
   background: #f0ecdf;
   border-radius: 7px;
   font-size: 10px;
+}
+
+.approval-details {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0 0 14px;
+  font-size: 9px;
+}
+
+.approval-details dt {
+  color: #8b8068;
+}
+
+.approval-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #565448;
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.runtime-error-card {
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+  margin: 18px auto;
+  padding: 15px 17px;
+  color: #6f342f;
+  background: #fff0ed;
+  border: 1px solid #e7bbb5;
+  border-radius: 12px;
+}
+
+.runtime-error-card div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-error-card div span {
+  padding: 3px 6px;
+  background: #f3d4cf;
+  border-radius: 5px;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.runtime-error-card p,
+.runtime-error-card small {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.runtime-error-card p {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+}
+
+.full-access-dialog {
+  width: min(440px, 100%);
+  padding: 26px;
+  background: #fffaf6;
+  border: 1px solid #dfb8af;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(45, 30, 27, 0.25);
+}
+
+.full-access-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.full-access-dialog p:not(.eyebrow) {
+  margin: 12px 0 20px;
+  color: #6f5d57;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.full-access-dialog div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.full-access-dialog button {
+  padding: 9px 11px;
+  color: #5f625a;
+  background: #fffefa;
+  border: 1px solid #d7d2c8;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.full-access-dialog button.danger-confirm {
+  color: #fff7f5;
+  background: #8d4038;
+  border-color: #8d4038;
 }
 
 .approval-actions {

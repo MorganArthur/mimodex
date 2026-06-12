@@ -34,6 +34,21 @@ export type TimelineKind =
 export type ApprovalDecision = "accept" | "acceptForSession" | "cancel" | "decline";
 export type ModelId = "mimo-v2.5" | "mimo-v2.5-pro";
 export type SandboxMode = "danger-full-access" | "read-only" | "workspace-write";
+export type SessionErrorCategory =
+  | "authentication"
+  | "network"
+  | "protocol"
+  | "provider"
+  | "rateLimit"
+  | "runtime"
+  | "timeout";
+
+export type SessionError = {
+  category: SessionErrorCategory;
+  title: string;
+  message: string;
+  hint: string;
+};
 
 export type TokenUsage = {
   inputTokens: number;
@@ -59,6 +74,9 @@ export type PendingApproval = {
   title: string;
   detail: string;
   reason: string;
+  cwd: string | null;
+  boundary: string | null;
+  network: boolean | null;
 };
 
 export type SessionState = {
@@ -75,6 +93,7 @@ export type SessionState = {
   diff: string;
   tokenUsage: TokenUsage | null;
   error: string | null;
+  structuredError: SessionError | null;
 };
 
 export type StartTaskInput = {
@@ -140,6 +159,7 @@ const initialState: SessionState = {
   diff: "",
   tokenUsage: null,
   error: null,
+  structuredError: null,
 };
 
 export class DesktopSessionController {
@@ -182,10 +202,15 @@ export class DesktopSessionController {
     if (this.#state.connection === "ready" || this.#state.connection === "connecting") {
       return;
     }
-    this.#publish({ connection: "connecting", error: null });
+    this.#publish({ connection: "connecting", error: null, structuredError: null });
     try {
       const runtime = await this.#runtime.initialize();
-      this.#publish({ connection: "ready", platform: runtime.platformOs, error: null });
+      this.#publish({
+        connection: "ready",
+        platform: runtime.platformOs,
+        error: null,
+        structuredError: null,
+      });
     } catch (error) {
       this.#disconnect(errorMessage(error));
       throw error;
@@ -223,6 +248,7 @@ export class DesktopSessionController {
       threadId: existingThreadId,
       turnStatus: "inProgress",
       error: null,
+      structuredError: null,
     });
 
     try {
@@ -270,6 +296,7 @@ export class DesktopSessionController {
       diff: "",
       tokenUsage: null,
       error: null,
+      structuredError: null,
     });
   }
 
@@ -302,6 +329,7 @@ export class DesktopSessionController {
       diff: input.diff,
       tokenUsage: null,
       error: null,
+      structuredError: null,
     });
   }
 
@@ -492,6 +520,9 @@ export class DesktopSessionController {
         kind === "command" ? "命令需要审批" : kind === "file" ? "文件修改需要审批" : "权限请求",
       detail,
       reason: stringValue(params?.reason) ?? "Runtime 要求确认后继续。",
+      cwd: stringValue(params?.cwd),
+      boundary: stringValue(params?.grantRoot),
+      network: booleanValue(params?.networkAccess),
     };
     this.#publish({
       approvals: [...this.#state.approvals.filter((item) => item.id !== request.id), approval],
@@ -561,23 +592,25 @@ export class DesktopSessionController {
   }
 
   #recordError(message: string): void {
-    this.#publish({ error: message, turnStatus: "failed" });
+    const structuredError = classifySessionError(message);
+    this.#publish({ error: message, structuredError, turnStatus: "failed" });
     this.#append({
       id: this.#nextId("error"),
       kind: "error",
-      title: "发生错误",
-      content: message,
+      title: structuredError.title,
+      content: `${message}\n\n处理建议：${structuredError.hint}`,
       status: "failed",
     });
   }
 
   #recordProtocolError(message: string): void {
-    this.#publish({ error: message });
+    const structuredError = classifySessionError(message, "protocol");
+    this.#publish({ error: message, structuredError });
     this.#append({
       id: this.#nextId("protocol-error"),
       kind: "error",
-      title: "Runtime 协议异常",
-      content: message,
+      title: structuredError.title,
+      content: `${message}\n\n处理建议：${structuredError.hint}`,
       status: "diagnostic",
     });
   }
@@ -616,6 +649,10 @@ function numberValue(value: unknown): number {
 
 function optionalNumberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanValue(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function requestIdValue(value: unknown): RequestId | null {
@@ -680,4 +717,56 @@ function fileChangeSummary(value: unknown): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function classifySessionError(
+  message: string,
+  preferredCategory?: SessionErrorCategory,
+): SessionError {
+  const category =
+    preferredCategory ??
+    (/401|403|api.?key|authentication|unauthorized|forbidden/i.test(message)
+      ? "authentication"
+      : /429|rate.?limit|quota/i.test(message)
+        ? "rateLimit"
+        : /timeout|timed out|idle timeout/i.test(message)
+          ? "timeout"
+          : /parse|protocol|invalid json|sse/i.test(message)
+            ? "protocol"
+            : /connect|network|dns|tls|certificate/i.test(message)
+              ? "network"
+              : /provider|model|5\d\d/i.test(message)
+                ? "provider"
+                : "runtime");
+  const presentation: Record<SessionErrorCategory, Pick<SessionError, "title" | "hint">> = {
+    authentication: {
+      title: "MiMo 认证失败",
+      hint: "打开设置验证 API Key，并确认凭据具有所选模型的访问权限。",
+    },
+    rateLimit: {
+      title: "MiMo 请求受到限流",
+      hint: "稍后重试，并检查当前凭据的额度和请求频率限制。",
+    },
+    timeout: {
+      title: "请求等待超时",
+      hint: "检查网络和自定义端点状态，必要时重新提交任务。",
+    },
+    protocol: {
+      title: "Runtime 协议异常",
+      hint: "重启 Mimodex 后重试；若持续出现，请保留错误文本用于排查兼容性。",
+    },
+    network: {
+      title: "网络连接异常",
+      hint: "检查网络、DNS、代理、防火墙和 API Base URL。",
+    },
+    provider: {
+      title: "MiMo Provider 异常",
+      hint: "测试当前端点与模型，确认服务可用后再重试。",
+    },
+    runtime: {
+      title: "Runtime 执行失败",
+      hint: "检查任务上下文与 Runtime 状态，然后重新提交任务。",
+    },
+  };
+  return { category, message, ...presentation[category] };
 }

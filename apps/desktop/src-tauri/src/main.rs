@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
@@ -32,6 +33,17 @@ struct AppSettings {
     api_base_url: String,
     default_model: String,
     default_sandbox: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectionDiagnostic {
+    ok: bool,
+    category: &'static str,
+    message: String,
+    detail: String,
+    latency_ms: Option<u64>,
+    status_code: Option<u16>,
 }
 
 impl Default for AppSettings {
@@ -206,6 +218,102 @@ fn save_app_settings(app: AppHandle, settings: AppSettings) -> Result<AppSetting
     save_app_settings_file(&app, &settings)?;
     configure_runtime_base_url(&settings.api_base_url);
     Ok(settings)
+}
+
+#[tauri::command]
+async fn diagnose_mimo_connection(
+    api_key: Option<String>,
+    api_base_url: String,
+    model: String,
+) -> ConnectionDiagnostic {
+    let settings = match validate_app_settings(AppSettings {
+        api_base_url,
+        default_model: model,
+        default_sandbox: "workspace-write".to_string(),
+    }) {
+        Ok(settings) => settings,
+        Err(message) => {
+            return diagnostic_failure("endpoint", "端点配置无效", message, None, None);
+        }
+    };
+    let api_key = api_key
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| stored_api_key().ok().flatten())
+        .or_else(environment_api_key);
+    let Some(api_key) = api_key else {
+        return diagnostic_failure(
+            "missingCredential",
+            "缺少 MiMo API Key",
+            "请先输入或保存 MiMo API Key。",
+            None,
+            None,
+        );
+    };
+    let endpoint = format!("{}/chat/completions", settings.api_base_url);
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            return diagnostic_failure(
+                "network",
+                "无法初始化网络诊断",
+                "系统网络客户端初始化失败。",
+                None,
+                None,
+            );
+        }
+    };
+    let started = std::time::Instant::now();
+    let response = client
+        .post(endpoint)
+        .header("api-key", api_key.trim())
+        .json(&serde_json::json!({
+            "model": settings.default_model,
+            "messages": [{ "role": "user", "content": "Reply with OK." }],
+            "stream": false,
+            "max_completion_tokens": 32
+        }))
+        .send()
+        .await;
+    let latency_ms = Some(started.elapsed().as_millis().min(u64::MAX as u128) as u64);
+    match response {
+        Ok(response) if response.status().is_success() => ConnectionDiagnostic {
+            ok: true,
+            category: "success",
+            message: "连接成功".to_string(),
+            detail: format!("{} 已响应最小诊断请求。", settings.default_model),
+            latency_ms,
+            status_code: Some(response.status().as_u16()),
+        },
+        Ok(response) => {
+            let status = response.status().as_u16();
+            let (category, message, detail) = diagnostic_http_failure(status);
+            diagnostic_failure(category, message, detail, latency_ms, Some(status))
+        }
+        Err(error) if error.is_timeout() => diagnostic_failure(
+            "timeout",
+            "连接超时",
+            "端点在 20 秒内没有完成诊断请求，请检查网络、代理或服务状态。",
+            latency_ms,
+            None,
+        ),
+        Err(error) if error.is_connect() => diagnostic_failure(
+            "network",
+            "无法连接端点",
+            "请检查 API Base URL、网络、DNS、代理或防火墙设置。",
+            latency_ms,
+            None,
+        ),
+        Err(_) => diagnostic_failure(
+            "provider",
+            "诊断请求失败",
+            "端点返回了无法完成的网络响应。",
+            latency_ms,
+            None,
+        ),
+    }
 }
 
 #[tauri::command]
@@ -401,6 +509,7 @@ fn main() {
             append_runtime_events,
             delete_thread,
             delete_mimo_credential,
+            diagnose_mimo_connection,
             get_app_settings,
             get_mimo_credential_status,
             list_projects,
@@ -488,6 +597,63 @@ fn validate_app_settings(mut settings: AppSettings) -> Result<AppSettings, Strin
         return Err("默认权限模式无效。".to_string());
     }
     Ok(settings)
+}
+
+fn diagnostic_http_failure(status: u16) -> (&'static str, &'static str, &'static str) {
+    match status {
+        401 | 403 => (
+            "authentication",
+            "认证失败",
+            "API Key 无效、已失效，或没有访问所选模型的权限。",
+        ),
+        404 => (
+            "endpoint",
+            "端点不可用",
+            "没有找到 Chat Completions 路径，请检查 API Base URL。",
+        ),
+        408 | 504 => (
+            "timeout",
+            "Provider 响应超时",
+            "端点已连接，但没有及时完成诊断请求。",
+        ),
+        429 => (
+            "rateLimit",
+            "请求受到限流",
+            "凭据或端点已响应，但当前额度或请求频率受限。",
+        ),
+        400 | 422 => (
+            "model",
+            "模型或请求不受支持",
+            "请确认所选模型可用于当前端点，并兼容 MiMo Chat Completions 请求。",
+        ),
+        500..=599 => (
+            "provider",
+            "Provider 服务异常",
+            "端点已响应，但服务当前不可用，请稍后重试。",
+        ),
+        _ => (
+            "provider",
+            "Provider 拒绝诊断请求",
+            "端点返回了非成功状态，请检查服务配置。",
+        ),
+    }
+}
+
+fn diagnostic_failure(
+    category: &'static str,
+    message: &str,
+    detail: &str,
+    latency_ms: Option<u64>,
+    status_code: Option<u16>,
+) -> ConnectionDiagnostic {
+    ConnectionDiagnostic {
+        ok: false,
+        category,
+        message: message.to_string(),
+        detail: detail.to_string(),
+        latency_ms,
+        status_code,
+    }
 }
 
 fn project_store_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1293,6 +1459,14 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn connection_diagnostic_classifies_common_http_failures() {
+        assert_eq!(diagnostic_http_failure(401).0, "authentication");
+        assert_eq!(diagnostic_http_failure(404).0, "endpoint");
+        assert_eq!(diagnostic_http_failure(429).0, "rateLimit");
+        assert_eq!(diagnostic_http_failure(500).0, "provider");
     }
 
     #[test]

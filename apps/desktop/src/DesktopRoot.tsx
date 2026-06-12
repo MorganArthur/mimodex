@@ -4,7 +4,11 @@ import type { DesktopSessionController, SessionState } from "@mimodex/desktop-co
 import { App } from "./App.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
 import type { ProjectService, ProjectState } from "./projects.js";
-import { type AppSettings, type SettingsService } from "./settings.js";
+import {
+  type AppSettings,
+  type ConnectionDiagnostic,
+  type SettingsService,
+} from "./settings.js";
 import type { ThreadRecord, ThreadService, ThreadState } from "./threads.js";
 
 export type DesktopRootProps = {
@@ -174,6 +178,11 @@ export function DesktopRoot({
   }, [session, threadService]);
 
   const saveCredential = async (apiKey: string, nextSettings?: AppSettings) => {
+    const diagnostic = await settingsService.diagnose({
+      apiKey,
+      settings: nextSettings ?? settings!,
+    });
+    assertDiagnosticSucceeded(diagnostic);
     if (nextSettings) {
       setSettings(await settingsService.save(nextSettings));
     }
@@ -190,6 +199,7 @@ export function DesktopRoot({
 
   const saveSettings = async (nextSettings: AppSettings) => {
     setSettingsError(null);
+    assertDiagnosticSucceeded(await settingsService.diagnose({ settings: nextSettings }));
     const saved = await settingsService.save(nextSettings);
     setSettings(saved);
     await credentialService.restart();
@@ -429,6 +439,12 @@ export function DesktopRoot({
           settings={settings}
           onClose={() => setSettingsOpen(false)}
           onDelete={deleteCredential}
+          onDiagnose={(diagnosticSettings, apiKey) =>
+            settingsService.diagnose({
+              settings: diagnosticSettings,
+              ...(apiKey ? { apiKey } : {}),
+            })
+          }
           onSave={saveCredential}
           onSaveSettings={saveSettings}
         />
@@ -505,6 +521,7 @@ function CredentialSettings({
   status,
   onClose,
   onDelete,
+  onDiagnose,
   onSave,
   onSaveSettings,
 }: {
@@ -512,6 +529,7 @@ function CredentialSettings({
   status: CredentialStatus;
   onClose: () => void;
   onDelete: () => Promise<void>;
+  onDiagnose: (settings: AppSettings, apiKey?: string) => Promise<ConnectionDiagnostic>;
   onSave: (apiKey: string) => Promise<void>;
   onSaveSettings: (settings: AppSettings) => Promise<void>;
 }) {
@@ -536,8 +554,14 @@ function CredentialSettings({
           <div><p className="eyebrow">设置</p><h2>MiMo Provider</h2></div>
           <button aria-label="关闭设置" type="button" onClick={onClose}>×</button>
         </header>
-        <ProviderSettingsForm settings={settings} onSave={onSaveSettings} />
-        <CredentialForm status={status} submitLabel="更换 Key 并重启" onSave={onSave} />
+        <ProviderSettingsForm settings={settings} onDiagnose={onDiagnose} onSave={onSaveSettings} />
+        <CredentialForm
+          diagnosticSettings={settings}
+          status={status}
+          submitLabel="更换 Key 并重启"
+          onDiagnose={onDiagnose}
+          onSave={onSave}
+        />
         {status.source === "windowsCredentialManager" ? (
           <div className="danger-zone">
             <div>
@@ -561,14 +585,18 @@ function CredentialSettings({
 }
 
 function CredentialForm({
+  diagnosticSettings,
   settings,
   status,
   submitLabel,
+  onDiagnose,
   onSave,
 }: {
+  diagnosticSettings?: AppSettings;
   settings?: AppSettings;
   status: CredentialStatus;
   submitLabel: string;
+  onDiagnose?: (settings: AppSettings, apiKey?: string) => Promise<ConnectionDiagnostic>;
   onSave: (apiKey: string, settings?: AppSettings) => Promise<void>;
 }) {
   const [apiKey, setApiKey] = useState("");
@@ -578,7 +606,24 @@ function CredentialForm({
     settings?.defaultSandbox ?? "workspace-write",
   );
   const [saving, setSaving] = useState(false);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const runDiagnostic = async () => {
+    if (!onDiagnose || !diagnosticSettings || !apiKey.trim() || diagnosing) {
+      return;
+    }
+    setDiagnosing(true);
+    setDiagnostic(null);
+    setError(null);
+    try {
+      setDiagnostic(await onDiagnose(diagnosticSettings, apiKey));
+    } catch (diagnosticError) {
+      setError(errorMessage(diagnosticError));
+    } finally {
+      setDiagnosing(false);
+    }
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -629,6 +674,17 @@ function CredentialForm({
         </div>
       </div>
       {error && <p className="form-error">{error}</p>}
+      <DiagnosticResult diagnostic={diagnostic} />
+      {onDiagnose && diagnosticSettings && (
+        <button
+          className="credential-secondary"
+          disabled={!apiKey.trim() || diagnosing || saving}
+          type="button"
+          onClick={() => void runDiagnostic()}
+        >
+          {diagnosing ? "正在测试连接…" : "验证新 Key"}
+        </button>
+      )}
       <button className="credential-submit" disabled={!apiKey.trim() || saving} type="submit">
         {saving ? "正在安全保存…" : submitLabel}
       </button>
@@ -639,15 +695,19 @@ function CredentialForm({
 
 function ProviderSettingsForm({
   settings,
+  onDiagnose,
   onSave,
 }: {
   settings: AppSettings;
+  onDiagnose: (settings: AppSettings) => Promise<ConnectionDiagnostic>;
   onSave: (settings: AppSettings) => Promise<void>;
 }) {
   const [apiBaseUrl, setApiBaseUrl] = useState(settings.apiBaseUrl);
   const [defaultModel, setDefaultModel] = useState(settings.defaultModel);
   const [defaultSandbox, setDefaultSandbox] = useState(settings.defaultSandbox);
   const [saving, setSaving] = useState(false);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setApiBaseUrl(settings.apiBaseUrl);
@@ -656,6 +716,12 @@ function ProviderSettingsForm({
   }, [settings]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (
+      defaultSandbox === "danger-full-access" &&
+      !window.confirm("确认将完全访问设为默认权限？Agent 将能够访问当前项目之外的内容。")
+    ) {
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -664,6 +730,21 @@ function ProviderSettingsForm({
     } catch (saveError) {
       setError(errorMessage(saveError));
       setSaving(false);
+    }
+  };
+  const diagnose = async () => {
+    if (diagnosing) {
+      return;
+    }
+    setDiagnosing(true);
+    setDiagnostic(null);
+    setError(null);
+    try {
+      setDiagnostic(await onDiagnose({ apiBaseUrl, defaultModel, defaultSandbox }));
+    } catch (diagnosticError) {
+      setError(errorMessage(diagnosticError));
+    } finally {
+      setDiagnosing(false);
     }
   };
   return (
@@ -677,10 +758,36 @@ function ProviderSettingsForm({
         onDefaultSandboxChange={setDefaultSandbox}
       />
       {error && <p className="form-error">{error}</p>}
+      <DiagnosticResult diagnostic={diagnostic} />
+      <button
+        className="credential-secondary"
+        disabled={diagnosing || saving}
+        type="button"
+        onClick={() => void diagnose()}
+      >
+        {diagnosing ? "正在测试连接…" : "测试端点与已保存 Key"}
+      </button>
       <button className="credential-submit" disabled={saving} type="submit">
         {saving ? "正在保存…" : "保存默认设置并重启"}
       </button>
     </form>
+  );
+}
+
+function DiagnosticResult({ diagnostic }: { diagnostic: ConnectionDiagnostic | null }) {
+  if (!diagnostic) {
+    return null;
+  }
+  return (
+    <div className={`diagnostic-result ${diagnostic.ok ? "success" : "failure"}`} role="status">
+      <strong>{diagnostic.message}</strong>
+      <span>{diagnostic.detail}</span>
+      <small>
+        类别：{diagnostic.category}
+        {diagnostic.statusCode ? ` · HTTP ${diagnostic.statusCode}` : ""}
+        {diagnostic.latencyMs !== null ? ` · ${diagnostic.latencyMs} ms` : ""}
+      </small>
+    </div>
   );
 }
 
@@ -736,6 +843,11 @@ function SettingsFields({
           <option value="workspace-write">工作区写入</option>
           <option value="danger-full-access">完全访问</option>
         </select>
+        {defaultSandbox === "danger-full-access" && (
+          <small className="danger-setting-note">
+            完全访问允许 Agent 访问项目外内容并运行具有系统级副作用的命令。
+          </small>
+        )}
       </label>
     </>
   );
@@ -769,4 +881,10 @@ function credentialStatusLabel(status: CredentialStatus): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function assertDiagnosticSucceeded(diagnostic: ConnectionDiagnostic): void {
+  if (!diagnostic.ok) {
+    throw new Error(`${diagnostic.message}：${diagnostic.detail}`);
+  }
 }
