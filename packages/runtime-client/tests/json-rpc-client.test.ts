@@ -14,7 +14,12 @@ test("JSON-RPC 客户端关联乱序响应并转发通知", async () => {
   const transport = new FakeTransport();
   const client = new JsonRpcClient(transport);
   const notifications: string[] = [];
+  const events: Array<{ sequence: number; direction: string; kind: string; method: string | null }> =
+    [];
   client.onNotification((notification) => notifications.push(notification.method));
+  client.onProtocolEvent(({ sequence, direction, kind, method }) =>
+    events.push({ sequence, direction, kind, method }),
+  );
   await client.start();
 
   const first = client.request<{ value: string }>("first");
@@ -27,13 +32,22 @@ test("JSON-RPC 客户端关联乱序响应并转发通知", async () => {
   assert.deepEqual(await second, { value: "two" });
   assert.deepEqual(await first, { value: "one" });
   assert.deepEqual(notifications, ["turn/started"]);
+  assert.deepEqual(events, [
+    { sequence: 1, direction: "clientToRuntime", kind: "request", method: "first" },
+    { sequence: 2, direction: "clientToRuntime", kind: "request", method: "second" },
+    { sequence: 3, direction: "runtimeToClient", kind: "response", method: "second" },
+    { sequence: 4, direction: "runtimeToClient", kind: "notification", method: "turn/started" },
+    { sequence: 5, direction: "runtimeToClient", kind: "response", method: "first" },
+  ]);
 });
 
 test("JSON-RPC 客户端暴露服务端反向请求并可回复", async () => {
   const transport = new FakeTransport();
   const client = new JsonRpcClient(transport);
   const requests: string[] = [];
+  const events: Array<{ direction: string; kind: string; method: string | null }> = [];
   client.onServerRequest((request) => requests.push(request.method));
+  client.onProtocolEvent(({ direction, kind, method }) => events.push({ direction, kind, method }));
   await client.start();
 
   transport.emitStdout(
@@ -46,6 +60,18 @@ test("JSON-RPC 客户端暴露服务端反向请求并可回复", async () => {
     id: "approval-1",
     result: { decision: "decline" },
   });
+  assert.deepEqual(events, [
+    {
+      direction: "runtimeToClient",
+      kind: "request",
+      method: "item/commandExecution/requestApproval",
+    },
+    {
+      direction: "clientToRuntime",
+      kind: "response",
+      method: "item/commandExecution/requestApproval",
+    },
+  ]);
 });
 
 test("JSON-RPC 错误响应映射为结构化异常", async () => {
@@ -61,6 +87,23 @@ test("JSON-RPC 错误响应映射为结构化异常", async () => {
     assert.equal(error.code, -32600);
     return true;
   });
+});
+
+test("JSON-RPC 响应继承对应请求的线程上下文", async () => {
+  const transport = new FakeTransport();
+  const client = new JsonRpcClient(transport);
+  const events: Array<{ method: string | null; threadId: string | null }> = [];
+  client.onProtocolEvent(({ method, threadId }) => events.push({ method, threadId }));
+  await client.start();
+
+  const pending = client.request("thread/archive", { threadId: "thread-background" });
+  transport.emitStdout('{"id":1,"result":{}}\n');
+  await pending;
+
+  assert.deepEqual(events, [
+    { method: "thread/archive", threadId: "thread-background" },
+    { method: "thread/archive", threadId: "thread-background" },
+  ]);
 });
 
 test("Runtime 退出会拒绝全部待处理请求", async () => {

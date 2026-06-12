@@ -3,6 +3,7 @@ import type {
   InitializeResponse,
   JsonValue,
   RequestId,
+  RuntimeProtocolEvent,
   ServerNotification,
   ServerRequest,
   ThreadArchiveParams,
@@ -29,6 +30,7 @@ export class FakeRuntimeClient implements RuntimeClientPort {
   readonly interrupts: TurnInterruptParams[] = [];
   readonly responses: Array<{ id: RequestId; result: JsonValue | undefined }> = [];
   readonly #notificationListeners = new Set<(notification: ServerNotification) => void>();
+  readonly #protocolEventListeners = new Set<(event: RuntimeProtocolEvent) => void>();
   readonly #requestListeners = new Set<(request: ServerRequest) => void>();
   readonly #protocolErrorListeners = new Set<(error: RuntimeProtocolError) => void>();
   readonly #exitListeners = new Set<
@@ -94,6 +96,11 @@ export class FakeRuntimeClient implements RuntimeClientPort {
     return () => this.#requestListeners.delete(listener);
   }
 
+  onProtocolEvent(listener: (event: RuntimeProtocolEvent) => void): () => void {
+    this.#protocolEventListeners.add(listener);
+    return () => this.#protocolEventListeners.delete(listener);
+  }
+
   onProtocolError(listener: (error: RuntimeProtocolError) => void): () => void {
     this.#protocolErrorListeners.add(listener);
     return () => this.#protocolErrorListeners.delete(listener);
@@ -126,6 +133,12 @@ export class FakeRuntimeClient implements RuntimeClientPort {
     const error = new RuntimeProtocolError(message);
     for (const listener of this.#protocolErrorListeners) {
       listener(error);
+    }
+  }
+
+  emitProtocolEvent(event: RuntimeProtocolEvent): void {
+    for (const listener of this.#protocolEventListeners) {
+      listener(event);
     }
   }
 }

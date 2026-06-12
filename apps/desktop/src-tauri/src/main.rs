@@ -100,6 +100,14 @@ struct ThreadState {
     selected_thread_id: Option<String>,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeEventRecord {
+    event_id: String,
+    thread_id: String,
+    protocol: serde_json::Value,
+}
+
 #[tauri::command]
 fn get_mimo_credential_status() -> Result<CredentialStatus, String> {
     if stored_api_key()?.is_some() {
@@ -219,8 +227,24 @@ fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectState, S
 fn list_threads(app: AppHandle) -> Result<ThreadState, String> {
     let mut connection = open_thread_database(&app)?;
     import_legacy_threads(&app, &mut connection)?;
+    rebuild_thread_projections(&mut connection)?;
     recover_interrupted_threads(&mut connection)?;
     load_thread_state(&connection)
+}
+
+#[tauri::command]
+fn append_runtime_events(app: AppHandle, events: Vec<RuntimeEventRecord>) -> Result<(), String> {
+    if events.len() > 1_000 {
+        return Err("单批 Runtime 原始事件数量超出限制。".to_string());
+    }
+    let mut connection = open_thread_database(&app)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| thread_database_error("开始 Runtime 事件事务"))?;
+    append_runtime_events_to_connection(&transaction, &events)?;
+    transaction
+        .commit()
+        .map_err(|_| thread_database_error("提交 Runtime 事件事务"))
 }
 
 #[tauri::command]
@@ -325,6 +349,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             add_project,
+            append_runtime_events,
             delete_thread,
             delete_mimo_credential,
             get_mimo_credential_status,
@@ -406,6 +431,7 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
             "
             PRAGMA foreign_keys = ON;
             PRAGMA journal_mode = WAL;
+            PRAGMA busy_timeout = 5000;
             PRAGMA synchronous = FULL;
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version INTEGER PRIMARY KEY,
@@ -416,7 +442,8 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
                 thread_id TEXT NOT NULL,
                 event_type TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
-                occurred_at INTEGER NOT NULL
+                occurred_at INTEGER NOT NULL,
+                event_id TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_thread_events_thread
                 ON thread_events(thread_id, sequence);
@@ -445,7 +472,34 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
             ",
         )
         .map_err(|_| thread_database_error("执行迁移"))?;
+    if !table_has_column(connection, "thread_events", "event_id")? {
+        connection
+            .execute("ALTER TABLE thread_events ADD COLUMN event_id TEXT", [])
+            .map_err(|_| thread_database_error("迁移 Runtime 事件标识"))?;
+    }
+    connection
+        .execute_batch(
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_events_event_id
+                ON thread_events(event_id) WHERE event_id IS NOT NULL;
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                VALUES (2, unixepoch('subsec') * 1000);
+            ",
+        )
+        .map_err(|_| thread_database_error("执行 Runtime 事件迁移"))?;
     Ok(())
+}
+
+fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let mut statement = connection
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|_| thread_database_error("检查 Schema 列"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|_| thread_database_error("查询 Schema 列"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| thread_database_error("读取 Schema 列"))?;
+    Ok(columns.iter().any(|candidate| candidate == column))
 }
 
 fn import_legacy_threads(app: &AppHandle, connection: &mut Connection) -> Result<(), String> {
@@ -507,6 +561,47 @@ fn recover_interrupted_threads(connection: &mut Connection) -> Result<(), String
         .map_err(|_| thread_database_error("提交崩溃恢复事务"))
 }
 
+fn rebuild_thread_projections(connection: &mut Connection) -> Result<(), String> {
+    let payloads = {
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT payload_json
+                FROM thread_events
+                WHERE event_type IN (
+                    'legacyThreadImported',
+                    'threadProjectionRecorded',
+                    'threadInterruptedAfterRestart',
+                    'threadArchived',
+                    'threadUnarchived'
+                )
+                ORDER BY sequence ASC
+                ",
+            )
+            .map_err(|_| thread_database_error("准备投影重建查询"))?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|_| thread_database_error("查询投影事件"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| thread_database_error("读取投影事件"))?
+    };
+    let transaction = connection
+        .transaction()
+        .map_err(|_| thread_database_error("开始投影重建事务"))?;
+    transaction
+        .execute("DELETE FROM threads", [])
+        .map_err(|_| thread_database_error("清空线程投影"))?;
+    for payload in payloads {
+        let thread = serde_json::from_str::<ThreadRecord>(&payload)
+            .map_err(|_| "线程投影事件格式无效。".to_string())?;
+        validate_thread(&thread)?;
+        upsert_thread_projection(&transaction, &thread)?;
+    }
+    transaction
+        .commit()
+        .map_err(|_| thread_database_error("提交投影重建事务"))
+}
+
 fn record_thread_projection(
     transaction: &Transaction<'_>,
     thread: &ThreadRecord,
@@ -551,6 +646,34 @@ fn record_thread_projection(
             .map_err(|_| thread_database_error("追加线程事件"))?;
     }
     upsert_thread_projection(transaction, thread)
+}
+
+fn append_runtime_events_to_connection(
+    connection: &Connection,
+    events: &[RuntimeEventRecord],
+) -> Result<(), String> {
+    for event in events {
+        validate_runtime_event(event)?;
+        let payload =
+            serde_json::to_string(event).map_err(|_| "无法序列化 Runtime 原始事件。".to_string())?;
+        connection
+            .execute(
+                "
+                INSERT OR IGNORE INTO thread_events(
+                    thread_id, event_type, payload_json, occurred_at, event_id
+                )
+                VALUES (?1, 'runtimeProtocolEvent', ?2, ?3, ?4)
+                ",
+                params![
+                    event.thread_id,
+                    payload,
+                    unix_timestamp_ms(),
+                    event.event_id
+                ],
+            )
+            .map_err(|_| thread_database_error("追加 Runtime 原始事件"))?;
+    }
+    Ok(())
 }
 
 fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> Result<(), String> {
@@ -703,6 +826,19 @@ fn validate_thread(thread: &ThreadRecord) -> Result<(), String> {
             .any(|entry| entry.content.len() > 400_000)
     {
         return Err("线程记录超过本地投影限制。".to_string());
+    }
+    Ok(())
+}
+
+fn validate_runtime_event(event: &RuntimeEventRecord) -> Result<(), String> {
+    if event.event_id.trim().is_empty() || event.thread_id.trim().is_empty() {
+        return Err("Runtime 原始事件缺少必要字段。".to_string());
+    }
+    let payload_size = serde_json::to_vec(&event.protocol)
+        .map_err(|_| "Runtime 原始事件格式无效。".to_string())?
+        .len();
+    if event.event_id.len() > 512 || event.thread_id.len() > 512 || payload_size > 2_000_000 {
+        return Err("Runtime 原始事件超出本地存储限制。".to_string());
     }
     Ok(())
 }
@@ -919,7 +1055,40 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, 2);
+    }
+
+    #[test]
+    fn migration_adds_runtime_event_identity_to_existing_ledger() {
+        let connection = Connection::open_in_memory().expect("open in-memory SQLite");
+        connection
+            .execute_batch(
+                "
+                CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at INTEGER NOT NULL
+                );
+                INSERT INTO schema_migrations(version, applied_at) VALUES (1, 0);
+                CREATE TABLE thread_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    thread_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    occurred_at INTEGER NOT NULL
+                );
+                ",
+            )
+            .expect("create schema v1");
+
+        migrate_thread_database(&connection).expect("migrate schema v1 to v2");
+
+        assert!(table_has_column(&connection, "thread_events", "event_id").expect("check event id"));
+        let migration_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .expect("count migrations");
+        assert_eq!(migration_count, 2);
     }
 
     #[test]
@@ -951,6 +1120,83 @@ mod tests {
         assert_eq!(event_count, 1);
         assert_eq!(stored.turn_status, "completed");
         assert_eq!(stored.updated_at, 2);
+    }
+
+    #[test]
+    fn runtime_events_are_ordered_and_deduplicated_by_event_id() {
+        let connection = Connection::open_in_memory().expect("open in-memory SQLite");
+        migrate_thread_database(&connection).expect("migrate SQLite");
+        let first = fixture_runtime_event("session-1-1", 1);
+        let second = fixture_runtime_event("session-1-2", 2);
+
+        append_runtime_events_to_connection(&connection, &[first, second])
+            .expect("append runtime events");
+        append_runtime_events_to_connection(&connection, &[fixture_runtime_event("session-1-1", 1)])
+            .expect("deduplicate first event");
+
+        let event_ids = connection
+            .prepare(
+                "
+                SELECT event_id FROM thread_events
+                WHERE event_type = 'runtimeProtocolEvent'
+                ORDER BY sequence ASC
+                ",
+            )
+            .expect("prepare event query")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query events")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read events");
+
+        assert_eq!(event_ids, vec!["session-1-1", "session-1-2"]);
+    }
+
+    #[test]
+    fn thread_projection_can_be_rebuilt_from_append_only_events() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory SQLite");
+        migrate_thread_database(&connection).expect("migrate SQLite");
+        let mut thread = fixture_thread();
+
+        let transaction = connection.transaction().expect("begin first transaction");
+        record_thread_projection(&transaction, &thread, "threadProjectionRecorded")
+            .expect("record first projection");
+        transaction.commit().expect("commit first transaction");
+
+        thread.turn_status = "completed".to_string();
+        thread.updated_at = 2;
+        let transaction = connection.transaction().expect("begin second transaction");
+        record_thread_projection(&transaction, &thread, "threadProjectionRecorded")
+            .expect("record completed projection");
+        transaction.commit().expect("commit second transaction");
+        connection
+            .execute("DELETE FROM threads", [])
+            .expect("simulate lost projection");
+
+        rebuild_thread_projections(&mut connection).expect("rebuild projection");
+        let stored = load_thread(&connection, &thread.id)
+            .expect("load rebuilt projection")
+            .expect("thread exists");
+
+        assert_eq!(stored.turn_status, "completed");
+        assert_eq!(stored.updated_at, 2);
+    }
+
+    fn fixture_runtime_event(event_id: &str, sequence: i64) -> RuntimeEventRecord {
+        RuntimeEventRecord {
+            event_id: event_id.to_string(),
+            thread_id: "thread-test".to_string(),
+            protocol: serde_json::json!({
+                "sequence": sequence,
+                "direction": "runtimeToClient",
+                "kind": "notification",
+                "method": "turn/started",
+                "requestId": null,
+                "message": {
+                    "method": "turn/started",
+                    "params": { "threadId": "thread-test" }
+                }
+            }),
+        }
     }
 
     fn fixture_thread() -> ThreadRecord {

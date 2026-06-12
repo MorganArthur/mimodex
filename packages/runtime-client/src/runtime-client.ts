@@ -2,6 +2,7 @@ import { JsonRpcClient } from "./json-rpc-client.js";
 import type {
   InitializeParams,
   InitializeResponse,
+  RuntimeProtocolEvent,
   ServerNotification,
   ServerRequest,
   ThreadArchiveParams,
@@ -93,6 +94,10 @@ export class MimodexRuntimeClient {
 
   onServerRequest(listener: (request: ServerRequest) => void): () => void {
     return this.#rpc.onServerRequest(listener);
+  }
+
+  onProtocolEvent(listener: (event: RuntimeProtocolEvent) => void): () => void {
+    return this.#rpc.onProtocolEvent(listener);
   }
 
   onProtocolError(listener: Parameters<JsonRpcClient["onProtocolError"]>[0]): () => void {

@@ -2,11 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DesktopSessionController } from "@mimodex/desktop-core";
+import { DesktopSessionController, type SessionRuntimeEvent } from "@mimodex/desktop-core";
 import type {
   InitializeResponse,
   JsonValue,
   RequestId,
+  RuntimeProtocolEvent,
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
@@ -199,7 +200,7 @@ describe("Mimodex 桌面壳", () => {
     expect(await screen.findByText("已恢复的历史回复")).toBeTruthy();
   });
 
-  it("可以归档、恢复并永久删除线程记录", async () => {
+  it("可以归档、恢复并移除本地线程索引", async () => {
     const runtime = new UiRuntime();
     const threads = new FakeThreadService([fixtureThread()]);
     const user = userEvent.setup();
@@ -226,6 +227,36 @@ describe("Mimodex 桌面壳", () => {
 
     await waitFor(() => expect(threads.deletedIds).toEqual(["thread-history"]));
     expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it("将 Runtime 原始协议事件批量写入线程服务", async () => {
+    const runtime = new UiRuntime();
+    const threads = new FakeThreadService();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtime)}
+        projectService={new FakeProjectService()}
+        threadService={threads}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    runtime.emitProtocolEvent({
+      sequence: 1,
+      direction: "runtimeToClient",
+      kind: "notification",
+      method: "turn/started",
+      requestId: null,
+      threadId: "thread-raw",
+      message: {
+        method: "turn/started",
+        params: { threadId: "thread-raw", turn: { id: "turn-raw", status: "inProgress" } },
+      },
+    });
+
+    await waitFor(() => expect(threads.runtimeEvents).toHaveLength(1));
+    expect(threads.runtimeEvents[0]?.threadId).toBe("thread-raw");
   });
 });
 
@@ -263,6 +294,7 @@ class UiRuntime implements RuntimeClientPort {
   readonly turnStarts: TurnStartParams[] = [];
   readonly responses: Array<{ id: RequestId; result: JsonValue | undefined }> = [];
   readonly #notifications = new Set<(notification: ServerNotification) => void>();
+  readonly #protocolEvents = new Set<(event: RuntimeProtocolEvent) => void>();
   readonly #requests = new Set<(request: ServerRequest) => void>();
 
   async initialize(): Promise<InitializeResponse> {
@@ -322,6 +354,11 @@ class UiRuntime implements RuntimeClientPort {
     return () => this.#requests.delete(listener);
   }
 
+  onProtocolEvent(listener: (event: RuntimeProtocolEvent) => void): () => void {
+    this.#protocolEvents.add(listener);
+    return () => this.#protocolEvents.delete(listener);
+  }
+
   onProtocolError(_listener: (error: RuntimeProtocolError) => void): () => void {
     return () => undefined;
   }
@@ -339,6 +376,12 @@ class UiRuntime implements RuntimeClientPort {
   emitRequest(request: ServerRequest): void {
     for (const listener of this.#requests) {
       listener(request);
+    }
+  }
+
+  emitProtocolEvent(event: RuntimeProtocolEvent): void {
+    for (const listener of this.#protocolEvents) {
+      listener(event);
     }
   }
 }
@@ -412,6 +455,7 @@ class FakeProjectService implements ProjectService {
 
 class FakeThreadService implements ThreadService {
   readonly deletedIds: string[] = [];
+  readonly runtimeEvents: SessionRuntimeEvent[] = [];
   #state: ThreadState;
 
   constructor(threads: ThreadRecord[] = []) {
@@ -452,6 +496,10 @@ class FakeThreadService implements ThreadService {
       threads: this.#state.threads.filter((thread) => thread.id !== threadId),
     };
     return this.#state;
+  }
+
+  async appendRuntimeEvents(events: SessionRuntimeEvent[]): Promise<void> {
+    this.runtimeEvents.push(...events);
   }
 }
 

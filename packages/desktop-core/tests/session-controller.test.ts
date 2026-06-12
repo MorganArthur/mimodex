@@ -200,3 +200,40 @@ test("归档与恢复归档会调用 Runtime 权威线程 API", async () => {
   assert.deepEqual(runtime.threadArchives, [{ threadId: "thread-history" }]);
   assert.deepEqual(runtime.threadUnarchives, [{ threadId: "thread-history" }]);
 });
+
+test("线程建立前暂存原始事件并在获得线程 ID 后按序释放", () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  const events: Array<{ threadId: string; sequence: number; method: string | null }> = [];
+  session.subscribeRuntimeEvents((event) =>
+    events.push({
+      threadId: event.threadId,
+      sequence: event.protocol.sequence,
+      method: event.protocol.method,
+    }),
+  );
+
+  runtime.emitProtocolEvent({
+    sequence: 1,
+    direction: "clientToRuntime",
+    kind: "request",
+    method: "thread/start",
+    requestId: 1,
+    threadId: null,
+    message: { id: 1, method: "thread/start", params: { cwd: "D:\\project" } },
+  });
+  runtime.emitProtocolEvent({
+    sequence: 2,
+    direction: "runtimeToClient",
+    kind: "response",
+    method: "thread/start",
+    requestId: 1,
+    threadId: "thread-raw",
+    message: { id: 1, result: { thread: { id: "thread-raw" } } },
+  });
+
+  assert.deepEqual(events, [
+    { threadId: "thread-raw", sequence: 1, method: "thread/start" },
+    { threadId: "thread-raw", sequence: 2, method: "thread/start" },
+  ]);
+});

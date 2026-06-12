@@ -1,7 +1,7 @@
 # 本地线程索引与恢复实现说明
 
 - 状态：首个可恢复线程索引切片已通过 Windows Preview 权威构建
-- 最后更新：2026-06-11
+- 最后更新：2026-06-12
 - 对应目录：`apps/desktop/src/threads.ts`、`packages/desktop-core/src/session-controller.ts`
 - 架构依据：`docs/architecture/decisions/ADR-0005-local-thread-persistence.md`
 - 权威构建：[Windows Preview #27342769848](https://github.com/MorganArthur/mimodex/actions/runs/27342769848)
@@ -51,12 +51,13 @@ API Key 永不写入线程索引。线程内容可能包含用户代码、命令
 
 ## 5. 与 ADR-0005 的关系
 
-本阶段已建立 ADR-0005 的 SQLite 查询投影和首个只追加桌面事件账本。当前恢复仍依赖
-Runtime 自身持久化的权威线程，SQLite 桌面投影不得被用于 Provider 上下文重放。
+当前实现已建立 ADR-0005 的 SQLite 查询投影、只追加桌面事件账本和线程相关 Runtime
+双向原始协议事件记录。启动时会从账本重建查询投影；恢复仍依赖 Runtime 自身持久化的
+权威线程，SQLite 桌面投影不得被用于 Provider 上下文重放。
 
 后续完整持久化阶段仍需实现：
 
-- 将全部有序 Runtime 原始事件直接写入账本，并从事件重建投影；
+- 实现只依赖 Runtime 原始事件的完整桌面投影语义 reducer；
 - Schema 迁移、保留、归档和永久删除；
 - 事件去重、崩溃恢复与副作用不确定状态；
 - 长线程压缩，同时保留 MiMo 协议要求字段。

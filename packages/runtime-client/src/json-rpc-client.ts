@@ -14,6 +14,7 @@ import type {
   JsonRpcSuccess,
   JsonValue,
   RequestId,
+  RuntimeProtocolEvent,
 } from "./protocol.js";
 import type { RuntimeTransport } from "./transport.js";
 
@@ -21,6 +22,7 @@ type Listener<T> = (event: T) => void;
 
 type PendingRequest = {
   method: string;
+  threadId: string | null;
   resolve: (value: JsonValue) => void;
   reject: (reason: unknown) => void;
   timeout?: ReturnType<typeof setTimeout>;
@@ -38,10 +40,13 @@ export class JsonRpcClient {
   readonly #pending = new Map<RequestId, PendingRequest>();
   readonly #notificationListeners = new Set<Listener<JsonRpcNotification>>();
   readonly #requestListeners = new Set<Listener<JsonRpcRequest>>();
+  readonly #protocolEventListeners = new Set<Listener<RuntimeProtocolEvent>>();
   readonly #protocolErrorListeners = new Set<Listener<RuntimeProtocolError>>();
   readonly #stderrListeners = new Set<Listener<string | Uint8Array>>();
   readonly #exitListeners = new Set<Listener<{ code?: number; signal?: string } | undefined>>();
   #nextId = 1;
+  #protocolSequence = 0;
+  readonly #serverRequests = new Map<RequestId, { method: string; threadId: string | null }>();
   #starting = false;
   #started = false;
   #closed = false;
@@ -85,7 +90,7 @@ export class JsonRpcClient {
     }
 
     const response = new Promise<JsonValue>((resolve, reject) => {
-      const pending: PendingRequest = { method, resolve, reject };
+      const pending: PendingRequest = { method, threadId: messageThreadId(message), resolve, reject };
       if (timeoutMs > 0) {
         pending.timeout = setTimeout(() => {
           this.#pending.delete(id);
@@ -96,6 +101,14 @@ export class JsonRpcClient {
     });
 
     try {
+      this.#emitProtocolEvent(
+        "clientToRuntime",
+        "request",
+        method,
+        id,
+        messageThreadId(message),
+        message,
+      );
       await this.#transport.writeLine(JSON.stringify(message));
     } catch (error) {
       this.#rejectPending(id, error);
@@ -109,12 +122,30 @@ export class JsonRpcClient {
     if (params !== undefined) {
       message.params = params as JsonValue;
     }
+    this.#emitProtocolEvent(
+      "clientToRuntime",
+      "notification",
+      method,
+      null,
+      messageThreadId(message),
+      message,
+    );
     await this.#transport.writeLine(JSON.stringify(message));
   }
 
   async respond(id: RequestId, result: JsonValue = {}): Promise<void> {
     this.#assertWritable();
     const response: JsonRpcSuccess = { id, result };
+    const context = this.#serverRequests.get(id);
+    this.#emitProtocolEvent(
+      "clientToRuntime",
+      "response",
+      context?.method ?? null,
+      id,
+      context?.threadId ?? null,
+      response,
+    );
+    this.#serverRequests.delete(id);
     await this.#transport.writeLine(JSON.stringify(response));
   }
 
@@ -124,6 +155,16 @@ export class JsonRpcClient {
   ): Promise<void> {
     this.#assertWritable();
     const response: JsonRpcFailure = { id, error };
+    const context = this.#serverRequests.get(id);
+    this.#emitProtocolEvent(
+      "clientToRuntime",
+      "response",
+      context?.method ?? null,
+      id,
+      context?.threadId ?? null,
+      response,
+    );
+    this.#serverRequests.delete(id);
     await this.#transport.writeLine(JSON.stringify(response));
   }
 
@@ -133,6 +174,10 @@ export class JsonRpcClient {
 
   onServerRequest(listener: Listener<JsonRpcRequest>): () => void {
     return this.#listen(this.#requestListeners, listener);
+  }
+
+  onProtocolEvent(listener: Listener<RuntimeProtocolEvent>): () => void {
+    return this.#listen(this.#protocolEventListeners, listener);
   }
 
   onProtocolError(listener: Listener<RuntimeProtocolError>): () => void {
@@ -183,8 +228,26 @@ export class JsonRpcClient {
       if (typeof message.method !== "string") {
         this.#handleProtocolError(new RuntimeProtocolError("Runtime message has an invalid method"));
       } else if ("id" in message) {
+        const threadId = messageThreadId(message);
+        this.#serverRequests.set(message.id, { method: message.method, threadId });
+        this.#emitProtocolEvent(
+          "runtimeToClient",
+          "request",
+          message.method,
+          message.id,
+          threadId,
+          message,
+        );
         this.#emit(this.#requestListeners, message as JsonRpcRequest);
       } else {
+        this.#emitProtocolEvent(
+          "runtimeToClient",
+          "notification",
+          message.method,
+          null,
+          messageThreadId(message),
+          message,
+        );
         this.#emit(this.#notificationListeners, message as JsonRpcNotification);
       }
       return;
@@ -195,6 +258,14 @@ export class JsonRpcClient {
     }
 
     const pending = this.#pending.get(message.id);
+    this.#emitProtocolEvent(
+      "runtimeToClient",
+      "response",
+      pending?.method ?? null,
+      message.id,
+      messageThreadId(message) ?? pending?.threadId ?? null,
+      message,
+    );
     if (!pending) {
       this.#handleProtocolError(
         new RuntimeProtocolError(`Runtime responded with unknown request id: ${String(message.id)}`),
@@ -278,10 +349,50 @@ export class JsonRpcClient {
       listener(value);
     }
   }
+
+  #emitProtocolEvent(
+    direction: RuntimeProtocolEvent["direction"],
+    kind: RuntimeProtocolEvent["kind"],
+    method: string | null,
+    requestId: RequestId | null,
+    threadId: string | null,
+    message: JsonValue,
+  ): void {
+    this.#protocolSequence += 1;
+    this.#emit(this.#protocolEventListeners, {
+      sequence: this.#protocolSequence,
+      direction,
+      kind,
+      method,
+      requestId,
+      threadId,
+      message,
+    });
+  }
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function messageThreadId(message: JsonValue): string | null {
+  const record = jsonRecord(message);
+  const params = jsonRecord(record?.params);
+  const result = jsonRecord(record?.result);
+  return (
+    stringValue(params?.threadId) ??
+    stringValue(jsonRecord(params?.thread)?.id) ??
+    stringValue(result?.threadId) ??
+    stringValue(jsonRecord(result?.thread)?.id)
+  );
+}
+
+function jsonRecord(value: JsonValue | undefined): Record<string, JsonValue | undefined> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function stringValue(value: JsonValue | undefined): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 export function asJsonObject(value: JsonValue): JsonObject {

@@ -119,6 +119,47 @@ export function DesktopRoot({
     };
   }, [projectState, session, threadService]);
 
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    let disposed = false;
+    let writeQueue = Promise.resolve();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let pending: Parameters<ThreadService["appendRuntimeEvents"]>[0] = [];
+    const flush = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (pending.length === 0) {
+        return;
+      }
+      const events = pending;
+      pending = [];
+      writeQueue = writeQueue
+        .then(() => threadService.appendRuntimeEvents(events))
+        .catch((error) => {
+          if (!disposed) {
+            setThreadError(errorMessage(error));
+          }
+        });
+    };
+    const unsubscribe = session.subscribeRuntimeEvents((event) => {
+      pending.push(event);
+      if (pending.length >= 100) {
+        flush();
+      } else if (!timer) {
+        timer = setTimeout(flush, 100);
+      }
+    });
+    return () => {
+      unsubscribe();
+      flush();
+      disposed = true;
+    };
+  }, [session, threadService]);
+
   const saveCredential = async (apiKey: string) => {
     const status = await credentialService.save(apiKey);
     await credentialService.restart();

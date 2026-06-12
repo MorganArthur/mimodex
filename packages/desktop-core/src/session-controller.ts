@@ -2,6 +2,7 @@ import type {
   InitializeResponse,
   JsonValue,
   RequestId,
+  RuntimeProtocolEvent,
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
@@ -83,6 +84,12 @@ export type ResumeThreadInput = {
   diff: string;
 };
 
+export type SessionRuntimeEvent = {
+  eventId: string;
+  threadId: string;
+  protocol: RuntimeProtocolEvent;
+};
+
 export interface RuntimeClientPort {
   initialize(): Promise<InitializeResponse>;
   archiveThread(params: ThreadArchiveParams): Promise<ThreadArchiveResponse>;
@@ -92,6 +99,7 @@ export interface RuntimeClientPort {
   unarchiveThread(params: ThreadUnarchiveParams): Promise<ThreadUnarchiveResponse>;
   interruptTurn(params: TurnInterruptParams): Promise<TurnInterruptResponse>;
   onNotification(listener: (notification: ServerNotification) => void): () => void;
+  onProtocolEvent(listener: (event: RuntimeProtocolEvent) => void): () => void;
   onServerRequest(listener: (request: ServerRequest) => void): () => void;
   onProtocolError(listener: (error: RuntimeProtocolError) => void): () => void;
   onExit(listener: (details: { code?: number; signal?: string } | undefined) => void): () => void;
@@ -100,6 +108,7 @@ export interface RuntimeClientPort {
 }
 
 type StateListener = () => void;
+type RuntimeEventListener = (event: SessionRuntimeEvent) => void;
 
 const initialState: SessionState = {
   connection: "idle",
@@ -119,13 +128,17 @@ const initialState: SessionState = {
 export class DesktopSessionController {
   readonly #runtime: RuntimeClientPort;
   readonly #listeners = new Set<StateListener>();
+  readonly #runtimeEventListeners = new Set<RuntimeEventListener>();
   readonly #unsubscribers: Array<() => void>;
+  readonly #protocolSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  readonly #pendingProtocolEvents: RuntimeProtocolEvent[] = [];
   #state: SessionState = initialState;
   #entrySequence = 0;
 
   constructor(runtime: RuntimeClientPort) {
     this.#runtime = runtime;
     this.#unsubscribers = [
+      runtime.onProtocolEvent((event) => this.#handleProtocolEvent(event)),
       runtime.onNotification((notification) => this.#handleNotification(notification)),
       runtime.onServerRequest((request) => this.#handleServerRequest(request)),
       runtime.onProtocolError((error) => this.#recordProtocolError(error.message)),
@@ -141,6 +154,11 @@ export class DesktopSessionController {
   subscribe = (listener: StateListener): (() => void) => {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  };
+
+  subscribeRuntimeEvents = (listener: RuntimeEventListener): (() => void) => {
+    this.#runtimeEventListeners.add(listener);
+    return () => this.#runtimeEventListeners.delete(listener);
   };
 
   async connect(): Promise<void> {
@@ -171,6 +189,9 @@ export class DesktopSessionController {
 
     const existingThreadId =
       this.#state.projectPath === input.projectPath ? this.#state.threadId : null;
+    if (!existingThreadId) {
+      this.#pendingProtocolEvents.splice(0);
+    }
     this.#append({
       id: this.#nextId("user"),
       kind: "user",
@@ -220,6 +241,7 @@ export class DesktopSessionController {
     if (this.#state.turnStatus === "inProgress") {
       throw new Error("已有任务正在执行");
     }
+    this.#pendingProtocolEvents.splice(0);
     this.#publish({
       projectPath,
       threadId: null,
@@ -368,6 +390,34 @@ export class DesktopSessionController {
         return;
       default:
         return;
+    }
+  }
+
+  #handleProtocolEvent(event: RuntimeProtocolEvent): void {
+    if (!isThreadProtocolMethod(event.method)) {
+      return;
+    }
+    const threadId = protocolThreadId(event) ?? this.#state.threadId;
+    if (!threadId) {
+      if (this.#pendingProtocolEvents.length < 1_000) {
+        this.#pendingProtocolEvents.push(event);
+      }
+      return;
+    }
+    for (const pending of this.#pendingProtocolEvents.splice(0)) {
+      this.#emitRuntimeEvent(threadId, pending);
+    }
+    this.#emitRuntimeEvent(threadId, event);
+  }
+
+  #emitRuntimeEvent(threadId: string, protocol: RuntimeProtocolEvent): void {
+    const event: SessionRuntimeEvent = {
+      eventId: `${this.#protocolSessionId}-${protocol.sequence}`,
+      threadId,
+      protocol,
+    };
+    for (const listener of this.#runtimeEventListeners) {
+      listener(event);
     }
   }
 
@@ -529,6 +579,29 @@ function approvalKind(method: string): PendingApproval["kind"] | null {
     return "permission";
   }
   return null;
+}
+
+function isThreadProtocolMethod(method: string | null): boolean {
+  return (
+    method === "error" ||
+    method?.startsWith("item/") === true ||
+    method?.startsWith("serverRequest/") === true ||
+    method?.startsWith("thread/") === true ||
+    method?.startsWith("turn/") === true
+  );
+}
+
+function protocolThreadId(event: RuntimeProtocolEvent): string | null {
+  const message = asRecord(event.message);
+  const params = asRecord(message?.params);
+  const result = asRecord(message?.result);
+  return (
+    event.threadId ??
+    stringValue(params?.threadId) ??
+    stringValue(asRecord(params?.thread)?.id) ??
+    stringValue(result?.threadId) ??
+    stringValue(asRecord(result?.thread)?.id)
+  );
 }
 
 function nestedErrorMessage(value: Record<string, unknown> | null): string | null {

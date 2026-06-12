@@ -3,6 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   ModelId,
   SandboxMode,
+  SessionRuntimeEvent,
   TimelineEntry,
   TurnStatus,
 } from "@mimodex/desktop-core";
@@ -33,6 +34,7 @@ export interface ThreadService {
   select(threadId: string | null): Promise<ThreadState>;
   setArchived(threadId: string, archived: boolean): Promise<ThreadState>;
   delete(threadId: string): Promise<ThreadState>;
+  appendRuntimeEvents(events: SessionRuntimeEvent[]): Promise<void>;
 }
 
 export function createThreadService(): ThreadService {
@@ -59,9 +61,14 @@ class TauriThreadService implements ThreadService {
   delete(threadId: string): Promise<ThreadState> {
     return invoke("delete_thread", { threadId });
   }
+
+  appendRuntimeEvents(events: SessionRuntimeEvent[]): Promise<void> {
+    return invoke("append_runtime_events", { events });
+  }
 }
 
 class DemoThreadService implements ThreadService {
+  readonly runtimeEvents: SessionRuntimeEvent[] = [];
   #state: ThreadState = {
     threads: [
       demoThread("demo-thread-runtime", "桌面 Runtime 接入", Date.now()),
@@ -115,6 +122,14 @@ class DemoThreadService implements ThreadService {
       selectedThreadId: this.#state.selectedThreadId === threadId ? null : this.#state.selectedThreadId,
     };
     return this.#state;
+  }
+
+  async appendRuntimeEvents(events: SessionRuntimeEvent[]): Promise<void> {
+    for (const event of events) {
+      if (!this.runtimeEvents.some((candidate) => candidate.eventId === event.eventId)) {
+        this.runtimeEvents.push(event);
+      }
+    }
   }
 }
 

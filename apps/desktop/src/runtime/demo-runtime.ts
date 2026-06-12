@@ -2,6 +2,7 @@ import type {
   InitializeResponse,
   JsonValue,
   RequestId,
+  RuntimeProtocolEvent,
   RuntimeProtocolError,
   ServerNotification,
   ServerRequest,
@@ -24,6 +25,7 @@ type Listener<T> = (value: T) => void;
 
 export class DemoRuntimeClient implements RuntimeClientPort {
   readonly #notifications = new Set<Listener<ServerNotification>>();
+  readonly #protocolEvents = new Set<Listener<RuntimeProtocolEvent>>();
   readonly #requests = new Set<Listener<ServerRequest>>();
   readonly #protocolErrors = new Set<Listener<RuntimeProtocolError>>();
   readonly #exits = new Set<Listener<{ code?: number; signal?: string } | undefined>>();
@@ -31,6 +33,7 @@ export class DemoRuntimeClient implements RuntimeClientPort {
   #threadId = "demo-thread";
   #turnId = "demo-turn";
   #approvalId: RequestId | null = null;
+  #protocolSequence = 0;
   #closed = false;
 
   async initialize(): Promise<InitializeResponse> {
@@ -132,6 +135,10 @@ export class DemoRuntimeClient implements RuntimeClientPort {
     return this.#listen(this.#requests, listener);
   }
 
+  onProtocolEvent(listener: Listener<RuntimeProtocolEvent>): () => void {
+    return this.#listen(this.#protocolEvents, listener);
+  }
+
   onProtocolError(listener: Listener<RuntimeProtocolError>): () => void {
     return this.#listen(this.#protocolErrors, listener);
   }
@@ -141,6 +148,10 @@ export class DemoRuntimeClient implements RuntimeClientPort {
   }
 
   async respond(id: RequestId, result: JsonValue = {}): Promise<void> {
+    this.#emitProtocolEvent("clientToRuntime", "response", "item/commandExecution/requestApproval", id, {
+      id,
+      result,
+    });
     if (id !== this.#approvalId) {
       return;
     }
@@ -258,8 +269,10 @@ export class DemoRuntimeClient implements RuntimeClientPort {
     if (this.#closed) {
       return;
     }
+    const notification = { method, params };
+    this.#emitProtocolEvent("runtimeToClient", "notification", method, null, notification);
     for (const listener of this.#notifications) {
-      listener({ method, params });
+      listener(notification);
     }
   }
 
@@ -267,8 +280,31 @@ export class DemoRuntimeClient implements RuntimeClientPort {
     if (this.#closed) {
       return;
     }
+    this.#emitProtocolEvent("runtimeToClient", "request", request.method, request.id, request);
     for (const listener of this.#requests) {
       listener(request);
+    }
+  }
+
+  #emitProtocolEvent(
+    direction: RuntimeProtocolEvent["direction"],
+    kind: RuntimeProtocolEvent["kind"],
+    method: string,
+    requestId: RequestId | null,
+    message: JsonValue,
+  ): void {
+    this.#protocolSequence += 1;
+    const event: RuntimeProtocolEvent = {
+      sequence: this.#protocolSequence,
+      direction,
+      kind,
+      method,
+      requestId,
+      threadId: this.#threadId,
+      message,
+    };
+    for (const listener of this.#protocolEvents) {
+      listener(event);
     }
   }
 

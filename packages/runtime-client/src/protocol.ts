@@ -133,3 +133,13 @@ export type TurnInterruptResponse = JsonObject;
 export type ServerNotification = JsonRpcNotification;
 
 export type ServerRequest = JsonRpcRequest;
+
+export type RuntimeProtocolEvent = {
+  sequence: number;
+  direction: "clientToRuntime" | "runtimeToClient";
+  kind: "notification" | "request" | "response";
+  method: string | null;
+  requestId: RequestId | null;
+  threadId: string | null;
+  message: JsonValue;
+};
