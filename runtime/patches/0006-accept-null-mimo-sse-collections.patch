@@ -1,0 +1,90 @@
+diff --git a/codex-rs/codex-api/src/sse/chat_completions.rs b/codex-rs/codex-api/src/sse/chat_completions.rs
+index 519dcd5fd..d94039aae 100644
+--- a/codex-rs/codex-api/src/sse/chat_completions.rs
++++ b/codex-rs/codex-api/src/sse/chat_completions.rs
+@@ -50,6 +50,6 @@ pub fn spawn_chat_completions_response_stream(
+ struct ChatCompletionChunk {
+     id: Option<String>,
+-    #[serde(default)]
++    #[serde(default, deserialize_with = "deserialize_null_default")]
+     choices: Vec<ChatCompletionChoice>,
+     usage: Option<ChatCompletionUsage>,
+ }
+@@ -66,10 +66,18 @@ struct ChatCompletionChoice {
+ struct ChatCompletionDelta {
+     content: Option<String>,
+     reasoning_content: Option<String>,
+-    #[serde(default)]
++    #[serde(default, deserialize_with = "deserialize_null_default")]
+     tool_calls: Vec<ChatToolCallDelta>,
+ }
+ 
++fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
++where
++    D: serde::Deserializer<'de>,
++    T: Deserialize<'de> + Default,
++{
++    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
++}
++
+ #[derive(Debug, Deserialize)]
+ struct ChatToolCallDelta {
+     index: usize,
+diff --git a/codex-rs/codex-api/src/sse/chat_completions_tests.rs b/codex-rs/codex-api/src/sse/chat_completions_tests.rs
+index 6df6027d2..7eebec00e 100644
+--- a/codex-rs/codex-api/src/sse/chat_completions_tests.rs
++++ b/codex-rs/codex-api/src/sse/chat_completions_tests.rs
+@@ -166,6 +166,53 @@ async fn emits_text_message_before_stop_completion() {
+     );
+ }
+ 
++#[tokio::test]
++async fn accepts_null_collections_from_mimo() {
++    let body = [
++        format!(
++            "data: {}\n\n",
++            json!({
++                "id": "response-null-collections",
++                "choices": null
++            })
++        ),
++        format!(
++            "data: {}\n\n",
++            json!({
++                "choices": [{
++                    "index": 0,
++                    "delta": {
++                        "content": "完成",
++                        "tool_calls": null
++                    },
++                    "finish_reason": "stop"
++                }]
++            })
++        ),
++        "data: [DONE]\n\n".to_string(),
++    ]
++    .concat();
++
++    let events = collect_events(vec![body.into_bytes()]).await;
++    assert_eq!(events.len(), 5);
++    assert_matches!(events[0], Ok(ResponseEvent::Created));
++    assert_matches!(
++        events[1],
++        Ok(ResponseEvent::OutputItemAdded(ResponseItem::Message { .. }))
++    );
++    assert_matches!(
++        &events[2],
++        Ok(ResponseEvent::OutputTextDelta(delta)) if delta == "完成"
++    );
++    assert_matches!(
++        events[4],
++        Ok(ResponseEvent::Completed {
++            end_turn: Some(true),
++            ..
++        })
++    );
++}
++
+ #[tokio::test]
+ async fn finishes_reasoning_before_streaming_assistant_text() {
+     let body = [

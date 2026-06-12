@@ -43,3 +43,9 @@ commit。
    app-server `thread/start`、`turn/start`、`turn/interrupt` 生命周期测试。
    该补丁已通过 Windows Runtime CI 权威验证。验证记录：
    [Runtime CI #27249955613](https://github.com/MorganArthur/mimodex/actions/runs/27249955613)。
+
+6. `0006-accept-null-mimo-sse-collections.patch`
+
+   兼容 MiMo 流式响应中显式返回 `choices: null` 或 `tool_calls: null` 的增量，
+   将这些可空集合按空数组处理，避免正常对话因为 SSE 反序列化失败而重复重连。
+   同时加入覆盖真实可空集合形态的 Runtime 回归测试。

@@ -6,6 +6,12 @@
   text-rendering: optimizeLegibility;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -13,7 +19,7 @@
 body {
   margin: 0;
   min-width: 1120px;
-  min-height: 100vh;
+  overflow: hidden;
   background: #e9e6de;
 }
 
@@ -272,14 +278,16 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: 248px minmax(540px, 1fr) 320px;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   overflow: hidden;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   padding: 22px 16px 16px;
   color: #e7e9e4;
   background: #20231f;
@@ -355,6 +363,8 @@ button {
 
 .sidebar-section.threads {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .section-heading {
@@ -587,8 +597,9 @@ button {
 
 .workspace {
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  min-height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
   background: #f4f1ea;
 }
 
@@ -665,7 +676,9 @@ button {
 }
 
 .conversation {
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 36px clamp(24px, 6vw, 76px) 28px;
 }
 
@@ -1039,7 +1052,9 @@ button {
 }
 
 .context-panel {
-  min-height: 100vh;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #eeece6;
   border-left: 1px solid #d8d5cd;
 }
