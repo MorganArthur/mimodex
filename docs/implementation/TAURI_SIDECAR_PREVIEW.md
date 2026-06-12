@@ -8,7 +8,7 @@
 - Runtime IPC 修复构建：[Windows Preview #27322304835](https://github.com/MorganArthur/mimodex/actions/runs/27322304835)
 - 凭据设置构建：[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)
 - 项目管理构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
-- 当前可用构建：[Windows Preview #27393023482](https://github.com/MorganArthur/mimodex/actions/runs/27393023482)
+- 当前可用构建：[Windows Preview #27397710374](https://github.com/MorganArthur/mimodex/actions/runs/27397710374)
 
 ## 1. 本阶段目标
 
@@ -107,6 +107,13 @@ SHA256 为
 后端编译、Runtime 握手、NSIS 打包与独立 SHA256 校验。安装包大小为 `56.89 MiB`，
 SHA256 为
 `F51CA54F0B04BA8870F3DD2228E82E244923AFFF7BD758E4DB1DB4F18BF010F8`。
+
+当前流式绘制与简单对话快速路径版 Artifact：
+[mimodex-windows-preview-a1761179d5360871cde1485480fba02fc31622f8](https://github.com/MorganArthur/mimodex/actions/runs/27397710374/artifacts/7585346441)。
+该构建会将同一个 sidecar stdout 批次中的真实 SSE 增量分批交给浏览器绘制，并在
+对话执行期间自动跟随最新输出。明确的寒暄、身份和能力问答不再携带完整 Agent 工具
+定义；编码任务和已有工具调用历史的线程仍保持完整工具能力。该构建通过 Desktop CI、
+Runtime CI、真实 Runtime sidecar、Tauri 后端和 NSIS 安装包构建。
 
 ## 4. 当前使用限制
 

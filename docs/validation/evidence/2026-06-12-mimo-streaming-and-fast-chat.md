@@ -22,3 +22,14 @@
 本地 TypeScript、React、Runtime 客户端测试和生产构建已覆盖增量分批处理。无工具
 快速路径由 Runtime CI 的 Rust 请求体测试验证；真实 MiMo 首字延迟需要安装新构建后
 使用用户凭据复测。
+
+## CI 与安装包
+
+- [Desktop CI #27397478351](https://github.com/MorganArthur/mimodex/actions/runs/27397478351)
+  已验证桌面流式分批处理、React 界面和生产构建。
+- [Runtime CI #27397710384](https://github.com/MorganArthur/mimodex/actions/runs/27397710384)
+  已验证快速对话无工具请求、编码任务保留工具、MiMo app-server 生命周期和集成 crate。
+- [Windows Preview #27397710374](https://github.com/MorganArthur/mimodex/actions/runs/27397710374)
+  已完成真实 Runtime sidecar、Tauri 后端和 NSIS 安装包构建。
+- 安装包 Artifact：
+  [mimodex-windows-preview-a1761179d5360871cde1485480fba02fc31622f8](https://github.com/MorganArthur/mimodex/actions/runs/27397710374/artifacts/7585346441)

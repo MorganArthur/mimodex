@@ -67,3 +67,5 @@ commit。
    对话仍携带完整 Agent 工具定义；编码任务以及已有工具调用历史的线程继续保留
    完整工具能力。同一阶段的桌面 Runtime 客户端将单个 stdout 批次中的协议消息
    分批交给浏览器绘制，使真实 SSE 文本增量不会被 React 合并成一次整段显示。
+   该补丁已通过 Windows Runtime CI 权威验证。验证记录：
+   [Runtime CI #27397710384](https://github.com/MorganArthur/mimodex/actions/runs/27397710384)。
