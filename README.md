@@ -2,7 +2,8 @@
 
 Mimodex 是一款由 MiMo v2.5 与 MiMo v2.5 Pro API 驱动的本地优先桌面编程 Agent。
 
-项目已完成产品定义、MiMo Provider 验证和首批 Runtime 接入，当前正在开发桌面端 MVP。
+项目已完成 MiMo Provider、Runtime Adapter、Tauri sidecar 和桌面 MVP 的首轮端到端
+实现，当前进入 Windows 11 私测准入验收与阻断缺陷修复阶段。
 
 ## 产品方向
 
@@ -19,6 +20,7 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 
 ## 方案文档
 
+- [当前项目状态](docs/CURRENT_STATUS.md)
 - [产品需求文档](docs/product/PRD.md)
 - [架构总览](docs/architecture/README.md)
 - [ADR-0001：采用 Tauri 桌面外壳与 Rust Agent Core](docs/architecture/decisions/ADR-0001-tauri-rust-agent-core.md)
@@ -61,7 +63,10 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 
 ## 当前开发阶段
 
-MiMo Provider 技术验证清单中的强制退出条件已经通过。桌面界面、Tauri sidecar 和
-Mimodex Runtime 已完成首轮代码接入，并由 Windows Preview CI 产出首个 `55.98 MiB`
-可安装技术预览。当前已补齐连接诊断、自定义端点、结构化错误、完全访问警告和审批
-边界详情，工作重点转为按 Windows 11 私测清单验收 Agent 闭环。
+MiMo Provider 技术验证、Runtime 工具闭环、桌面流式交互、项目与 Git、线程恢复、
+SQLite 事件账本、设置诊断和持久化活动审计均已实现。最新 Windows Preview 安装包
+基于提交 `6c09352`，大小为 `57.76 MiB`。
+
+当前工作重点是按 Windows 11 私测清单完成真实安装、凭据、权限、Agent 任务、Git、
+线程恢复和活动审计验收，并补齐安全脱敏、动作与变更关联、发布冒烟和代码签名。
+最新进度、构建链接和剩余工作统一见 [当前项目状态](docs/CURRENT_STATUS.md)。

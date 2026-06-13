@@ -1,6 +1,6 @@
 # ADR-0001：采用 Tauri 桌面外壳与 Rust Agent Core
 
-- 状态：已接受
+- 状态：已接受并实施
 - 日期：2026-06-09
 
 ## 背景
@@ -19,6 +19,11 @@ Mimodex 需要响应迅速的跨平台桌面界面，以及能够安全管理进
 - 桌面端与 Runtime 之间通过受监管子进程的 stdio 进行本地 JSON-RPC 通信。
 
 桌面进程负责展示和操作系统外壳集成，Agent Runtime 负责全部模型与工具执行行为。
+
+## 实施状态
+
+截至 2026-06-13，Tauri 2、React、TypeScript、真实 Rust Runtime sidecar 和本地
+JSON-RPC 客户端均已实现，并由 Windows Preview 持续构建为 NSIS 安装包。
 
 ## 决策理由
 

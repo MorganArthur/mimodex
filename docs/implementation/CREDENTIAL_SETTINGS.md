@@ -1,7 +1,7 @@
 # MiMo 凭据设置与安全存储
 
-- 状态：已实现并通过 Windows CI，等待真实安装验收
-- 最后更新：2026-06-11
+- 状态：凭据、端点、默认设置与连接诊断已实现并通过 Windows Preview，等待真实安装验收
+- 最后更新：2026-06-13
 - 对应目录：`apps/desktop/src-tauri/src/main.rs`、`apps/desktop/src/credentials.ts`、
   `apps/desktop/src/DesktopRoot.tsx`
 
@@ -55,6 +55,8 @@ Windows 凭据条目使用：
 - 保存 Key 或 Provider 设置前会发送最小诊断请求，只有认证成功后才会持久化；
 - 已支持自定义 Base URL、独立连接诊断和认证错误引导；诊断会区分认证、端点、限流、
   超时、模型和 Provider 服务异常；
+- 默认模型、默认权限模式和自定义可信 Base URL 会保存到应用普通设置文件，API Key
+  始终与这些非敏感设置分离；
 - Windows CI-only 构建意味着 Rust 后端需要由 Windows Preview 工作流完成权威验证。
 
 ## 5. 验收
@@ -67,10 +69,4 @@ Windows 凭据条目使用：
 - [ ] 真实 Windows 凭据管理器保存、重启加载和删除通过；
 - [ ] 使用安全存储凭据完成一次真实 MiMo 任务。
 
-Windows CI 构建：
-[Windows Preview #27330345759](https://github.com/MorganArthur/mimodex/actions/runs/27330345759)。
-对应 Artifact：
-[mimodex-windows-preview-94c0d08fed6f4952ed58f3c51cc04dab94d5c447](https://github.com/MorganArthur/mimodex/actions/runs/27330345759/artifacts/7558340455)。
-
-安装包大小为 `56.02 MiB`，SHA256 为
-`97C255C1A83FF101C8D3768D922D4E2F66D81F3F89E44CF405297AA03BF517B9`。
+当前权威构建与安装包见：[Mimodex 当前项目状态](../CURRENT_STATUS.md)。

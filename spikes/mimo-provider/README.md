@@ -1,9 +1,10 @@
 # MiMo Provider Spike 测试工程
 
-这是一个可丢弃的 TypeScript/Node 协议探针，用于在正式修改 Codex Rust Runtime
-前验证 MiMo Chat Completions 的流式输出、`reasoning_content`、工具调用和会话重放。
+这是一个可丢弃的 TypeScript/Node 协议探针，用于验证和持续回归 MiMo Chat
+Completions 的流式输出、`reasoning_content`、工具调用和会话重放。
 
-该工程不是正式 Provider 实现，也不会被桌面端直接依赖。
+该工程不是正式 Provider 实现，也不会被桌面端直接依赖。正式 Provider Adapter 已由
+Mimodex Runtime 补丁队列实现；本工程继续用于真实 API 兼容与失败路径调查。
 
 ## 环境要求
 
@@ -159,4 +160,5 @@ npm run test:live
 执行结果应回填到：
 
 - `docs/validation/MIMO_PROVIDER_SPIKE.md`
-- 后续新增的 Spike 最终报告
+- `docs/validation/MIMO_PROVIDER_SPIKE_STATUS.md`
+- `docs/validation/evidence/` 中的脱敏历史证据

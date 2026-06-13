@@ -1,6 +1,6 @@
 # ADR-0002：基于 Codex App Server 分支开发 Agent Runtime
 
-- 状态：已接受，需通过验证门槛
+- 状态：已接受并实施，验证门槛已通过
 - 日期：2026-06-09
 
 ## 背景
@@ -30,6 +30,12 @@ Mimodex 将：
 
 该决策以 Provider Spike 证明 MiMo 能支持所需 Agent 循环，且不会破坏 Core
 关键约束为前提。
+
+## 实施状态
+
+截至 2026-06-13，固定上游 commit 与版本化补丁队列已经建立，9 个 Mimodex Runtime
+补丁通过 Windows Runtime CI；Runtime sidecar 已被打包进 Tauri Windows Preview，
+并通过初始化握手、工具闭环和恢复测试。
 
 ## 决策理由
 

@@ -1,7 +1,7 @@
 # Windows 11 CI 构建与发布方案
 
-- 状态：Runtime、桌面 TypeScript 与未签名 Windows 技术预览流水线已建立
-- 最后更新：2026-06-11
+- 状态：CI-only 原生构建与未签名 Windows Preview 已建立，正式发布流水线待实现
+- 最后更新：2026-06-13
 - 本地开发约束：不安装 Rust、Cargo、MSVC 或 Tauri 原生构建依赖
 
 ## 1. 可行性结论
@@ -33,7 +33,7 @@ GitHub 托管 Runner，不要求安装在本地机器。
 选择 NSIS 作为首版主安装包，是因为 Tauri 原生支持且适合常规桌面安装流程。MSI
 只能在 Windows 上构建，并额外依赖 WiX/VBSCRIPT 环境，作为后续可选产物更稳妥。
 
-## 3. 计划中的 Workflow
+## 3. Workflow 状态
 
 | Workflow | 触发 | 作用 |
 | --- | --- | --- |
@@ -41,18 +41,20 @@ GitHub 托管 Runner，不要求安装在本地机器。
 | `runtime-ci.yml` | PR、main、手动 | 拉取锁定上游、应用补丁，执行 Rust 格式、检查、单测和 Windows Runtime 编译；已建立 |
 | `desktop-ci.yml` | PR、main、手动 | 快速执行桌面 TypeScript 检查、离线测试与 React 生产构建 |
 | `windows-preview.yml` | PR、main、手动 | 构建 Runtime、Tauri 与未签名 NSIS 安装包，检查体积并上传 Actions Artifact |
-| `windows-release.yml` | 版本标签、手动批准 | 构建、签名并发布 Windows 安装包 |
-| `mimo-live-probe.yml` | 手动、受保护环境 | 使用预算受限凭据执行真实 API 兼容性验证 |
+| `windows-release.yml` | 版本标签、手动批准 | 待实现：构建、签名并发布 Windows 安装包 |
+| `mimo-live-probe.yml` | 手动、受保护环境 | 待实现：使用预算受限凭据执行真实 API 兼容性验证 |
 
 Runtime CI 已基于固定上游 commit 与补丁队列建立。桌面 Workflow 已接入 Runtime
 客户端、桌面应用服务、React 交互测试与生产构建。较慢的原生编译与安装包任务独立
-放入 `windows-preview.yml`，避免拖慢日常 TypeScript 反馈。首个未签名 NSIS 安装包已在
-[Windows Preview #27319183630](https://github.com/MorganArthur/mimodex/actions/runs/27319183630)
-成功构建，安装包大小为 `55.98 MiB`。桌面 Runtime 客户端基线已在
-[Desktop CI #27252463625](https://github.com/MorganArthur/mimodex/actions/runs/27252463625)
-首次通过；桌面应用服务与 React 交互壳已在
-[Desktop CI #27253481256](https://github.com/MorganArthur/mimodex/actions/runs/27253481256)
-通过。
+放入 `windows-preview.yml`，避免拖慢日常 TypeScript 反馈。当前 Windows Preview
+会执行桌面验证、Tauri Rust 格式与编译检查、SQLite Rust 单测、Runtime sidecar
+编译与初始化握手、NSIS 打包、体积检查、SHA256 生成和 Artifact 上传。
+
+最新成功构建为
+[Windows Preview #27449796215](https://github.com/MorganArthur/mimodex/actions/runs/27449796215)，
+安装包大小 `57.76 MiB`；对应
+[Desktop CI #27449796224](https://github.com/MorganArthur/mimodex/actions/runs/27449796224)
+同样成功。详细产物信息见：[Mimodex 当前项目状态](../CURRENT_STATUS.md)。
 
 ## 4. PR 合并门槛
 
@@ -130,3 +132,11 @@ Mimodex 使用以下预算控制最终体积：
 - Rust 修改的反馈周期取决于 Actions 排队与编译时间。
 - 未签名安装包可能触发 Windows SmartScreen；正式对外发布前必须配置签名。
 - 只有真实 Windows 11 设备上的安装与交互验收，才能覆盖所有桌面体验问题。
+
+## 10. 当前交付缺口
+
+- `windows-release.yml` 尚未建立；
+- 尚未配置 Windows 代码签名证书或远程签名服务；
+- 尚未自动验证安装后目录体积；
+- 尚未自动执行安装、启动、Runtime 握手和卸载冒烟；
+- 尚未自动生成许可证清单、发布说明和 GitHub Release。

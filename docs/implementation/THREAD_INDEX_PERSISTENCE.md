@@ -1,10 +1,10 @@
 # 本地线程索引与恢复实现说明
 
-- 状态：首个可恢复线程索引切片已通过 Windows Preview 权威构建
-- 最后更新：2026-06-12
+- 状态：可恢复线程、SQLite 事件账本、归档与活动审计已通过 Windows Preview
+- 最后更新：2026-06-13
 - 对应目录：`apps/desktop/src/threads.ts`、`packages/desktop-core/src/session-controller.ts`
 - 架构依据：`docs/architecture/decisions/ADR-0005-local-thread-persistence.md`
-- 权威构建：[Windows Preview #27385722233](https://github.com/MorganArthur/mimodex/actions/runs/27385722233)
+- 首次原始事件账本权威构建：[Windows Preview #27385722233](https://github.com/MorganArthur/mimodex/actions/runs/27385722233)
 
 ## 1. 本阶段目标
 
@@ -55,11 +55,11 @@ API Key 永不写入线程索引。线程内容可能包含用户代码、命令
 双向原始协议事件记录。启动时会从账本重建查询投影；恢复仍依赖 Runtime 自身持久化的
 权威线程，SQLite 桌面投影不得被用于 Provider 上下文重放。
 
-后续完整持久化阶段仍需实现：
+后续持久化加固仍需实现：
 
 - 实现只依赖 Runtime 原始事件的完整桌面投影语义 reducer；
-- Schema 迁移、保留、归档和永久删除；
-- 事件去重、崩溃恢复与副作用不确定状态；
+- 保留策略和真正的 Runtime 永久删除能力；
+- 副作用不确定状态的明确恢复与人工处置；
 - 长线程压缩，同时保留 MiMo 协议要求字段。
 
 ## 6. 验收清单
@@ -70,6 +70,10 @@ API Key 永不写入线程索引。线程内容可能包含用户代码、命令
 - [x] 恢复后继续指令复用原 Runtime 线程；
 - [x] 新建线程和切换项目清空旧 UI 投影；
 - [x] 启动时将未完成投影标记为已中断；
+- [x] SQLite Schema 迁移、事件去重、归档、恢复归档与本地索引移除；
+- [x] 恢复历史线程后展示持久化 Runtime 活动审计；
 - [x] React 与桌面会话测试通过；
 - [x] Tauri Rust 后端格式检查与编译通过；
 - [ ] Windows 11 安装后完成创建、重启、恢复与继续对话验收。
+
+当前权威构建见：[Mimodex 当前项目状态](../CURRENT_STATUS.md)。

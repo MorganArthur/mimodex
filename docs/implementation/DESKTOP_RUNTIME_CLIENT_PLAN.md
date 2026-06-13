@@ -1,7 +1,7 @@
-# 桌面 Runtime 客户端接入计划
+# 桌面 Runtime 客户端实现说明
 
-- 状态：TypeScript 协议切片与 Tauri sidecar adapter 已通过 Windows Preview CI
-- 最后更新：2026-06-11
+- 状态：Runtime 客户端、真实 sidecar adapter、流式调度与原始事件观察已实现
+- 最后更新：2026-06-13
 - 对应包：`packages/runtime-client`
 - 首次远程验证：[Desktop CI #27252463625](https://github.com/MorganArthur/mimodex/actions/runs/27252463625)
 
@@ -10,7 +10,7 @@
 桌面端需要通过 Codex app-server 的标准输入输出控制 Mimodex Runtime，同时避免 React
 界面直接依赖进程、JSON-RPC 或 MiMo Provider 的内部字段。
 
-首个切片建立一个纯 TypeScript Runtime 客户端，负责：
+当前纯 TypeScript Runtime 客户端负责：
 
 - 解码按行传输的 JSON 消息；
 - 关联 JSON-RPC 请求与乱序响应；
@@ -18,7 +18,9 @@
 - 暴露 Runtime 发起的审批等反向请求；
 - 完成 `initialize` / `initialized` 握手；
 - 提供首批线程和轮次 API；
-- 为后续 Tauri sidecar 适配提供稳定接口。
+- 提供归档和恢复归档 API；
+- 暴露带连接内顺序和线程上下文的原始协议事件；
+- 为 Tauri sidecar 适配提供稳定接口。
 
 ## 2. 分层边界
 
@@ -79,9 +81,11 @@ Runtime 退出时，客户端会先处理标准输出中最后一条未带换行
 - 请求超时前后的连接清理基础行为；
 - Runtime 退出与传输启动失败恢复；
 - 完整初始化握手及首批线程、轮次 API 映射；
+- `thread/archive`、`thread/unarchive` 与原始协议事件线程关联；
+- 同一 stdout 批次中的消息分批交给浏览器绘制，避免真实流式增量合并成整段；
 - 进程 transport 的按行写入与监听器释放。
 
-## 7. Tauri 接入进展
+## 7. Tauri 接入状态
 
 桌面应用服务和首个 React 交互壳已经实现，详情见
 [桌面应用服务与交互壳实现说明](DESKTOP_APP_SHELL_PLAN.md)。Tauri 桌面工程已经实现
@@ -91,3 +95,6 @@ Runtime 退出时，客户端会先处理标准输出中最后一条未带换行
 2. 将 sidecar 标准输出、标准错误和退出事件适配到 Runtime 客户端。
 3. 原生桌面使用真实 Runtime，普通浏览器继续使用可替换的演示连接。
 4. 由 GitHub Actions 执行 Tauri Windows 编译并上传技术预览安装包。
+
+当前剩余工作以真实 Windows 异常恢复、进程树取消和发布冒烟验收为主。最新构建与
+阶段状态见：[Mimodex 当前项目状态](../CURRENT_STATUS.md)。

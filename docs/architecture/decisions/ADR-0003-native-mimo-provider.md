@@ -1,6 +1,6 @@
 # ADR-0003：实现原生 MiMo Chat Completions Provider
 
-- 状态：已接受，必须完成技术验证
+- 状态：已接受并实施，核心技术验证已通过
 - 日期：2026-06-09
 
 ## 背景
@@ -13,6 +13,7 @@ MiMo 提供 OpenAI 兼容的 Chat Completions API 和 Anthropic 兼容 API。工
 
 MiMo 工具对话可能要求在后续请求中重放之前的助手 `reasoning_content`。在官方
 文档描述的受影响场景中，缺失该字段会导致 400 响应，因此只保存普通聊天文本并不安全。
+实际负向验证未复现该 400，但这不会放宽 Mimodex 的完整保存与重放要求。
 
 ## 决策
 
@@ -96,6 +97,10 @@ Runtime Provider 接口必须表达：
 中的强制条件全部通过后，该决策才可进入正式实现。
 
 源码盘点结果见：[Codex Runtime 接入盘点](../CODEX_RUNTIME_INVENTORY.md)。
+
+截至 2026-06-13，核心验证门槛和正式实现已完成。两个模型均通过真实基础流式与工具
+调用验证；Runtime Adapter 已支持工具循环、恢复、取消、可空 SSE 集合、自定义 Base
+URL 和桌面事件消费。限流、上下文超限、服务不可用等生产加固项仍需继续验证。
 
 ## 未采用方案
 

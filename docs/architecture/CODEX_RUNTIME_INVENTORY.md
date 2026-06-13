@@ -1,7 +1,7 @@
 # Codex Runtime 接入盘点
 
-- 状态：首轮源码盘点完成
-- 最后更新：2026-06-09
+- 状态：盘点结论已落地为 9 个 Runtime 补丁并通过 Windows CI
+- 最后更新：2026-06-13
 - 上游仓库：https://github.com/openai/codex
 - 固定上游 commit：`14660c22d14312c28a50c52954dd77dd88f03c26`
 - 上游 commit 时间：`2026-06-08T21:39:35-07:00`
@@ -25,12 +25,16 @@ Provider。首版应在模型传输边界新增原生 `ChatCompletions` wire API
 主要改造集中在请求构建、Chat Completions 历史编码、工具 Schema 编码、MiMo SSE
 解析与模型目录。预计属于中等范围的可控分支，而不是 Runtime 重写。
 
+截至 2026-06-13，这一结论已经通过 `runtime/patches/series` 中的 9 个补丁落地。
+基础模型流、工具循环、恢复、可空 SSE 集合、MiMo 身份、简单对话快速路径和可配置
+Base URL 均已通过 Runtime CI 与 Windows Preview 构建。
+
 ## 2. 已确认的上游事实
 
 ### 2.1 Provider 与传输
 
-- `codex-rs/model-provider-info/src/lib.rs` 中的 `WireApi` 当前只有
-  `Responses`。
+- 锁定的原始上游 `codex-rs/model-provider-info/src/lib.rs` 中，`WireApi` 只有
+  `Responses`；Mimodex 补丁已增加 `ChatCompletions`。
 - 配置 `wire_api = "chat"` 会直接返回“已移除”的反序列化错误。
 - `codex-rs/core/src/client.rs` 的 `ModelClientSession::stream` 只分派到
   Responses HTTP 或 Responses WebSocket。
@@ -173,14 +177,14 @@ MiMo Chat Completions Adapter 首版只承诺：
   协议测试。
 - 保留 `spikes/mimo-provider` 作为真实 API 兼容性探针，不把真实凭据测试混入默认 CI。
 
-## 9. 最终建议
+## 9. 实施结论
 
-继续采用 Codex App Server 分支。首个 Runtime 实现任务应是一个最小的
-`ChatCompletions` wire Adapter 垂直切片：仅支持文本、推理和标准函数工具，并跑通
-现有 Agent Core 的单线程工具循环与恢复。完成该切片后再开始桌面 UI 主流程开发。
+继续采用固定 Codex App Server 上游 commit 与版本化补丁队列。最小
+`ChatCompletions` Adapter、Agent 工具循环、恢复和桌面 UI 主流程均已完成。后续重点
+是保持补丁边界可审计、补充真实错误与恢复验证，并在必要时评估升级固定上游基线。
 
 ## 10. 上游更新规则
 
-- 盘点和首个 Adapter 切片期间不自动跟随上游 HEAD。
+- 当前不自动跟随上游 HEAD。
 - 如果切换 commit，必须更新本文档并说明原因。
 - Mimodex Runtime 发布必须记录对应上游 commit。

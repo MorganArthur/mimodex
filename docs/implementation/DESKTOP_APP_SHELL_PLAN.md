@@ -1,6 +1,6 @@
 # 桌面应用服务与交互壳实现说明
 
-- 状态：React 交互切片、真实 Tauri sidecar adapter、持久化活动审计与 Windows 安装包已实现
+- 状态：桌面 MVP 主流程、真实 sidecar、设置、Git、线程恢复与活动审计已实现
 - 最后更新：2026-06-13
 - 对应目录：`apps/desktop`、`packages/desktop-core`
 - 首次远程验证：[Desktop CI #27253481256](https://github.com/MorganArthur/mimodex/actions/runs/27253481256)
@@ -20,8 +20,10 @@
 - 命令与文件审批卡片；
 - 工作区 Diff 面板；
 - 可切换的右侧持久化 Runtime 活动审计面板；
-- Runtime 连接、线程和轮次状态展示。
-- 真实本地项目文件夹选择、持久化、Git 摘要与切换。
+- Runtime 连接、线程、轮次与 Token 用量展示；
+- 真实本地项目文件夹选择、持久化、Git 摘要、自动刷新与切换；
+- 自定义端点、连接诊断、默认模型和默认权限设置；
+- 文件级 Diff 审阅、完全访问警告和审批边界详情；
 - 按项目展示真实最近线程，并通过 Runtime 恢复后继续对话。
 
 ## 2. 分层设计
@@ -86,8 +88,9 @@ sidecar 的条件下验证完整桌面交互，它会模拟：
 2. Runtime 客户端、桌面应用服务和 React 交互测试；
 3. React/Vite 生产构建。
 
-浏览器验收已覆盖默认模型、高级模型、项目添加与切换、建议任务、任务提交、流式
-推理、命令审批、停止状态、完成状态和 Diff 更新，浏览器控制台无错误或警告。
+浏览器验收已覆盖默认模型、高级模型、项目添加与切换、设置诊断、任务提交、流式
+推理、命令审批、停止状态、完成状态、文件级 Diff 和活动审计，浏览器控制台无错误
+或警告。
 
 ## 6. 当前原生接入
 
@@ -99,6 +102,7 @@ sidecar 的条件下验证完整桌面交互，它会模拟：
 4. Runtime、Windows 沙箱辅助程序与 Tauri 的打包目录约定；
 5. Windows NSIS 技术预览安装包工作流与体积预算检查。
 
-Windows Preview CI 已验证原生编译、sidecar 暂存、NSIS 打包和 `120 MiB` 体积硬
-上限，首个安装包为 `55.98 MiB`。下一步在真实 Windows 11 环境验收初始化、线程、
-轮次、审批和中断闭环。
+Windows Preview CI 已验证原生编译、Tauri Rust 与 SQLite 单测、sidecar 暂存、
+Runtime 初始化握手、NSIS 打包和 `120 MiB` 体积硬上限。当前下一步是按真实 Windows
+11 私测清单验收完整 Agent 闭环，并补齐动作与文件变更关联、安全脱敏和发布控制。
+最新构建见：[Mimodex 当前项目状态](../CURRENT_STATUS.md)。

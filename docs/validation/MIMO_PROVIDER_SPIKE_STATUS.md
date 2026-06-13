@@ -1,8 +1,8 @@
 # MiMo Provider Spike 当前状态
 
-- 状态：核心正向 Agent 循环已通过，Codex Runtime 首轮接入盘点已完成
-- 最后更新：2026-06-09
-- 当前阶段：真实 API 协议验证
+- 状态：核心 Provider 验证与 Runtime Adapter 已完成，进入生产加固验证
+- 最后更新：2026-06-13
+- 当前阶段：Windows 私测准入与真实失败路径验证
 
 ## 已完成
 
@@ -35,8 +35,11 @@
   复用现有 Agent Core 的实现路径。
 - 已完成两个模型、三种推理内容修改方式的负向重放矩阵；6 种组合均被 API 接受。
 - 已确认本地不安装 Rust 工具链，原生验证和 Windows 安装包构建交由 GitHub Actions。
+- 已完成 9 个 Runtime 补丁并通过 Windows Runtime CI。
+- 已完成 Tauri sidecar、桌面 Runtime 客户端、流式增量绘制和真实 Windows Preview。
+- 已完成自定义 Base URL、连接诊断、结构化错误引导、Token 用量和活动审计展示。
 
-## 当前环境
+## Spike 执行环境
 
 | 项目 | 状态 |
 | --- | --- |
@@ -67,7 +70,7 @@ npm run verify
 - TypeScript 类型检查通过。
 - 测试共 23 项。
 - 离线测试通过 22 项。
-- 当前 Codex 进程中的自动化真实 API 测试因无法访问独立 PowerShell 会话变量而跳过 1 项。
+- 当时 Codex 进程中的自动化真实 API 测试因无法访问独立 PowerShell 会话变量而跳过 1 项。
 - 失败 0 项。
 
 ## 默认模型真实基线结果
@@ -178,18 +181,20 @@ npm run verify
 组合均未返回文档预期的 400。此项继续标记为“文档与实测不一致”。产品实现仍必须
 完整保存并回传推理内容。
 
-## 尚未验证
+## 尚未验证与生产加固项
 
-- 默认模型的原始 SSE wire Fixture。
 - 更长的多次进程重启恢复链。
 - 限流、上下文超限、超时与服务不可用错误结构。
-- MiMo Chat Completions Adapter 在 Codex Rust Runtime 中的编译与集成实测。
+- 工具执行中异常退出和状态不确定副作用的人工恢复路径。
+- 真实 Windows 安装环境中的凭据、权限、Agent 闭环与日志脱敏。
+- 长上下文压缩不会破坏 MiMo 历史重放。
 
 ## 下一步执行顺序
 
-1. 捕获脱敏原始 SSE wire Fixture，并修正 Adapter 假设。
-2. 将 Mimodex Runtime 分支源码纳入仓库，建立 GitHub Actions Rust 验证流水线。
-3. 在不安装本地 Rust 工具链的前提下，开始最小 Chat Completions Adapter 垂直切片。
+1. 使用最新 Windows Preview 执行私测验收清单。
+2. 使用受保护、预算受限凭据验证限流、超时、上下文超限和服务不可用。
+3. 补齐异常恢复、脱敏和副作用重试安全测试。
+4. 在真实私测通过后冻结首版 Provider 兼容边界。
 
 ## 当前结论
 
@@ -198,5 +203,6 @@ npm run verify
 工具拒绝/失败恢复、同响应多工具调用、流式取消和两次新进程恢复均已通过。当前唯一
 发现的 Provider 协议疑点是缺失推理内容时未出现官方文档描述的 400。该差异不阻止
 继续实现，但必须在 Provider Adapter 中坚持完整保存推理内容，并继续验证差异。
-Codex Runtime 首轮源码盘点已经确认：新增 Chat Completions wire Adapter、复用现有
-Agent Core 是首版改动范围最小且风险可控的实现路径。
+Codex Runtime 源码盘点结论已经落地：新增 Chat Completions wire Adapter、复用现有
+Agent Core 的方案已通过 Runtime CI、真实 sidecar 和 Windows Preview。当前不存在
+已知的 Provider 架构阻断项，剩余风险集中在真实失败路径、长线程和 Windows 私测。

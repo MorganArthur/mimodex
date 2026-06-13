@@ -1,11 +1,11 @@
-# MiMo Runtime Adapter 实现计划
+# MiMo Runtime Adapter 实现说明
 
-- 状态：MIMO-RUNTIME-004 已完成，准备开始 MIMO-RUNTIME-005
-- 最后更新：2026-06-10
+- 状态：MIMO-RUNTIME-001 至 005 及生产兼容补丁已完成
+- 最后更新：2026-06-13
 - 上游基线：`14660c22d14312c28a50c52954dd77dd88f03c26`
 - 构建策略：本地不安装 Rust，GitHub Actions 为权威原生验证环境
 
-## 1. 当前下一步
+## 1. 当前状态
 
 Runtime 补丁队列、Wire API 边界、确定性 Chat 历史编码与 MiMo SSE 解析均已通过
 远程验证。`MIMO-RUNTIME-004` 的 Core 基础模型流、内置 MiMo Provider 与静态模型
@@ -25,12 +25,18 @@ Runtime 补丁队列、Wire API 边界、确定性 Chat 历史编码与 MiMo SSE
    默认/高级模型目录和 Windows Runtime/app-server 集成编译。
 7. `0005-add-mimo-tool-loop-and-recovery.patch` 已通过真实工具闭环、rollout
    恢复、app-server 生命周期和 Windows Runtime 集成验证。
+8. `0006` 至 `0009` 已补齐可空 SSE 集合、MiMo 身份与 thinking 策略、真实增量绘制、
+   简单对话快速路径和可配置 Base URL。
+9. 桌面端 Runtime 进程托管、JSON-RPC 客户端、`thread/start`、`thread/resume`、
+   `turn/start`、`turn/interrupt`、审批和活动审计均已接通。
 
-当前执行顺序：
+当前后续工作：
 
-1. 冻结已验证的 MiMo Runtime Adapter 边界。
-2. 开始桌面端 Runtime 进程托管与 JSON-RPC 客户端接入。
-3. 接通首个 `thread/start`、`turn/start`、流式事件和 `turn/interrupt` UI 闭环。
+1. 继续验证限流、超时、上下文超限和服务不可用等真实 Provider 失败；
+2. 验证异常退出和状态不确定副作用不会被自动重试；
+3. 保持固定上游 commit 与补丁队列可重放，并规划后续上游升级。
+
+当前整体阶段和最新构建见：[Mimodex 当前项目状态](../CURRENT_STATUS.md)。
 
 ## 2. 垂直切片
 

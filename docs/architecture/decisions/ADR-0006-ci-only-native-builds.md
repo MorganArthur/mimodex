@@ -1,6 +1,6 @@
 # ADR-0006：本地只编辑源码，原生构建与 Windows 打包由 GitHub Actions 完成
 
-- 状态：已接受
+- 状态：已接受并实施，正式发布流水线待完成
 - 日期：2026-06-09
 
 ## 背景
@@ -29,6 +29,13 @@ GitHub 托管的 Windows Runner 可以为每个任务提供全新的 Windows 虚
   使用签名凭据并发布 GitHub Release；
 - 默认 CI 不接收 `MIMO_API_KEY`，真实 API 探针必须使用独立、手动触发且受保护的
   Workflow。
+
+## 实施状态
+
+截至 2026-06-13，Provider Spike CI、Runtime CI、Desktop CI 与 Windows Preview
+工作流均已建立。本地继续只运行 Node.js 验证；Windows Preview 已多次完成 Runtime
+sidecar、Tauri Rust、SQLite 单测和 NSIS 安装包权威构建。安装/卸载冒烟、代码签名和
+正式 Release 工作流尚未完成。
 
 ## CI 分层
 

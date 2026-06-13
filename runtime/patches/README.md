@@ -75,3 +75,7 @@ commit。
    允许 Mimodex 桌面端通过 `MIMO_BASE_URL` 为内置 MiMo Provider 注入可信的
    Chat Completions 兼容端点；未配置或值为空时继续使用小米 MiMo 官方端点。
    API Key 仍沿用独立的 Windows 凭据管理器链路，不写入普通设置文件。
+
+全部 9 个补丁已在当前锁定上游 commit 上通过 Windows Runtime CI，并被 Windows
+Preview 用于构建真实 Runtime sidecar。当前阶段不再新增首版 Adapter 大功能，重点是
+真实失败路径、异常恢复、上游基线维护和私测验收。

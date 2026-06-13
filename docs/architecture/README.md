@@ -1,8 +1,10 @@
 # Mimodex 架构总览
 
-- 状态：提议方案
-- 最后更新：2026-06-09
+- 状态：已实施的桌面 MVP 架构
+- 最后更新：2026-06-13
 - 外部 API 基线核实日期：2026-06-09
+
+当前实施状态与最新构建见：[Mimodex 当前项目状态](../CURRENT_STATUS.md)。
 
 ## 1. 系统上下文
 
@@ -139,7 +141,9 @@ flowchart TB
 - 大型命令输出和日志采用有限保留策略，并由权威事件流引用。
 - 崩溃恢复时，将执行中的工作标记为已中断。
 
-具体存储格式要在技术验证阶段检查 Codex 分支后确定。
+Runtime 使用自身 rollout 与线程存储作为 Provider 上下文权威来源；桌面端使用
+bundled SQLite 保存只追加桌面投影、生命周期事件和线程相关原始 JSON-RPC 活动，
+并通过查询投影支持线程列表和活动审计。
 
 ## 7. 安全模型
 
@@ -199,10 +203,11 @@ Runtime 将失败归一化为：
 - [ADR-0005：在本地持久化可重放的 Agent 线程](decisions/ADR-0005-local-thread-persistence.md)
 - [ADR-0006：本地只编辑源码，原生构建与 Windows 打包由 GitHub Actions 完成](decisions/ADR-0006-ci-only-native-builds.md)
 
-## 11. 开发前验证
+## 11. 当前实施状态
 
-总体架构已原则性确认，但 Provider 边界仍以验证结果为准。开始桌面端 MVP 前，
-必须完成 [MiMo Provider 技术验证清单](../validation/MIMO_PROVIDER_SPIKE.md)。
+Provider Spike、原生 MiMo Adapter、Runtime 工具闭环、Tauri sidecar、桌面会话、
+SQLite 账本和 Windows Preview 均已实现并通过 CI。当前架构风险已经从“是否能接入”
+转为真实 Windows 权限边界、异常恢复、审计追溯、日志脱敏和正式发布控制。
 
 ## 12. 外部能力基线
 
@@ -212,6 +217,9 @@ Runtime 将失败归一化为：
 - MiMo 支持 OpenAI 兼容和 Anthropic 兼容 API 格式；
 - 思考模式的 Agent 对话中存在工具调用时，必须完整回传要求的历史
   `reasoning_content`，否则 API 返回 400。
+
+2026-06-09 的负向实测未复现文档描述的 400；Mimodex 仍按更严格规则完整保存和回传
+`reasoning_content`，并将该差异保留为兼容性回归项。
 
 参考：
 

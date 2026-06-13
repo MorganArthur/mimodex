@@ -1,8 +1,12 @@
 # Windows 11 私测验收清单
 
-- 状态：待真实安装验收
+- 状态：当前主阶段，待使用最新 Windows Preview 完成真实安装验收
+- 最后更新：2026-06-13
 - 适用版本：Mimodex `0.1.0` Windows Preview
 - 目标：确认安装包、MiMo Provider、权限边界、项目与线程持久化满足私测条件
+- 当前构建：[Windows Preview #27449796215](https://github.com/MorganArthur/mimodex/actions/runs/27449796215)
+- 当前 Artifact：[mimodex-windows-preview-6c09352](https://github.com/MorganArthur/mimodex/actions/runs/27449796215/artifacts/7605689013)
+- 当前 SHA256：`DE138717BECCAFBA419DB768FA7C62C07632BA1292E8F6725BB5F0B66E8579A4`
 
 ## 1. 验收记录
 
