@@ -236,7 +236,7 @@ jobs:
       contents: write
     steps:
       - name: Download verified release assets
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
           name: mimodex-windows-release-${{ needs.build.outputs.release_tag }}
           path: artifacts/windows-release
@@ -274,8 +274,13 @@ jobs:
           $assets = Get-ChildItem -LiteralPath "./artifacts/windows-release" -File |
             ForEach-Object { $_.FullName }
 
+          $nativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          $PSNativeCommandUseErrorActionPreference = $false
           gh release view $env:RELEASE_TAG *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $releaseExists = $LASTEXITCODE -eq 0
+          $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+
+          if ($releaseExists) {
             gh release upload $env:RELEASE_TAG @assets --clobber
             if ($LASTEXITCODE -ne 0) {
               throw "更新 GitHub Release 产物失败。"
