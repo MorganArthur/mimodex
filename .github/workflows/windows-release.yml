@@ -1,0 +1,312 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "要重新构建并发布的既有版本标签，例如 v0.1.0"
+        required: true
+        default: "v0.1.0"
+        type: string
+
+concurrency:
+  group: windows-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  RUSTFLAGS: "-C strip=symbols"
+  RUNTIME_TARGET: "x86_64-pc-windows-msvc"
+
+jobs:
+  build:
+    name: Build unsigned Windows release
+    runs-on: windows-2025
+    timeout-minutes: 180
+    outputs:
+      app_version: ${{ steps.release.outputs.app_version }}
+      installer_sha256: ${{ steps.artifact.outputs.installer_sha256 }}
+      installer_size_mib: ${{ steps.artifact.outputs.installer_size_mib }}
+      release_commit: ${{ steps.release.outputs.release_commit }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release tag and application version
+        id: release
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "发布标签格式无效：$env:RELEASE_TAG"
+          }
+
+          $tagCommit = git rev-list -n 1 $env:RELEASE_TAG
+          if ([string]::IsNullOrWhiteSpace($tagCommit)) {
+            throw "发布标签不存在：$env:RELEASE_TAG"
+          }
+
+          $headCommit = git rev-parse HEAD
+          if ($tagCommit.Trim() -ne $headCommit.Trim()) {
+            throw "检出的提交与发布标签不一致。"
+          }
+
+          $tauriConfig = Get-Content -Raw "./apps/desktop/src-tauri/tauri.conf.json" |
+            ConvertFrom-Json
+          $appVersion = [string]$tauriConfig.version
+          if ($env:RELEASE_TAG -ne "v$appVersion") {
+            throw "发布标签 $env:RELEASE_TAG 与应用版本 $appVersion 不一致。"
+          }
+
+          "release_tag=$env:RELEASE_TAG" >> $env:GITHUB_OUTPUT
+          "app_version=$appVersion" >> $env:GITHUB_OUTPUT
+          "release_commit=$headCommit" >> $env:GITHUB_OUTPUT
+          Write-Host "发布版本校验通过：$env:RELEASE_TAG ($headCommit)"
+
+      - name: Checkout locked Codex upstream
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: openai/codex
+          ref: 14660c22d14312c28a50c52954dd77dd88f03c26
+          path: runtime-worktree/upstream
+          sparse-checkout: codex-rs
+          persist-credentials: false
+
+      - name: Verify and apply Mimodex Runtime patches
+        shell: pwsh
+        run: >
+          ./runtime/scripts/apply-patches.ps1
+          -UpstreamPath ./runtime-worktree/upstream
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup locked Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+          targets: x86_64-pc-windows-msvc
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
+        with:
+          workspaces: |
+            runtime-worktree/upstream/codex-rs -> target
+            apps/desktop/src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install desktop dependencies
+        run: npm ci
+
+      - name: Verify TypeScript and React
+        run: npm run verify
+
+      - name: Check Tauri Rust formatting
+        run: >
+          cargo fmt
+          --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+          --
+          --check
+
+      - name: Stage placeholder sidecar for Tauri check
+        shell: pwsh
+        run: |
+          $binaries = New-Item -ItemType Directory -Force -Path "./apps/desktop/src-tauri/binaries"
+          $resources = New-Item -ItemType Directory -Force `
+            -Path (Join-Path $binaries.FullName "codex-resources")
+          New-Item -ItemType File -Force `
+            -Path (Join-Path $binaries.FullName "mimodex-runtime-${{ env.RUNTIME_TARGET }}.exe") |
+            Out-Null
+          New-Item -ItemType File -Force `
+            -Path (Join-Path $resources.FullName "codex-command-runner.exe") |
+            Out-Null
+          New-Item -ItemType File -Force `
+            -Path (Join-Path $resources.FullName "codex-windows-sandbox-setup.exe") |
+            Out-Null
+
+      - name: Check Tauri Rust backend
+        run: >
+          cargo check
+          --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+          --target ${{ env.RUNTIME_TARGET }}
+
+      - name: Test Tauri Rust persistence
+        run: >
+          cargo test
+          --manifest-path ./apps/desktop/src-tauri/Cargo.toml
+          --target ${{ env.RUNTIME_TARGET }}
+
+      - name: Build Mimodex Runtime sidecar
+        working-directory: runtime-worktree/upstream/codex-rs
+        run: >
+          cargo build --locked --release
+          --target ${{ env.RUNTIME_TARGET }}
+          -p codex-app-server
+          -p codex-windows-sandbox
+          --bins
+
+      - name: Verify Runtime executable
+        shell: pwsh
+        run: >
+          ./runtime-worktree/upstream/codex-rs/target/${{ env.RUNTIME_TARGET }}/release/codex-app-server.exe
+          --version
+
+      - name: Verify Runtime initialize handshake
+        shell: pwsh
+        run: >
+          ./scripts/ci/verify-runtime-handshake.ps1
+          -RuntimePath ./runtime-worktree/upstream/codex-rs/target/${{ env.RUNTIME_TARGET }}/release/codex-app-server.exe
+
+      - name: Stage Runtime sidecar for Tauri
+        shell: pwsh
+        run: >
+          ./scripts/ci/stage-runtime-sidecar.ps1
+          -RuntimeTargetDir ./runtime-worktree/upstream/codex-rs/target/${{ env.RUNTIME_TARGET }}/release
+          -TauriDir ./apps/desktop/src-tauri
+
+      - name: Build unsigned NSIS installer
+        run: >
+          npm run tauri:build --workspace @mimodex/desktop --
+          --bundles nsis
+          --target ${{ env.RUNTIME_TARGET }}
+
+      - name: Collect release assets
+        id: artifact
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.release.outputs.app_version }}
+        run: |
+          $installer = Get-ChildItem `
+            -LiteralPath "./apps/desktop/src-tauri/target/${{ env.RUNTIME_TARGET }}/release/bundle/nsis" `
+            -Filter "*.exe" |
+              Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "没有找到 NSIS 安装包。"
+          }
+
+          ./scripts/ci/assert-size-budget.ps1 `
+            -Path $installer.FullName `
+            -MaxMiB 120 `
+            -Label "Windows Release 安装包"
+
+          $artifactDir = New-Item -ItemType Directory -Force -Path "./artifacts/windows-release"
+          $assetName = "Mimodex_$env:APP_VERSION`_x64-setup.exe"
+          $assetPath = Join-Path $artifactDir.FullName $assetName
+          Copy-Item -LiteralPath $installer.FullName -Destination $assetPath
+
+          $hash = Get-FileHash -LiteralPath $assetPath -Algorithm SHA256
+          "$($hash.Hash)  $assetName" |
+            Set-Content -LiteralPath "$assetPath.sha256"
+
+          $sizeMiB = [math]::Round((Get-Item -LiteralPath $assetPath).Length / 1MB, 2)
+          "installer_size_mib=$sizeMiB" >> $env:GITHUB_OUTPUT
+          "installer_sha256=$($hash.Hash)" >> $env:GITHUB_OUTPUT
+          Write-Host "已收集 Windows Release 安装包：$assetPath（$sizeMiB MiB）"
+
+      - name: Upload immutable workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mimodex-windows-release-${{ steps.release.outputs.release_tag }}
+          path: artifacts/windows-release/*
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Publish GitHub prerelease
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: mimodex-windows-release-${{ needs.build.outputs.release_tag }}
+          path: artifacts/windows-release
+
+      - name: Prepare release notes
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ needs.build.outputs.app_version }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          RELEASE_COMMIT: ${{ needs.build.outputs.release_commit }}
+          INSTALLER_SIZE_MIB: ${{ needs.build.outputs.installer_size_mib }}
+          INSTALLER_SHA256: ${{ needs.build.outputs.installer_sha256 }}
+        run: |
+          @"
+          ## Mimodex $env:RELEASE_TAG Windows 预发布版
+
+          这是 Mimodex Windows 11 x64 预发布安装包。
+
+          > 此安装包尚未进行代码签名。Windows SmartScreen 可能显示“未知发布者”警告，
+          > 请仅从本 GitHub Release 下载，并在安装前核对 SHA-256。
+
+          - 安装包：``Mimodex_$env:APP_VERSION`_x64-setup.exe``
+          - 安装包大小：``$env:INSTALLER_SIZE_MIB MiB``
+          - SHA-256：``$env:INSTALLER_SHA256``
+          - 构建提交：``$env:RELEASE_COMMIT``
+          - 支持系统：Windows 11 x64
+          "@ | Set-Content -LiteralPath "./release-notes.md"
+
+      - name: Publish GitHub prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+        run: |
+          $assets = Get-ChildItem -LiteralPath "./artifacts/windows-release" -File |
+            ForEach-Object { $_.FullName }
+
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG @assets --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "更新 GitHub Release 产物失败。"
+            }
+            gh release edit $env:RELEASE_TAG `
+              --title "Mimodex $env:RELEASE_TAG" `
+              --notes-file "./release-notes.md" `
+              --prerelease
+            if ($LASTEXITCODE -ne 0) {
+              throw "更新 GitHub Release 说明失败。"
+            }
+          } else {
+            gh release create $env:RELEASE_TAG @assets `
+              --verify-tag `
+              --title "Mimodex $env:RELEASE_TAG" `
+              --notes-file "./release-notes.md" `
+              --prerelease
+            if ($LASTEXITCODE -ne 0) {
+              throw "创建 GitHub Release 失败。"
+            }
+          }
+
+      - name: Publish build summary
+        shell: pwsh
+        run: |
+          @"
+          ## Mimodex Windows Release
+
+          - 版本：``${{ needs.build.outputs.release_tag }}``
+          - 类型：未签名 GitHub Pre-release
+          - 安装包大小：${{ needs.build.outputs.installer_size_mib }} MiB
+          - SHA-256：``${{ needs.build.outputs.installer_sha256 }}``
+          - Release：https://github.com/${{ github.repository }}/releases/tag/${{ needs.build.outputs.release_tag }}
+          "@ >> $env:GITHUB_STEP_SUMMARY

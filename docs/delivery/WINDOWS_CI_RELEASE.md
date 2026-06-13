@@ -1,6 +1,6 @@
 # Windows 11 CI 构建与发布方案
 
-- 状态：CI-only 原生构建与未签名 Windows Preview 已建立，正式发布流水线待实现
+- 状态：CI-only 原生构建、Windows Preview 与未签名 GitHub Pre-release 流水线已建立
 - 最后更新：2026-06-13
 - 本地开发约束：不安装 Rust、Cargo、MSVC 或 Tauri 原生构建依赖
 
@@ -24,7 +24,8 @@ GitHub 托管 Runner，不要求安装在本地机器。
 | 主安装包 | NSIS `setup.exe` |
 | 可选安装包 | MSI，用于后续企业部署需求 |
 | 普通构建 | 未签名，仅作为 Actions Artifact |
-| 正式发布 | 签名安装包、SHA-256 清单、GitHub Release |
+| 当前 GitHub Pre-release | 未签名安装包、SHA-256 清单、GitHub Release |
+| 后续正式稳定发布 | 签名安装包、SHA-256 清单、GitHub Release |
 | 安装包优化目标 | Windows x64 NSIS `setup.exe` 不超过 `100 MiB` |
 | 安装包发布硬上限 | Windows x64 NSIS `setup.exe` 不超过 `120 MiB` |
 | 安装后文件硬上限 | Windows x64 应用文件总量不超过 `350 MiB` |
@@ -41,7 +42,7 @@ GitHub 托管 Runner，不要求安装在本地机器。
 | `runtime-ci.yml` | PR、main、手动 | 拉取锁定上游、应用补丁，执行 Rust 格式、检查、单测和 Windows Runtime 编译；已建立 |
 | `desktop-ci.yml` | PR、main、手动 | 快速执行桌面 TypeScript 检查、离线测试与 React 生产构建 |
 | `windows-preview.yml` | PR、main、手动 | 构建 Runtime、Tauri 与未签名 NSIS 安装包，检查体积并上传 Actions Artifact |
-| `windows-release.yml` | 版本标签、手动批准 | 待实现：构建、签名并发布 Windows 安装包 |
+| `windows-release.yml` | `v*` 版本标签、手动指定既有标签 | 校验标签与应用版本，构建未签名 NSIS 安装包并发布 GitHub Pre-release |
 | `mimo-live-probe.yml` | 手动、受保护环境 | 待实现：使用预算受限凭据执行真实 API 兼容性验证 |
 
 Runtime CI 已基于固定上游 commit 与补丁队列建立。桌面 Workflow 已接入 Runtime
@@ -49,6 +50,10 @@ Runtime CI 已基于固定上游 commit 与补丁队列建立。桌面 Workflow 
 放入 `windows-preview.yml`，避免拖慢日常 TypeScript 反馈。当前 Windows Preview
 会执行桌面验证、Tauri Rust 格式与编译检查、SQLite Rust 单测、Runtime sidecar
 编译与初始化握手、NSIS 打包、体积检查、SHA256 生成和 Artifact 上传。
+
+`windows-release.yml` 复用同一套权威构建链路，并额外校验版本标签、生成长期可下载的
+GitHub Pre-release 和 SHA256 文件。工作流支持重复手动构建既有标签；重复执行会覆盖
+对应 Release 的安装包和说明。当前安装包尚未签名，因此 Release 明确标记为预发布版。
 
 最新成功构建为
 [Windows Preview #27449796215](https://github.com/MorganArthur/mimodex/actions/runs/27449796215)，
@@ -72,7 +77,8 @@ Runtime CI 已基于固定上游 commit 与补丁队列建立。桌面 Workflow 
 2. 从干净的 Git commit 构建。
 3. Windows x64 Runtime 和 Tauri 安装包构建成功。
 4. 安装、启动、Runtime 握手和卸载冒烟通过。
-5. 安装包完成代码签名并通过签名校验。
+5. 对外稳定发布前，安装包完成代码签名并通过签名校验；当前未签名版本只能标记为
+   GitHub Pre-release。
 6. 安装包不超过 `120 MiB`，安装后应用文件总量不超过 `350 MiB`。
 7. 生成并发布 SHA-256 清单。
 8. GitHub Release 仅包含通过校验的产物。
@@ -102,7 +108,7 @@ Mimodex 使用以下预算控制最终体积：
 
 - `MIMO_API_KEY` 不进入普通 CI、构建或发布任务。
 - 真实 API 探针使用独立 GitHub Environment 和预算受限凭据。
-- Windows 签名使用独立 `windows-release` Environment；正式发布前需要人工批准。
+- 后续接入 Windows 签名时，使用独立受保护 Environment；稳定发布前需要人工批准。
 - 第三方 Actions 使用完整 commit SHA 固定。
 - Actions 权限默认只读，发布任务按需获得最小写权限。
 - 构建 Artifact、缓存和日志不得包含用户项目、API Key 或未脱敏模型内容。
@@ -135,8 +141,7 @@ Mimodex 使用以下预算控制最终体积：
 
 ## 10. 当前交付缺口
 
-- `windows-release.yml` 尚未建立；
 - 尚未配置 Windows 代码签名证书或远程签名服务；
 - 尚未自动验证安装后目录体积；
 - 尚未自动执行安装、启动、Runtime 握手和卸载冒烟；
-- 尚未自动生成许可证清单、发布说明和 GitHub Release。
+- 尚未自动生成许可证清单和基于提交历史的完整发布说明。
