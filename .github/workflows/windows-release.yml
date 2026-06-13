@@ -221,7 +221,7 @@ jobs:
           Write-Host "已收集 Windows Release 安装包：$assetPath（$sizeMiB MiB）"
 
       - name: Upload immutable workflow artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: mimodex-windows-release-${{ steps.release.outputs.release_tag }}
           path: artifacts/windows-release/*
@@ -236,7 +236,7 @@ jobs:
       contents: write
     steps:
       - name: Download verified release assets
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
         with:
           name: mimodex-windows-release-${{ needs.build.outputs.release_tag }}
           path: artifacts/windows-release
@@ -268,6 +268,7 @@ jobs:
       - name: Publish GitHub prerelease
         shell: pwsh
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
         run: |
