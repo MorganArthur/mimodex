@@ -395,6 +395,28 @@ describe("Mimodex 桌面壳", () => {
     expect(projectRowTitles()).toEqual(["D:\\projects\\fixture", "D:\\projects\\second"]);
   });
 
+  it("切换项目无需等待后端持久化即可更新界面", async () => {
+    const projectService = new FakeProjectService([fixtureProject(), secondProject()]);
+    const selectBarrier = deferred<void>();
+    projectService.selectBarrier = selectBarrier.promise;
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={projectService}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService([])}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    await user.click(screen.getByTitle("D:\\projects\\second"));
+
+    expect(screen.getByRole("heading", { name: "second", level: 1 })).toBeTruthy();
+    selectBarrier.resolve();
+  });
+
   it("项目文件夹不可用时禁止启动任务", async () => {
     const runtime = new UiRuntime();
     const unavailableProject = { ...fixtureProject(), available: false };
@@ -652,6 +674,29 @@ diff --git a/src/app.ts b/src/app.ts
     expect(threadRowTitles()).toEqual(["修复历史测试", "第二个历史线程"]);
   });
 
+  it("恢复线程无需等待 Runtime 响应即可展示本地投影", async () => {
+    const runtime = new UiRuntime();
+    const resumeBarrier = deferred<void>();
+    runtime.resumeBarrier = resumeBarrier.promise;
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtime)}
+        projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService([fixtureThread()])}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    await user.click(screen.getByTitle("修复历史测试"));
+
+    expect(document.querySelector(".thread-row.active")?.getAttribute("title")).toBe("修复历史测试");
+    expect(screen.getByText("已恢复的历史回复")).toBeTruthy();
+    resumeBarrier.resolve();
+  });
+
   it("可以归档、恢复并移除本地线程索引", async () => {
     const runtime = new UiRuntime();
     const threads = new FakeThreadService([fixtureThread()]);
@@ -752,6 +797,7 @@ function renderApp(
 
 class UiRuntime implements RuntimeClientPort {
   initializeCount = 0;
+  resumeBarrier: Promise<void> | null = null;
   readonly threadStarts: ThreadStartParams[] = [];
   readonly threadResumes: ThreadResumeParams[] = [];
   readonly turnStarts: TurnStartParams[] = [];
@@ -782,6 +828,7 @@ class UiRuntime implements RuntimeClientPort {
 
   async resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
     this.threadResumes.push(params);
+    await this.resumeBarrier;
     return {
       thread: { id: params.threadId },
       model: "mimo-v2.5",
@@ -924,6 +971,7 @@ class FakeSettingsService implements SettingsService {
 
 class FakeProjectService implements ProjectService {
   refreshCount = 0;
+  selectBarrier: Promise<void> | null = null;
   #state: ProjectState;
 
   constructor(projects: ProjectSummary[] = [fixtureProject()]) {
@@ -948,6 +996,7 @@ class FakeProjectService implements ProjectService {
   }
 
   async select(projectId: string): Promise<ProjectState> {
+    await this.selectBarrier;
     const selected = this.#state.projects.find((project) => project.id === projectId);
     this.#state = {
       projects: selected
@@ -1041,6 +1090,16 @@ function threadRowTitles(): string[] {
   return Array.from(document.querySelectorAll<HTMLButtonElement>(".thread-row")).map(
     (thread) => thread.title,
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
 }
 
 function fixtureProject(): ProjectSummary {

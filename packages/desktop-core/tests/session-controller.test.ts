@@ -234,6 +234,31 @@ test("恢复历史线程后继续使用同一个 Runtime 线程", async () => {
   assert.equal(runtime.turnStarts.at(-1)?.threadId, "thread-history");
 });
 
+test("恢复历史线程时立即展示本地投影，并在 Runtime 失败后回滚", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  await session.connect();
+  runtime.resumeError = new Error("resume failed");
+
+  const resume = session.resumeThread({
+    threadId: "thread-history",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+    turnStatus: "completed",
+    timeline: [
+      { id: "user-history", kind: "user", title: "你", content: "立即展示", status: null },
+    ],
+    diff: "",
+  });
+
+  assert.equal(session.getSnapshot().threadId, "thread-history");
+  assert.equal(session.getSnapshot().timeline[0]?.content, "立即展示");
+  await assert.rejects(resume, /resume failed/);
+  assert.equal(session.getSnapshot().threadId, null);
+  assert.deepEqual(session.getSnapshot().timeline, []);
+});
+
 test("新建线程会清空当前投影但保留项目上下文", async () => {
   const runtime = new FakeRuntimeClient();
   const session = new DesktopSessionController(runtime);

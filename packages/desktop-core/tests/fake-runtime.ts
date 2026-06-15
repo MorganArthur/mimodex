@@ -22,6 +22,7 @@ import type {
 import type { RuntimeClientPort } from "../src/index.js";
 
 export class FakeRuntimeClient implements RuntimeClientPort {
+  resumeError: Error | null = null;
   readonly threadStarts: ThreadStartParams[] = [];
   readonly threadResumes: ThreadResumeParams[] = [];
   readonly threadArchives: ThreadArchiveParams[] = [];
@@ -58,6 +59,9 @@ export class FakeRuntimeClient implements RuntimeClientPort {
 
   async resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
     this.threadResumes.push(params);
+    if (this.resumeError) {
+      throw this.resumeError;
+    }
     return {
       thread: { id: params.threadId },
       model: "mimo-v2.5-pro",

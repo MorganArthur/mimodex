@@ -5,7 +5,7 @@
   font-synthesis: none;
   scrollbar-color: #a9ada5 transparent;
   scrollbar-width: thin;
-  text-rendering: optimizeLegibility;
+  text-rendering: auto;
 }
 
 html,
@@ -289,8 +289,7 @@ button {
   display: grid;
   place-items: center;
   padding: 30px;
-  background: rgba(32, 35, 31, 0.52);
-  backdrop-filter: blur(4px);
+  background: rgba(32, 35, 31, 0.62);
 }
 
 .settings-dialog {
@@ -378,6 +377,7 @@ button {
 
 .sidebar {
   display: flex;
+  contain: layout paint;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
@@ -703,6 +703,7 @@ button {
 
 .workspace {
   display: grid;
+  contain: layout paint;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
@@ -884,6 +885,8 @@ button {
 }
 
 .conversation-turn {
+  contain-intrinsic-size: auto 180px;
+  content-visibility: auto;
   min-width: 0;
   padding: 0 0 22px;
 }
@@ -1478,6 +1481,7 @@ button {
 
 .context-panel {
   display: flex;
+  contain: layout paint;
   height: 100vh;
   flex-direction: column;
   min-height: 0;
@@ -1581,6 +1585,8 @@ button {
 }
 
 .activity-event {
+  contain-intrinsic-size: auto 48px;
+  content-visibility: auto;
   background: #eeece5;
   border: 1px solid #ded9cf;
   border-radius: 8px;

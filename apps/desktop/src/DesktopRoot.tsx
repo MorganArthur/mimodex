@@ -284,16 +284,30 @@ export function DesktopRoot({
     if (projectState?.selectedProjectId === projectId) {
       return;
     }
+    const project = projectState?.projects.find((candidate) => candidate.id === projectId) ?? null;
+    if (!project) {
+      return;
+    }
+    const previousProject =
+      projectState?.projects.find((candidate) => candidate.id === projectState.selectedProjectId) ??
+      null;
     setProjectBusy(true);
     setProjectError(null);
+    setProjectState((current) => current ? { ...current, selectedProjectId: projectId } : current);
+    session?.newThread(project.path);
+    setThreadState((current) => current ? { ...current, selectedThreadId: null } : current);
     try {
-      const nextState = await projectService.select(projectId);
+      const [nextState, nextThreadState] = await Promise.all([
+        projectService.select(projectId),
+        threadService.select(null),
+      ]);
       setProjectState((current) => stabilizeProjectState(current, nextState));
-      const project = nextState.projects.find((candidate) => candidate.id === projectId) ?? null;
-      session?.newThread(project?.path ?? null);
-      const nextThreadState = await threadService.select(null);
       setThreadState((current) => stabilizeThreadState(current, nextThreadState));
     } catch (error) {
+      setProjectState((current) =>
+        current ? { ...current, selectedProjectId: previousProject?.id ?? null } : current,
+      );
+      session?.newThread(previousProject?.path ?? null);
       setProjectError(errorMessage(error));
     } finally {
       setProjectBusy(false);
@@ -331,16 +345,18 @@ export function DesktopRoot({
     setThreadBusy(true);
     setThreadError(null);
     try {
-      await session.resumeThread({
-        threadId: thread.id,
-        projectPath: thread.projectPath,
-        model: thread.model,
-        sandbox: thread.sandbox,
-        turnStatus: thread.turnStatus,
-        timeline: thread.timeline,
-        diff: thread.diff,
-      });
-      const nextState = await threadService.select(threadId);
+      const [, nextState] = await Promise.all([
+        session.resumeThread({
+          threadId: thread.id,
+          projectPath: thread.projectPath,
+          model: thread.model,
+          sandbox: thread.sandbox,
+          turnStatus: thread.turnStatus,
+          timeline: thread.timeline,
+          diff: thread.diff,
+        }),
+        threadService.select(threadId),
+      ]);
       setThreadState((current) => stabilizeThreadState(current, nextState));
     } catch (error) {
       setThreadError(errorMessage(error));
@@ -434,16 +450,17 @@ export function DesktopRoot({
       previous = current;
     });
     const refreshWhenIdle = () => {
-      if (session.getSnapshot().turnStatus !== "inProgress") {
+      if (
+        document.visibilityState === "visible" &&
+        session.getSnapshot().turnStatus !== "inProgress"
+      ) {
         void refreshSelectedProject(true);
       }
     };
-    const timer = window.setInterval(refreshWhenIdle, 10_000);
-    window.addEventListener("focus", refreshWhenIdle);
+    const timer = window.setInterval(refreshWhenIdle, 30_000);
     return () => {
       unsubscribe();
       window.clearInterval(timer);
-      window.removeEventListener("focus", refreshWhenIdle);
     };
   }, [projectState?.selectedProjectId, refreshSelectedProject, session]);
 

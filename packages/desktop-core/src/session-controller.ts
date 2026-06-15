@@ -311,20 +311,13 @@ export class DesktopSessionController {
       throw new Error("已有任务正在执行");
     }
 
-    const response = await this.#runtime.resumeThread({
-      threadId: input.threadId,
-      model: input.model,
-      modelProvider: "mimo",
-      cwd: input.projectPath,
-      approvalPolicy: "on-request",
-      sandbox: input.sandbox,
-      baseInstructions: MIMO_BASE_INSTRUCTIONS,
-    });
+    const previousState = this.#state;
+    this.#pendingProtocolEvents.splice(0);
     this.#publish({
-      projectPath: response.cwd || input.projectPath,
+      projectPath: input.projectPath,
       model: input.model,
       sandbox: input.sandbox,
-      threadId: response.thread.id,
+      threadId: input.threadId,
       turnId: null,
       turnStatus: input.turnStatus === "inProgress" ? "interrupted" : input.turnStatus,
       timeline: input.timeline,
@@ -334,6 +327,26 @@ export class DesktopSessionController {
       error: null,
       structuredError: null,
     });
+    try {
+      const response = await this.#runtime.resumeThread({
+        threadId: input.threadId,
+        model: input.model,
+        modelProvider: "mimo",
+        cwd: input.projectPath,
+        approvalPolicy: "on-request",
+        sandbox: input.sandbox,
+        baseInstructions: MIMO_BASE_INSTRUCTIONS,
+      });
+      this.#publish({
+        projectPath: response.cwd || input.projectPath,
+        threadId: response.thread.id,
+      });
+    } catch (error) {
+      this.#pendingProtocolEvents.splice(0);
+      this.#state = previousState;
+      this.#notify();
+      throw error;
+    }
   }
 
   async setThreadArchived(threadId: string, archived: boolean): Promise<void> {
@@ -653,6 +666,10 @@ export class DesktopSessionController {
 
   #publish(changes: Partial<SessionState>): void {
     this.#state = { ...this.#state, ...changes };
+    this.#notify();
+  }
+
+  #notify(): void {
     for (const listener of this.#listeners) {
       listener();
     }

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -18,6 +19,7 @@ const MIMO_BASE_URL_ENV: &str = "MIMO_BASE_URL";
 const DEFAULT_MIMO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
 const MAX_PROJECT_DIFF_CHARS: usize = 500_000;
 const MAX_UNTRACKED_DIFF_FILES: usize = 100;
+static BACKGROUND_PERSISTENCE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -330,186 +332,234 @@ async fn diagnose_mimo_connection(
 }
 
 #[tauri::command]
-fn list_projects(app: AppHandle) -> Result<ProjectState, String> {
-    let mut store = load_project_store(&app)?;
-    for project in &mut store.projects {
-        refresh_project_summary(project);
-    }
-    save_project_store(&app, &store)?;
-    Ok(project_state(store))
+async fn list_projects(app: AppHandle) -> Result<ProjectState, String> {
+    run_background(move || {
+        let mut store = load_project_store(&app)?;
+        for project in &mut store.projects {
+            refresh_project_summary(project);
+        }
+        save_project_store(&app, &store)?;
+        Ok(project_state(store))
+    })
+    .await
 }
 
 #[tauri::command]
-fn add_project(app: AppHandle, path: String) -> Result<ProjectState, String> {
-    let path = normalize_project_path(&path)?;
-    let mut store = load_project_store(&app)?;
-    let id = project_id(&path);
+async fn add_project(app: AppHandle, path: String) -> Result<ProjectState, String> {
+    run_background(move || {
+        let path = normalize_project_path(&path)?;
+        let mut store = load_project_store(&app)?;
+        let id = project_id(&path);
 
-    if let Some(project) = store.projects.iter_mut().find(|project| project.id == id) {
-        refresh_project_summary(project);
-    } else {
-        store
+        if let Some(project) = store.projects.iter_mut().find(|project| project.id == id) {
+            refresh_project_summary(project);
+        } else {
+            store
+                .projects
+                .insert(0, inspect_project(&path, unix_timestamp_ms()));
+        }
+        store.selected_project_id = Some(id);
+        save_project_store(&app, &store)?;
+        Ok(project_state(store))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn select_project(app: AppHandle, project_id: String) -> Result<ProjectState, String> {
+    run_background(move || {
+        let mut store = load_project_store(&app)?;
+        if !store.projects.iter().any(|project| project.id == project_id) {
+            return Err("项目记录不存在。".to_string());
+        }
+        store.selected_project_id = Some(project_id);
+        save_project_store(&app, &store)?;
+        Ok(project_state(store))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectState, String> {
+    run_background(move || {
+        let mut store = load_project_store(&app)?;
+        let project = store
             .projects
-            .insert(0, inspect_project(&path, unix_timestamp_ms()));
-    }
-    store.selected_project_id = Some(id);
-    save_project_store(&app, &store)?;
-    Ok(project_state(store))
+            .iter_mut()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| "项目记录不存在。".to_string())?;
+        refresh_project_summary(project);
+        save_project_store(&app, &store)?;
+        Ok(project_state(store))
+    })
+    .await
 }
 
 #[tauri::command]
-fn select_project(app: AppHandle, project_id: String) -> Result<ProjectState, String> {
-    let mut store = load_project_store(&app)?;
-    let project = store
-        .projects
-        .iter_mut()
-        .find(|project| project.id == project_id)
-        .ok_or_else(|| "项目记录不存在。".to_string())?;
-    refresh_project_summary(project);
-    store.selected_project_id = Some(project_id);
-    save_project_store(&app, &store)?;
-    Ok(project_state(store))
+async fn list_threads(app: AppHandle) -> Result<ThreadState, String> {
+    run_background(move || {
+        let mut connection = open_thread_database(&app)?;
+        import_legacy_threads(&app, &mut connection)?;
+        rebuild_thread_projections(&mut connection)?;
+        recover_interrupted_threads(&mut connection)?;
+        load_thread_state(&connection)
+    })
+    .await
 }
 
 #[tauri::command]
-fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectState, String> {
-    let mut store = load_project_store(&app)?;
-    let project = store
-        .projects
-        .iter_mut()
-        .find(|project| project.id == project_id)
-        .ok_or_else(|| "项目记录不存在。".to_string())?;
-    refresh_project_summary(project);
-    save_project_store(&app, &store)?;
-    Ok(project_state(store))
-}
-
-#[tauri::command]
-fn list_threads(app: AppHandle) -> Result<ThreadState, String> {
-    let mut connection = open_thread_database(&app)?;
-    import_legacy_threads(&app, &mut connection)?;
-    rebuild_thread_projections(&mut connection)?;
-    recover_interrupted_threads(&mut connection)?;
-    load_thread_state(&connection)
-}
-
-#[tauri::command]
-fn list_thread_activity(
+async fn list_thread_activity(
     app: AppHandle,
     thread_id: String,
 ) -> Result<Vec<ThreadActivityEvent>, String> {
-    if thread_id.is_empty() || thread_id.len() > 512 {
-        return Err("线程标识无效。".to_string());
-    }
-    let connection = open_thread_database(&app)?;
-    load_thread_activity(&connection, &thread_id)
-}
-
-#[tauri::command]
-fn append_runtime_events(app: AppHandle, events: Vec<RuntimeEventRecord>) -> Result<(), String> {
-    if events.len() > 1_000 {
-        return Err("单批 Runtime 原始事件数量超出限制。".to_string());
-    }
-    let mut connection = open_thread_database(&app)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|_| thread_database_error("开始 Runtime 事件事务"))?;
-    append_runtime_events_to_connection(&transaction, &events)?;
-    transaction
-        .commit()
-        .map_err(|_| thread_database_error("提交 Runtime 事件事务"))
-}
-
-#[tauri::command]
-fn upsert_thread(app: AppHandle, thread: ThreadRecord) -> Result<ThreadState, String> {
-    validate_thread(&thread)?;
-    let mut connection = open_thread_database(&app)?;
-    import_legacy_threads(&app, &mut connection)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|_| thread_database_error("开始写入事务"))?;
-    record_thread_projection(&transaction, &thread, "threadProjectionRecorded")?;
-    set_app_state(&transaction, "selectedThreadId", Some(&thread.id))?;
-    transaction
-        .commit()
-        .map_err(|_| thread_database_error("提交写入事务"))?;
-    load_thread_state(&connection)
-}
-
-#[tauri::command]
-fn select_thread(app: AppHandle, thread_id: Option<String>) -> Result<ThreadState, String> {
-    let connection = open_thread_database(&app)?;
-    if let Some(id) = &thread_id {
-        let exists = connection
-            .query_row("SELECT 1 FROM threads WHERE id = ?1", [id], |_| Ok(()))
-            .optional()
-            .map_err(|_| thread_database_error("查询线程"))?
-            .is_some();
-        if !exists {
-            return Err("线程记录不存在。".to_string());
+    run_background(move || {
+        if thread_id.is_empty() || thread_id.len() > 512 {
+            return Err("线程标识无效。".to_string());
         }
-    }
-    set_app_state(&connection, "selectedThreadId", thread_id.as_deref())?;
-    load_thread_state(&connection)
+        let connection = open_thread_database(&app)?;
+        load_thread_activity(&connection, &thread_id)
+    })
+    .await
 }
 
 #[tauri::command]
-fn set_thread_archived(
+async fn append_runtime_events(
+    app: AppHandle,
+    events: Vec<RuntimeEventRecord>,
+) -> Result<(), String> {
+    run_background(move || {
+        if events.len() > 1_000 {
+            return Err("单批 Runtime 原始事件数量超出限制。".to_string());
+        }
+        let mut connection = open_thread_database(&app)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|_| thread_database_error("开始 Runtime 事件事务"))?;
+        append_runtime_events_to_connection(&transaction, &events)?;
+        transaction
+            .commit()
+            .map_err(|_| thread_database_error("提交 Runtime 事件事务"))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn upsert_thread(app: AppHandle, thread: ThreadRecord) -> Result<ThreadState, String> {
+    run_background(move || {
+        validate_thread(&thread)?;
+        let mut connection = open_thread_database(&app)?;
+        import_legacy_threads(&app, &mut connection)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|_| thread_database_error("开始写入事务"))?;
+        record_thread_projection(&transaction, &thread, "threadProjectionRecorded")?;
+        set_app_state(&transaction, "selectedThreadId", Some(&thread.id))?;
+        transaction
+            .commit()
+            .map_err(|_| thread_database_error("提交写入事务"))?;
+        load_thread_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn select_thread(app: AppHandle, thread_id: Option<String>) -> Result<ThreadState, String> {
+    run_background(move || {
+        let connection = open_thread_database(&app)?;
+        if let Some(id) = &thread_id {
+            let exists = connection
+                .query_row("SELECT 1 FROM threads WHERE id = ?1", [id], |_| Ok(()))
+                .optional()
+                .map_err(|_| thread_database_error("查询线程"))?
+                .is_some();
+            if !exists {
+                return Err("线程记录不存在。".to_string());
+            }
+        }
+        set_app_state(&connection, "selectedThreadId", thread_id.as_deref())?;
+        load_thread_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn set_thread_archived(
     app: AppHandle,
     thread_id: String,
     archived: bool,
 ) -> Result<ThreadState, String> {
-    let mut connection = open_thread_database(&app)?;
-    let mut thread =
-        load_thread(&connection, &thread_id)?.ok_or_else(|| "线程记录不存在。".to_string())?;
-    thread.archived = archived;
-    thread.updated_at = unix_timestamp_ms();
-    let transaction = connection
-        .transaction()
-        .map_err(|_| thread_database_error("开始归档事务"))?;
-    record_thread_projection(
-        &transaction,
-        &thread,
-        if archived {
-            "threadArchived"
-        } else {
-            "threadUnarchived"
-        },
-    )?;
-    if archived && selected_thread_id(&transaction)?.as_deref() == Some(&thread_id) {
-        set_app_state(&transaction, "selectedThreadId", None)?;
-    }
-    transaction
-        .commit()
-        .map_err(|_| thread_database_error("提交归档事务"))?;
-    load_thread_state(&connection)
+    run_background(move || {
+        let mut connection = open_thread_database(&app)?;
+        let mut thread =
+            load_thread(&connection, &thread_id)?.ok_or_else(|| "线程记录不存在。".to_string())?;
+        thread.archived = archived;
+        thread.updated_at = unix_timestamp_ms();
+        let transaction = connection
+            .transaction()
+            .map_err(|_| thread_database_error("开始归档事务"))?;
+        record_thread_projection(
+            &transaction,
+            &thread,
+            if archived {
+                "threadArchived"
+            } else {
+                "threadUnarchived"
+            },
+        )?;
+        if archived && selected_thread_id(&transaction)?.as_deref() == Some(&thread_id) {
+            set_app_state(&transaction, "selectedThreadId", None)?;
+        }
+        transaction
+            .commit()
+            .map_err(|_| thread_database_error("提交归档事务"))?;
+        load_thread_state(&connection)
+    })
+    .await
 }
 
 #[tauri::command]
-fn delete_thread(app: AppHandle, thread_id: String) -> Result<ThreadState, String> {
-    let mut connection = open_thread_database(&app)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|_| thread_database_error("开始删除事务"))?;
-    transaction
-        .execute(
-            "DELETE FROM thread_events WHERE thread_id = ?1",
-            [&thread_id],
-        )
-        .map_err(|_| thread_database_error("删除线程事件"))?;
-    let deleted = transaction
-        .execute("DELETE FROM threads WHERE id = ?1", [&thread_id])
-        .map_err(|_| thread_database_error("删除线程投影"))?;
-    if deleted == 0 {
-        return Err("线程记录不存在。".to_string());
-    }
-    if selected_thread_id(&transaction)?.as_deref() == Some(&thread_id) {
-        set_app_state(&transaction, "selectedThreadId", None)?;
-    }
-    transaction
-        .commit()
-        .map_err(|_| thread_database_error("提交删除事务"))?;
-    load_thread_state(&connection)
+async fn delete_thread(app: AppHandle, thread_id: String) -> Result<ThreadState, String> {
+    run_background(move || {
+        let mut connection = open_thread_database(&app)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|_| thread_database_error("开始删除事务"))?;
+        transaction
+            .execute(
+                "DELETE FROM thread_events WHERE thread_id = ?1",
+                [&thread_id],
+            )
+            .map_err(|_| thread_database_error("删除线程事件"))?;
+        let deleted = transaction
+            .execute("DELETE FROM threads WHERE id = ?1", [&thread_id])
+            .map_err(|_| thread_database_error("删除线程投影"))?;
+        if deleted == 0 {
+            return Err("线程记录不存在。".to_string());
+        }
+        if selected_thread_id(&transaction)?.as_deref() == Some(&thread_id) {
+            set_app_state(&transaction, "selectedThreadId", None)?;
+        }
+        transaction
+            .commit()
+            .map_err(|_| thread_database_error("提交删除事务"))?;
+        load_thread_state(&connection)
+    })
+    .await
+}
+
+async fn run_background<T, F>(task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = BACKGROUND_PERSISTENCE_LOCK
+            .lock()
+            .map_err(|_| "后台持久化锁异常。".to_string())?;
+        task()
+    })
+    .await
+    .map_err(|_| "后台任务异常终止。".to_string())?
 }
 
 fn main() {
