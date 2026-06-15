@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type KeyboardEvent,
 } from "react";
 
 import {
@@ -85,6 +86,7 @@ export function App({
   const [submitting, setSubmitting] = useState(false);
   const [contextTab, setContextTab] = useState<"activity" | "changes">("changes");
   const conversationRef = useRef<HTMLElement>(null);
+  const submittingRef = useRef(false);
   const gitDiff = currentProject?.git.diff ?? "";
   const visibleDiff = currentProject?.git.dirty ? gitDiff : state.diff;
   const parsedDiffFiles = useMemo(() => parseUnifiedDiff(visibleDiff), [visibleDiff]);
@@ -129,18 +131,39 @@ export function App({
     }
   }, [state.timeline, state.approvals, state.turnStatus]);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!message.trim() || !currentProject?.available || submitting) {
+  const canSubmit =
+    Boolean(message.trim()) &&
+    Boolean(currentProject?.available) &&
+    state.connection === "ready" &&
+    state.turnStatus !== "inProgress" &&
+    !submitting;
+
+  const submitTask = async () => {
+    if (!canSubmit || !currentProject || submittingRef.current) {
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await session.startTask({ text: message, projectPath: currentProject.path, model, sandbox });
       setMessage("");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void submitTask();
+  };
+
+  const submitOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    void submitTask();
   };
 
   return (
@@ -314,8 +337,10 @@ export function App({
         <form className="composer" onSubmit={(event) => void submit(event)}>
           <textarea
             aria-label="任务内容"
+            enterKeyHint="send"
             value={message}
             onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={submitOnEnter}
             placeholder="描述你希望 Mimodex 在当前项目中完成的任务"
             rows={3}
           />
@@ -347,13 +372,7 @@ export function App({
             <button
               className="send-button"
               type="submit"
-              disabled={
-                !message.trim() ||
-                !currentProject?.available ||
-                state.connection !== "ready" ||
-                state.turnStatus === "inProgress" ||
-                submitting
-              }
+              disabled={!canSubmit}
             >
               {submitting ? "提交中" : "开始任务"}
               <span>↗</span>

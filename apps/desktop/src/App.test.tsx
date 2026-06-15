@@ -101,6 +101,32 @@ describe("Mimodex 桌面壳", () => {
     );
   });
 
+  it("回车发送任务，Shift 回车换行，输入法组合期间不发送", async () => {
+    const runtime = new UiRuntime();
+    const user = userEvent.setup();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    const textarea = screen.getByLabelText("任务内容") as HTMLTextAreaElement;
+
+    await user.type(textarea, "第一行");
+    await user.keyboard("{Shift>}{Enter}{/Shift}第二行");
+
+    expect(textarea.value).toBe("第一行\n第二行");
+    expect(runtime.turnStarts).toHaveLength(0);
+
+    fireEvent.keyDown(textarea, { isComposing: true, key: "Enter" });
+    expect(runtime.turnStarts).toHaveLength(0);
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    await waitFor(() => expect(runtime.turnStarts).toHaveLength(1));
+    expect(runtime.turnStarts[0]?.input[0]).toMatchObject({
+      type: "text",
+      text: "第一行\n第二行",
+    });
+    expect(textarea.value).toBe("");
+  });
+
   it("以右侧用户气泡和左侧 AI、工具活动展示已完成轮次", async () => {
     const runtime = new UiRuntime();
     const user = userEvent.setup();
