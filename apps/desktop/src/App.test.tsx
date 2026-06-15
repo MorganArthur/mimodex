@@ -319,7 +319,7 @@ describe("Mimodex 桌面壳", () => {
     expect(runtime.threadStarts).toHaveLength(0);
   });
 
-  it("右侧展示 Git 暂存区中的文件与真实 Diff", async () => {
+  it("右侧只展示 Git 暂存区中的文件变更摘要", async () => {
     const runtime = new UiRuntime();
     const project = {
       ...fixtureProject(),
@@ -336,12 +336,12 @@ describe("Mimodex 桌面壳", () => {
 
     expect(await screen.findByText("1 个文件 · 1 已暂存")).toBeTruthy();
     expect(screen.getAllByText("+2 -0")).toHaveLength(2);
-    expect(screen.getByText(/diff --git a\/\.gitignore b\/\.gitignore/)).toBeTruthy();
+    expect(screen.getByText(".gitignore")).toBeTruthy();
+    expect(screen.queryByText(/diff --git a\/\.gitignore b\/\.gitignore/)).toBeNull();
   });
 
-  it("右侧可按文件切换审阅 Diff", async () => {
+  it("右侧多文件变更只展示各文件修改数量", async () => {
     const runtime = new UiRuntime();
-    const user = userEvent.setup();
     const project = {
       ...fixtureProject(),
       git: {
@@ -369,8 +369,12 @@ diff --git a/src/app.ts b/src/app.ts
     };
     renderApp(runtime, [project], project);
 
-    await user.click(await screen.findByRole("button", { name: /src\/app\.ts/ }));
-    expect(document.querySelector(".diff-file-detail")?.textContent).toContain("-old\n+next");
+    expect(await screen.findByText(".gitignore")).toBeTruthy();
+    expect(screen.getByText("src/app.ts")).toBeTruthy();
+    expect(screen.getByText("+1 -0")).toBeTruthy();
+    expect(screen.getByText("+1 -1")).toBeTruthy();
+    expect(screen.queryByText("-old")).toBeNull();
+    expect(document.querySelector(".diff-file-detail")).toBeNull();
   });
 
   it("展示 Runtime 上报的 Token 用量", async () => {

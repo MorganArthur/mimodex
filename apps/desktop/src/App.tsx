@@ -83,14 +83,11 @@ export function App({
   const [fullAccessWarningOpen, setFullAccessWarningOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [selectedDiffFileId, setSelectedDiffFileId] = useState<string | null>(null);
   const [contextTab, setContextTab] = useState<"activity" | "changes">("changes");
   const conversationRef = useRef<HTMLElement>(null);
   const gitDiff = currentProject?.git.diff ?? "";
   const visibleDiff = currentProject?.git.dirty ? gitDiff : state.diff;
   const parsedDiffFiles = useMemo(() => parseUnifiedDiff(visibleDiff), [visibleDiff]);
-  const selectedDiffFile =
-    parsedDiffFiles.find((file) => file.id === selectedDiffFileId) ?? parsedDiffFiles[0] ?? null;
   const diffFiles = currentProject?.git.dirty
     ? currentProject.git.changedFiles + currentProject.git.untrackedFiles
     : state.diff
@@ -121,12 +118,6 @@ export function App({
     state.sandbox,
     state.threadId,
   ]);
-
-  useEffect(() => {
-    if (!parsedDiffFiles.some((file) => file.id === selectedDiffFileId)) {
-      setSelectedDiffFileId(parsedDiffFiles[0]?.id ?? null);
-    }
-  }, [parsedDiffFiles, selectedDiffFileId]);
 
   useEffect(() => {
     if (state.turnStatus !== "inProgress") {
@@ -386,7 +377,7 @@ export function App({
         </form>
       </main>
 
-      <aside className="context-panel">
+      <aside className={`context-panel ${contextTab}`}>
         <div className="context-tabs">
           <button
             className={contextTab === "changes" ? "active" : ""}
@@ -428,9 +419,6 @@ export function App({
             diffCount={diffCount}
             diffFiles={diffFiles}
             files={parsedDiffFiles}
-            selectedFile={selectedDiffFile}
-            setSelectedFileId={setSelectedDiffFileId}
-            visibleDiff={visibleDiff}
           />
         ) : (
           <ActivityPanel error={activityError} events={activityEvents} />
@@ -679,17 +667,11 @@ function DiffPanel({
   diffCount,
   diffFiles,
   files,
-  selectedFile,
-  setSelectedFileId,
-  visibleDiff,
 }: {
   currentProject: ProjectSummary | null;
   diffCount: string;
   diffFiles: number;
   files: DiffFile[];
-  selectedFile: DiffFile | null;
-  setSelectedFileId: (id: string) => void;
-  visibleDiff: string;
 }) {
   return (
     <section className="diff-panel">
@@ -700,23 +682,17 @@ function DiffPanel({
         </div>
         <span className="diff-count">{diffCount}</span>
       </div>
-      {visibleDiff ? (
+      {files.length > 0 ? (
         <div className="diff-review">
           <div className="diff-file-list">
             {files.map((file) => (
-              <button
-                className={file.id === selectedFile?.id ? "active" : ""}
-                key={file.id}
-                type="button"
-                onClick={() => setSelectedFileId(file.id)}
-              >
+              <div className="diff-file-row" key={file.id}>
                 <span title={file.path}>{file.path}</span>
                 <small>{file.section ?? "Runtime Diff"}</small>
                 <i>+{file.additions} -{file.deletions}</i>
-              </button>
+              </div>
             ))}
           </div>
-          {selectedFile && <pre className="diff-file-detail">{selectedFile.diff}</pre>}
         </div>
       ) : (
         <div className="empty-diff">

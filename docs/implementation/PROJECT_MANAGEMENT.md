@@ -1,7 +1,7 @@
 # 本地项目管理实现说明
 
-- 状态：真实项目管理、完整 Git 摘要、文件级 Diff 与自动刷新已通过 Windows Preview
-- 最后更新：2026-06-13
+- 状态：真实项目管理、Git 文件变更摘要与自动刷新已通过 Windows Preview
+- 最后更新：2026-06-15
 - 对应目录：`apps/desktop/src/projects.ts`、`apps/desktop/src-tauri/src/main.rs`
 - 首次项目管理权威构建：[Windows Preview #27334790840](https://github.com/MorganArthur/mimodex/actions/runs/27334790840)
 
@@ -16,7 +16,7 @@
 - 在应用数据目录的 `projects.json` 中持久化非敏感项目摘要；
 - 启动时恢复项目列表与上次选中的项目；
 - 读取项目是否可用、Git 分支、短提交号和工作区变更数量；
-- 聚合已暂存、未暂存和未跟踪文件 Diff，并支持文件级审阅；
+- 聚合已暂存、未暂存和未跟踪文件变更，并展示各文件新增与删除行数；
 - 任务活动期间定时刷新 Git，任务结束后立即刷新；
 - 最近打开的项目优先展示；
 - 切换项目后，下一次任务使用新项目路径创建 Runtime 线程；
@@ -64,7 +64,7 @@ git -C <project> status --porcelain=v1 --untracked-files=normal
 - [x] 添加项目后显示真实路径并可启动任务；
 - [x] 切换项目后新任务使用所选路径；
 - [x] 展示 Git 分支和工作区变更数量；
-- [x] 展示已暂存、未暂存、未跟踪文件和文件级 Diff；
+- [x] 展示已暂存、未暂存、未跟踪文件和各文件修改数量；
 - [x] Agent 活动期间和完成后自动刷新 Git；
 - [x] 文件夹不可用时禁止启动任务；
 - [x] React 类型检查和交互测试通过；

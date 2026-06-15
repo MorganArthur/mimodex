@@ -1231,15 +1231,18 @@ button {
 }
 
 .context-panel {
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   background: #eeece6;
   border-left: 1px solid #d8d5cd;
 }
 
 .context-tabs {
   display: flex;
+  flex: 0 0 74px;
   min-height: 74px;
   align-items: flex-end;
   gap: 18px;
@@ -1266,11 +1269,39 @@ button {
 .diff-panel,
 .activity-panel,
 .runtime-card {
+  flex-shrink: 0;
   margin: 16px;
   padding: 15px;
   background: #f7f5f0;
   border: 1px solid #dcd8cf;
   border-radius: 11px;
+}
+
+.context-summary,
+.diff-panel,
+.activity-panel {
+  margin-bottom: 0;
+}
+
+.diff-panel {
+  max-height: 220px;
+  overflow: hidden;
+}
+
+.context-panel.changes .runtime-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.context-panel.activity .activity-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.context-panel.activity .runtime-card {
+  flex: 0 0 auto;
 }
 
 .activity-heading {
@@ -1464,35 +1495,27 @@ button {
 }
 
 .diff-review {
-  display: grid;
-  gap: 10px;
   margin-top: 12px;
 }
 
 .diff-file-list {
   display: grid;
   gap: 5px;
-  max-height: 180px;
+  max-height: 130px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.diff-file-list button {
+.diff-file-row {
   position: relative;
   display: grid;
   gap: 2px;
   width: 100%;
   padding: 8px 54px 8px 9px;
-  color: #5c6259;
-  background: #eeece5;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  text-align: left;
-}
-
-.diff-file-list button.active {
   color: #35432e;
   background: #e7efdc;
-  border-color: #cfdcc1;
+  border: 1px solid #cfdcc1;
+  border-radius: 7px;
 }
 
 .diff-file-list span {
@@ -1520,19 +1543,8 @@ button {
   transform: translateY(-50%);
 }
 
-.diff-panel pre {
-  max-height: 46vh;
-  margin: 0 -5px;
-  overflow: auto;
-  color: #50574d;
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 9px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-
 .empty-diff {
-  padding: 46px 12px 34px;
+  padding: 24px 12px 16px;
   color: #8c9088;
   text-align: center;
 }
