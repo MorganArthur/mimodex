@@ -1288,12 +1288,6 @@ button {
   overflow: hidden;
 }
 
-.context-panel.changes .runtime-card {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-}
-
 .context-panel.activity .activity-panel {
   flex: 1 1 auto;
   min-height: 0;
