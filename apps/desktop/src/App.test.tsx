@@ -163,6 +163,42 @@ describe("Mimodex 桌面壳", () => {
     expect(document.querySelector(".entry-label")).toBeNull();
   });
 
+  it("将 AI 回复渲染为安全的 Markdown 内容", async () => {
+    const runtime = new UiRuntime();
+    const user = userEvent.setup();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    await user.type(screen.getByLabelText("任务内容"), "展示 Markdown");
+    await user.keyboard("{Enter}");
+    runtime.emitNotification({
+      method: "item/agentMessage/delta",
+      params: {
+        itemId: "assistant-markdown",
+        delta:
+          "**Mimodex** 支持 `inline code`。\n\n- 第一项\n- 第二项\n\n```ts\nconst ok = true;\n```\n\n[文档](https://example.com)\n\n<script>unsafe()</script>",
+      },
+    });
+
+    await waitFor(() => {
+      expect(
+        Array.from(document.querySelectorAll(".assistant-message")).some(
+          (message) => message.querySelector("strong")?.textContent === "Mimodex",
+        ),
+      ).toBe(true);
+    });
+    const assistant = Array.from(document.querySelectorAll(".assistant-message")).find(
+      (message) => message.querySelector("strong")?.textContent === "Mimodex",
+    );
+    expect(assistant?.querySelector("code")?.textContent).toBe("inline code");
+    expect(assistant?.querySelector("pre code")?.textContent).toContain("const ok = true;");
+    expect(assistant?.querySelectorAll("li")).toHaveLength(2);
+    expect(assistant?.querySelector("a")?.getAttribute("href")).toBe("https://example.com");
+    expect(assistant?.querySelector("a")?.getAttribute("rel")).toBe("noreferrer");
+    expect(assistant?.querySelector("script")).toBeNull();
+    expect(assistant?.textContent).toContain("<script>unsafe()</script>");
+  });
+
   it("未配置凭据时先完成安全存储，再创建 Runtime 会话", async () => {
     const credentials = new FakeCredentialService(false);
     const runtime = new UiRuntime();

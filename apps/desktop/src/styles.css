@@ -943,14 +943,128 @@ button {
   max-width: 100%;
 }
 
-.assistant-message p {
-  margin: 0;
+.assistant-message {
   color: #333732;
   font-size: 11px;
   line-height: 1.8;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.assistant-message > :first-child {
+  margin-top: 0;
+}
+
+.assistant-message > :last-child {
+  margin-bottom: 0;
+}
+
+.assistant-message p,
+.assistant-message ul,
+.assistant-message ol,
+.assistant-message blockquote,
+.assistant-message pre,
+.assistant-message table {
+  margin: 0 0 12px;
+}
+
+.assistant-message h1,
+.assistant-message h2,
+.assistant-message h3,
+.assistant-message h4 {
+  margin: 18px 0 8px;
+  color: #282d27;
+  line-height: 1.35;
+}
+
+.assistant-message h1 {
+  font-size: 17px;
+}
+
+.assistant-message h2 {
+  font-size: 15px;
+}
+
+.assistant-message h3,
+.assistant-message h4 {
+  font-size: 12px;
+}
+
+.assistant-message ul,
+.assistant-message ol {
+  padding-left: 22px;
+}
+
+.assistant-message li + li {
+  margin-top: 4px;
+}
+
+.assistant-message blockquote {
+  padding-left: 12px;
+  color: #666d63;
+  border-left: 3px solid #cbd2c1;
+}
+
+.assistant-message code {
+  padding: 1px 5px;
+  background: #e9e8e2;
+  border-radius: 5px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.assistant-message pre {
+  max-width: 100%;
+  padding: 12px 14px;
+  overflow: auto;
+  color: #e7ebe4;
+  background: #292d28;
+  border-radius: 9px;
+  scrollbar-color: #737b70 transparent;
+}
+
+.assistant-message pre code {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border-radius: 0;
+  font-size: 9px;
+  line-height: 1.7;
+}
+
+.assistant-message a {
+  color: #526f43;
+  text-decoration-color: #9aaa8d;
+  text-underline-offset: 2px;
+}
+
+.assistant-message hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid #dcd9d1;
+}
+
+.assistant-message table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.assistant-message th,
+.assistant-message td {
+  padding: 6px 8px;
+  border: 1px solid #d8d5cd;
+  text-align: left;
+}
+
+.assistant-message th {
+  background: #ebe9e2;
+}
+
+.assistant-message input[type="checkbox"] {
+  margin-right: 5px;
+  accent-color: #6f8c59;
 }
 
 .timeline-activity {

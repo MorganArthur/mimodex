@@ -18,6 +18,7 @@ import {
 } from "@mimodex/desktop-core";
 import { ConfirmationDialog } from "./ConfirmationDialog.js";
 import { parseUnifiedDiff, type DiffFile } from "./diff.js";
+import { MarkdownContent } from "./MarkdownContent.js";
 import { MIMO_MODEL_OPTIONS, PopupSelect, SANDBOX_OPTIONS } from "./PopupSelect.js";
 import type { ProjectSummary } from "./projects.js";
 import type { AppSettings } from "./settings.js";
@@ -835,7 +836,7 @@ const Timeline = memo(function Timeline({
               {turn.entries.map((entry) =>
                 entry.kind === "assistant" ? (
                   <article className="assistant-message" key={entry.id}>
-                    <p>{entry.content || "等待输出…"}</p>
+                    <MarkdownContent content={entry.content || "等待输出…"} />
                   </article>
                 ) : (
                   <TimelineActivity entry={entry} key={entry.id} />
