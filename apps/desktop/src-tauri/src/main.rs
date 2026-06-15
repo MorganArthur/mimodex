@@ -369,7 +369,11 @@ async fn add_project(app: AppHandle, path: String) -> Result<ProjectState, Strin
 async fn select_project(app: AppHandle, project_id: String) -> Result<ProjectState, String> {
     run_background(move || {
         let mut store = load_project_store(&app)?;
-        if !store.projects.iter().any(|project| project.id == project_id) {
+        if !store
+            .projects
+            .iter()
+            .any(|project| project.id == project_id)
+        {
             return Err("项目记录不存在。".to_string());
         }
         store.selected_project_id = Some(project_id);
