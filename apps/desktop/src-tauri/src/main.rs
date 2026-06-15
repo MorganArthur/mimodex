@@ -335,7 +335,6 @@ fn list_projects(app: AppHandle) -> Result<ProjectState, String> {
     for project in &mut store.projects {
         refresh_project_summary(project);
     }
-    sort_projects(&mut store.projects);
     save_project_store(&app, &store)?;
     Ok(project_state(store))
 }
@@ -345,16 +344,15 @@ fn add_project(app: AppHandle, path: String) -> Result<ProjectState, String> {
     let path = normalize_project_path(&path)?;
     let mut store = load_project_store(&app)?;
     let id = project_id(&path);
-    let now = unix_timestamp_ms();
 
     if let Some(project) = store.projects.iter_mut().find(|project| project.id == id) {
-        project.last_opened_at = now;
         refresh_project_summary(project);
     } else {
-        store.projects.push(inspect_project(&path, now));
+        store
+            .projects
+            .insert(0, inspect_project(&path, unix_timestamp_ms()));
     }
     store.selected_project_id = Some(id);
-    sort_projects(&mut store.projects);
     save_project_store(&app, &store)?;
     Ok(project_state(store))
 }
@@ -367,10 +365,8 @@ fn select_project(app: AppHandle, project_id: String) -> Result<ProjectState, St
         .iter_mut()
         .find(|project| project.id == project_id)
         .ok_or_else(|| "项目记录不存在。".to_string())?;
-    project.last_opened_at = unix_timestamp_ms();
     refresh_project_summary(project);
     store.selected_project_id = Some(project_id);
-    sort_projects(&mut store.projects);
     save_project_store(&app, &store)?;
     Ok(project_state(store))
 }
@@ -384,7 +380,6 @@ fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectState, S
         .find(|project| project.id == project_id)
         .ok_or_else(|| "项目记录不存在。".to_string())?;
     refresh_project_summary(project);
-    sort_projects(&mut store.projects);
     save_project_store(&app, &store)?;
     Ok(project_state(store))
 }
@@ -1071,7 +1066,7 @@ fn load_thread_state(connection: &Connection) -> Result<ThreadState, String> {
             SELECT id, project_id, project_path, title, model, sandbox, turn_status,
                    timeline_json, diff, created_at, updated_at, archived
             FROM threads
-            ORDER BY archived ASC, updated_at DESC
+            ORDER BY archived ASC, created_at DESC, id ASC
             ",
         )
         .map_err(|_| thread_database_error("准备线程列表查询"))?;
@@ -1419,10 +1414,6 @@ fn hide_command_window(command: &mut Command) {
 #[cfg(not(windows))]
 fn hide_command_window(_command: &mut Command) {}
 
-fn sort_projects(projects: &mut [ProjectSummary]) {
-    projects.sort_by(|left, right| right.last_opened_at.cmp(&left.last_opened_at));
-}
-
 fn unix_timestamp_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1600,6 +1591,42 @@ mod tests {
         assert_eq!(stored.timeline[0].content, "修复测试");
         assert_eq!(stored.timeline[0].started_at, Some(1_000));
         assert_eq!(stored.timeline[0].completed_at, Some(2_000));
+    }
+
+    #[test]
+    fn thread_list_order_is_stable_when_existing_thread_is_updated() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory SQLite");
+        migrate_thread_database(&connection).expect("migrate SQLite");
+        let mut older = fixture_thread();
+        older.id = "thread-older".to_string();
+        older.created_at = 1;
+        older.updated_at = 1;
+        let mut newer = fixture_thread();
+        newer.id = "thread-newer".to_string();
+        newer.created_at = 2;
+        newer.updated_at = 2;
+
+        let transaction = connection.transaction().expect("begin initial transaction");
+        record_thread_projection(&transaction, &older, "threadProjectionRecorded")
+            .expect("record older thread");
+        record_thread_projection(&transaction, &newer, "threadProjectionRecorded")
+            .expect("record newer thread");
+        transaction.commit().expect("commit initial transaction");
+
+        older.updated_at = 3;
+        let transaction = connection.transaction().expect("begin update transaction");
+        record_thread_projection(&transaction, &older, "threadProjectionRecorded")
+            .expect("update older thread");
+        transaction.commit().expect("commit update transaction");
+
+        let state = load_thread_state(&connection).expect("load stable thread list");
+        let ids = state
+            .threads
+            .iter()
+            .map(|thread| thread.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec!["thread-newer", "thread-older"]);
     }
 
     #[test]

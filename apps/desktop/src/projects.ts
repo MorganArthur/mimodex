@@ -80,8 +80,11 @@ class DemoProjectService implements ProjectService {
 
   async add(path: string): Promise<ProjectState> {
     const project = demoProject(path, projectName(path), "main");
+    const existing = this.#state.projects.some((candidate) => candidate.id === project.id);
     this.#state = {
-      projects: [project, ...this.#state.projects.filter((candidate) => candidate.id !== project.id)],
+      projects: existing
+        ? this.#state.projects.map((candidate) => candidate.id === project.id ? project : candidate)
+        : [project, ...this.#state.projects],
       selectedProjectId: project.id,
     };
     return this.#state;

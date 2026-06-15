@@ -113,7 +113,7 @@ export function DesktopRoot({
         .upsert(threadRecordFromSession(state, project.id))
         .then((nextState) => {
           if (!disposed) {
-            setThreadState(nextState);
+            setThreadState((current) => stabilizeThreadState(current, nextState));
             setThreadError(null);
           }
         })
@@ -265,12 +265,13 @@ export function DesktopRoot({
       const path = await projectService.pickDirectory();
       if (path) {
         const nextState = await projectService.add(path);
-        setProjectState(nextState);
+        setProjectState((current) => stabilizeProjectState(current, nextState));
         const project =
           nextState.projects.find((candidate) => candidate.id === nextState.selectedProjectId) ??
           null;
         session?.newThread(project?.path ?? null);
-        setThreadState(await threadService.select(null));
+        const nextThreadState = await threadService.select(null);
+        setThreadState((current) => stabilizeThreadState(current, nextThreadState));
       }
     } catch (error) {
       setProjectError(errorMessage(error));
@@ -287,10 +288,11 @@ export function DesktopRoot({
     setProjectError(null);
     try {
       const nextState = await projectService.select(projectId);
-      setProjectState(nextState);
+      setProjectState((current) => stabilizeProjectState(current, nextState));
       const project = nextState.projects.find((candidate) => candidate.id === projectId) ?? null;
       session?.newThread(project?.path ?? null);
-      setThreadState(await threadService.select(null));
+      const nextThreadState = await threadService.select(null);
+      setThreadState((current) => stabilizeThreadState(current, nextThreadState));
     } catch (error) {
       setProjectError(errorMessage(error));
     } finally {
@@ -309,7 +311,8 @@ export function DesktopRoot({
         projectState?.projects.find((candidate) => candidate.id === projectState.selectedProjectId) ??
         null;
       session.newThread(project?.path ?? null);
-      setThreadState(await threadService.select(null));
+      const nextState = await threadService.select(null);
+      setThreadState((current) => stabilizeThreadState(current, nextState));
     } catch (error) {
       setThreadError(errorMessage(error));
     } finally {
@@ -337,7 +340,8 @@ export function DesktopRoot({
         timeline: thread.timeline,
         diff: thread.diff,
       });
-      setThreadState(await threadService.select(threadId));
+      const nextState = await threadService.select(threadId);
+      setThreadState((current) => stabilizeThreadState(current, nextState));
     } catch (error) {
       setThreadError(errorMessage(error));
     } finally {
@@ -360,7 +364,8 @@ export function DesktopRoot({
           ) ?? null;
         session.newThread(project?.path ?? null);
       }
-      setThreadState(await threadService.setArchived(threadId, archived));
+      const nextState = await threadService.setArchived(threadId, archived);
+      setThreadState((current) => stabilizeThreadState(current, nextState));
     } catch (error) {
       setThreadError(errorMessage(error));
     } finally {
@@ -382,7 +387,8 @@ export function DesktopRoot({
           ) ?? null;
         session.newThread(project?.path ?? null);
       }
-      setThreadState(await threadService.delete(threadId));
+      const nextState = await threadService.delete(threadId);
+      setThreadState((current) => stabilizeThreadState(current, nextState));
     } catch (error) {
       setThreadError(errorMessage(error));
     } finally {
@@ -401,7 +407,8 @@ export function DesktopRoot({
       setProjectError(null);
     }
     try {
-      setProjectState(await projectService.refresh(projectId));
+      const nextState = await projectService.refresh(projectId);
+      setProjectState((current) => stabilizeProjectState(current, nextState));
     } catch (error) {
       if (!quiet) {
         setProjectError(errorMessage(error));
@@ -537,6 +544,37 @@ function compactTitle(value: string): string {
 
 function sameProjectPath(left: string, right: string | null): boolean {
   return right !== null && left.toLocaleLowerCase() === right.toLocaleLowerCase();
+}
+
+function stabilizeProjectState(
+  current: ProjectState | null,
+  next: ProjectState,
+): ProjectState {
+  return {
+    ...next,
+    projects: stabilizeItemOrder(current?.projects, next.projects),
+  };
+}
+
+function stabilizeThreadState(current: ThreadState | null, next: ThreadState): ThreadState {
+  return {
+    ...next,
+    threads: stabilizeItemOrder(current?.threads, next.threads),
+  };
+}
+
+function stabilizeItemOrder<T extends { id: string }>(current: T[] | undefined, next: T[]): T[] {
+  if (!current) {
+    return next;
+  }
+  const currentIds = new Set(current.map((item) => item.id));
+  const nextById = new Map(next.map((item) => [item.id, item]));
+  const newItems = next.filter((item) => !currentIds.has(item.id));
+  const existingItems = current.flatMap((item) => {
+    const updated = nextById.get(item.id);
+    return updated ? [updated] : [];
+  });
+  return [...newItems, ...existingItems];
 }
 
 function CredentialSetup({

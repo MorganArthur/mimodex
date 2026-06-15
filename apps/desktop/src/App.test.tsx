@@ -373,6 +373,28 @@ describe("Mimodex 桌面壳", () => {
     await waitFor(() => expect(runtime.threadStarts.at(-1)?.cwd).toBe("D:\\projects\\second"));
   });
 
+  it("切换项目时保持项目列表顺序不变", async () => {
+    const projects = [fixtureProject(), secondProject()];
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService(projects)}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService([])}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    expect(projectRowTitles()).toEqual(["D:\\projects\\fixture", "D:\\projects\\second"]);
+
+    await user.click(screen.getByTitle("D:\\projects\\second"));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "second", level: 1 })).toBeTruthy());
+
+    expect(projectRowTitles()).toEqual(["D:\\projects\\fixture", "D:\\projects\\second"]);
+  });
+
   it("项目文件夹不可用时禁止启动任务", async () => {
     const runtime = new UiRuntime();
     const unavailableProject = { ...fixtureProject(), available: false };
@@ -561,7 +583,9 @@ diff --git a/src/app.ts b/src/app.ts
       ...fixtureThread(),
       id: "thread-second",
       title: "第二个历史线程",
-      timeline: [],
+      timeline: fixtureThread().timeline.map((entry) =>
+        entry.kind === "user" ? { ...entry, content: "第二个历史线程" } : entry,
+      ),
       updatedAt: 3,
     };
     const secondActivity = {
@@ -596,6 +620,36 @@ diff --git a/src/app.ts b/src/app.ts
     await user.click(screen.getByTitle("第二个历史线程"));
     expect(await screen.findByText("turn/completed")).toBeTruthy();
     expect(screen.queryByText("item/commandExecution/requestApproval")).toBeNull();
+  });
+
+  it("切换线程时保持线程列表顺序不变", async () => {
+    const secondThread = {
+      ...fixtureThread(),
+      id: "thread-second",
+      title: "第二个历史线程",
+      timeline: fixtureThread().timeline.map((entry) =>
+        entry.kind === "user" ? { ...entry, content: "第二个历史线程" } : entry,
+      ),
+      updatedAt: 3,
+    };
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService([fixtureThread(), secondThread])}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    expect(threadRowTitles()).toEqual(["修复历史测试", "第二个历史线程"]);
+
+    await user.click(screen.getByTitle("第二个历史线程"));
+    await waitFor(() => expect(document.querySelector(".thread-row.active")?.getAttribute("title")).toBe("第二个历史线程"));
+
+    expect(threadRowTitles()).toEqual(["修复历史测试", "第二个历史线程"]);
   });
 
   it("可以归档、恢复并移除本地线程索引", async () => {
@@ -894,7 +948,13 @@ class FakeProjectService implements ProjectService {
   }
 
   async select(projectId: string): Promise<ProjectState> {
-    this.#state = { ...this.#state, selectedProjectId: projectId };
+    const selected = this.#state.projects.find((project) => project.id === projectId);
+    this.#state = {
+      projects: selected
+        ? [selected, ...this.#state.projects.filter((project) => project.id !== projectId)]
+        : this.#state.projects,
+      selectedProjectId: projectId,
+    };
     return this.#state;
   }
 
@@ -937,7 +997,13 @@ class FakeThreadService implements ThreadService {
   }
 
   async select(threadId: string | null): Promise<ThreadState> {
-    this.#state = { ...this.#state, selectedThreadId: threadId };
+    const selected = this.#state.threads.find((thread) => thread.id === threadId);
+    this.#state = {
+      threads: selected
+        ? [selected, ...this.#state.threads.filter((thread) => thread.id !== threadId)]
+        : this.#state.threads,
+      selectedThreadId: threadId,
+    };
     return this.#state;
   }
 
@@ -963,6 +1029,18 @@ class FakeThreadService implements ThreadService {
   async appendRuntimeEvents(events: SessionRuntimeEvent[]): Promise<void> {
     this.runtimeEvents.push(...events);
   }
+}
+
+function projectRowTitles(): string[] {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>(".project-row")).map(
+    (project) => project.title,
+  );
+}
+
+function threadRowTitles(): string[] {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>(".thread-row")).map(
+    (thread) => thread.title,
+  );
 }
 
 function fixtureProject(): ProjectSummary {

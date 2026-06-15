@@ -102,7 +102,9 @@ class DemoThreadService implements ThreadService {
     const existing = this.#state.threads.find((candidate) => candidate.id === thread.id);
     const next = { ...thread, createdAt: existing?.createdAt ?? thread.createdAt };
     this.#state = {
-      threads: [next, ...this.#state.threads.filter((candidate) => candidate.id !== thread.id)],
+      threads: existing
+        ? this.#state.threads.map((candidate) => candidate.id === thread.id ? next : candidate)
+        : [next, ...this.#state.threads],
       selectedThreadId: thread.id,
     };
     return this.#state;
@@ -112,12 +114,6 @@ class DemoThreadService implements ThreadService {
     this.#state = {
       ...this.#state,
       selectedThreadId: threadId,
-      threads:
-        threadId === null
-          ? this.#state.threads
-          : this.#state.threads
-              .map((thread) => (thread.id === threadId ? { ...thread, updatedAt: Date.now() } : thread))
-              .sort((left, right) => right.updatedAt - left.updatedAt),
     };
     return this.#state;
   }
