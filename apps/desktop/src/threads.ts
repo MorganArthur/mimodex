@@ -166,6 +166,8 @@ function demoThread(id: string, title: string, updatedAt: number): ThreadRecord 
         title: "你",
         content: title,
         status: null,
+        startedAt: updatedAt - 5_000,
+        completedAt: updatedAt,
       },
       {
         id: `${id}-assistant`,
@@ -173,6 +175,8 @@ function demoThread(id: string, title: string, updatedAt: number): ThreadRecord 
         title: "MiMo",
         content: "这是浏览器开发环境中的可恢复线程投影。",
         status: "completed",
+        startedAt: updatedAt - 3_000,
+        completedAt: updatedAt,
       },
     ],
     diff: "",

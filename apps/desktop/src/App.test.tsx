@@ -95,6 +95,42 @@ describe("Mimodex 桌面壳", () => {
     );
   });
 
+  it("以右侧用户气泡和左侧 AI、工具活动展示已完成轮次", async () => {
+    const runtime = new UiRuntime();
+    const user = userEvent.setup();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    await user.type(screen.getByLabelText("任务内容"), "检查项目");
+    await user.click(screen.getByRole("button", { name: /开始任务/ }));
+    runtime.emitNotification({
+      method: "item/started",
+      params: {
+        item: {
+          id: "command-layout",
+          type: "commandExecution",
+          command: "npm test",
+          status: "inProgress",
+        },
+      },
+    });
+    runtime.emitNotification({
+      method: "item/agentMessage/delta",
+      params: { itemId: "assistant-layout", delta: "检查完成。" },
+    });
+    runtime.emitNotification({
+      method: "turn/completed",
+      params: { turn: { id: "turn-1", status: "completed" } },
+    });
+
+    expect(await screen.findByText("检查完成。")).toBeTruthy();
+    expect(document.querySelector(".user-message")?.textContent).toContain("检查项目");
+    expect(document.querySelector(".assistant-message")?.textContent).toContain("检查完成。");
+    expect(document.querySelector(".timeline-activity")?.textContent).toContain("运行命令 · npm test");
+    expect(screen.getByText(/^已处理 \d+s$/)).toBeTruthy();
+    expect(document.querySelector(".entry-label")).toBeNull();
+  });
+
   it("未配置凭据时先完成安全存储，再创建 Runtime 会话", async () => {
     const credentials = new FakeCredentialService(false);
     const runtime = new UiRuntime();
@@ -459,6 +495,10 @@ diff --git a/src/app.ts b/src/app.ts
       ]),
     );
     expect(await screen.findByText("已恢复的历史回复")).toBeTruthy();
+    expect(screen.getByText("已处理 3m 12s")).toBeTruthy();
+    expect(document.querySelector(".user-message")?.textContent).toContain("修复历史测试");
+    expect(document.querySelector(".assistant-message")?.textContent).toContain("已恢复的历史回复");
+    expect(document.querySelector(".entry-label")).toBeNull();
   });
 
   it("恢复历史线程后读取持久化活动记录", async () => {
@@ -945,13 +985,23 @@ function fixtureThread(): ThreadRecord {
     sandbox: "workspace-write",
     turnStatus: "completed",
     timeline: [
-      { id: "history-user", kind: "user", title: "你", content: "修复历史测试", status: null },
+      {
+        id: "history-user",
+        kind: "user",
+        title: "你",
+        content: "修复历史测试",
+        status: null,
+        startedAt: 1_000,
+        completedAt: 193_000,
+      },
       {
         id: "history-assistant",
         kind: "assistant",
         title: "MiMo",
         content: "已恢复的历史回复",
         status: "completed",
+        startedAt: 2_000,
+        completedAt: 193_000,
       },
     ],
     diff: "",

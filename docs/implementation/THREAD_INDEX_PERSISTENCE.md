@@ -1,7 +1,7 @@
 # 本地线程索引与恢复实现说明
 
 - 状态：可恢复线程、SQLite 事件账本、归档与活动审计已通过 Windows Preview
-- 最后更新：2026-06-13
+- 最后更新：2026-06-15
 - 对应目录：`apps/desktop/src/threads.ts`、`packages/desktop-core/src/session-controller.ts`
 - 架构依据：`docs/architecture/decisions/ADR-0005-local-thread-persistence.md`
 - 首次原始事件账本权威构建：[Windows Preview #27385722233](https://github.com/MorganArthur/mimodex/actions/runs/27385722233)
@@ -19,7 +19,7 @@ Runtime 仍是 Agent 上下文和 Provider 历史的权威来源。早期 `threa
 
 - 按项目展示最近线程；
 - 保存标题、模型、权限模式、状态和更新时间；
-- 恢复用户、助手、推理、命令、文件与错误的桌面时间线；
+- 恢复用户、助手、推理、命令、文件与错误的桌面时间线及可用的开始、完成时间；
 - 恢复最近 Diff 展示；
 - 保存 Runtime 线程 ID，并在用户选择后调用 `thread/resume`。
 

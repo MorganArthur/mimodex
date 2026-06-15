@@ -110,6 +110,10 @@ struct TimelineEntry {
     title: String,
     content: String,
     status: Option<String>,
+    #[serde(default)]
+    started_at: Option<i64>,
+    #[serde(default)]
+    completed_at: Option<i64>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -1594,6 +1598,8 @@ mod tests {
         assert_eq!(event_count, 2);
         assert_eq!(stored.turn_status, "completed");
         assert_eq!(stored.timeline[0].content, "修复测试");
+        assert_eq!(stored.timeline[0].started_at, Some(1_000));
+        assert_eq!(stored.timeline[0].completed_at, Some(2_000));
     }
 
     #[test]
@@ -1777,6 +1783,8 @@ mod tests {
                 title: "你".to_string(),
                 content: "修复测试".to_string(),
                 status: None,
+                started_at: Some(1_000),
+                completed_at: Some(2_000),
             }],
             diff: String::new(),
             created_at: 1,

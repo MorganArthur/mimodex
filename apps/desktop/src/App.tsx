@@ -42,17 +42,6 @@ const statusLabels: Record<SessionState["connection"], string> = {
   error: "连接异常",
 };
 
-const entryLabels: Record<TimelineEntry["kind"], string> = {
-  approval: "确认",
-  assistant: "AI",
-  command: "RUN",
-  error: "ERR",
-  file: "FILE",
-  reasoning: "THINK",
-  status: "STATE",
-  user: "YOU",
-};
-
 export function App({
   activityError,
   activityEvents,
@@ -307,7 +296,7 @@ export function App({
           ) : state.timeline.length === 0 ? (
             <WelcomePanel onSelect={setMessage} project={currentProject} />
           ) : (
-            <Timeline entries={state.timeline} />
+            <Timeline entries={state.timeline} turnStatus={state.turnStatus} />
           )}
           {state.approvals.map((approval) => (
             <ApprovalCard
@@ -764,23 +753,158 @@ function formatActivityTime(value: number): string {
   }).format(value);
 }
 
-function Timeline({ entries }: { entries: readonly TimelineEntry[] }) {
+type TimelineTurn = {
+  entries: TimelineEntry[];
+  user: TimelineEntry | null;
+};
+
+function Timeline({
+  entries,
+  turnStatus,
+}: {
+  entries: readonly TimelineEntry[];
+  turnStatus: SessionState["turnStatus"];
+}) {
+  const [now, setNow] = useState(Date.now());
+  const turns = useMemo(() => groupTimeline(entries), [entries]);
+
+  useEffect(() => {
+    if (turnStatus !== "inProgress") {
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [turnStatus]);
+
   return (
     <div className="timeline">
-      {entries.map((entry) => (
-        <article className={`timeline-entry ${entry.kind}`} key={entry.id}>
-          <span className="entry-label">{entryLabels[entry.kind]}</span>
-          <div>
-            <div className="entry-heading">
-              <strong>{entry.title}</strong>
-              {entry.status && <span>{entry.status}</span>}
+      {turns.map((turn, index) => {
+        const active = turnStatus === "inProgress" && index === turns.length - 1;
+        const duration = turnDuration(turn, active ? now : null);
+        return (
+          <section className="conversation-turn" key={turn.user?.id ?? `orphan-${index}`}>
+            {turn.user && (
+              <>
+                <article className="user-message">
+                  <p>{turn.user.content}</p>
+                </article>
+                {duration !== null && (
+                  <div className="turn-processing">
+                    <span>{active ? "处理中" : "已处理"} {formatProcessingDuration(duration)}</span>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="assistant-flow">
+              {turn.entries.map((entry) =>
+                entry.kind === "assistant" ? (
+                  <article className="assistant-message" key={entry.id}>
+                    <p>{entry.content || "等待输出…"}</p>
+                  </article>
+                ) : (
+                  <TimelineActivity entry={entry} key={entry.id} />
+                ),
+              )}
             </div>
-            <p>{entry.content || "等待输出…"}</p>
-          </div>
-        </article>
-      ))}
+          </section>
+        );
+      })}
     </div>
   );
+}
+
+function TimelineActivity({ entry }: { entry: TimelineEntry }) {
+  return (
+    <details className={`timeline-activity ${entry.kind}`}>
+      <summary>
+        <span className="timeline-activity-icon">{activityIcon(entry.kind)}</span>
+        <strong>{activityLabel(entry)}</strong>
+        {entry.status && <span>{activityStatus(entry.status)}</span>}
+      </summary>
+      {entry.content && <pre>{entry.content}</pre>}
+    </details>
+  );
+}
+
+function groupTimeline(entries: readonly TimelineEntry[]): TimelineTurn[] {
+  const turns: TimelineTurn[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "user") {
+      turns.push({ user: entry, entries: [] });
+      continue;
+    }
+    if (turns.length === 0) {
+      turns.push({ user: null, entries: [] });
+    }
+    turns[turns.length - 1]?.entries.push(entry);
+  }
+  return turns;
+}
+
+function turnDuration(turn: TimelineTurn, activeNow: number | null): number | null {
+  const startedAt = turn.user?.startedAt;
+  if (startedAt === undefined) {
+    return null;
+  }
+  if (activeNow !== null) {
+    return Math.max(0, activeNow - startedAt);
+  }
+  const completedAt = [turn.user, ...turn.entries].reduce<number | null>(
+    (latest, entry) =>
+      entry?.completedAt === undefined ? latest : Math.max(latest ?? 0, entry.completedAt),
+    null,
+  );
+  return completedAt === null ? null : Math.max(0, completedAt - startedAt);
+}
+
+function formatProcessingDuration(durationMs: number): string {
+  const seconds = Math.max(1, Math.round(durationMs / 1_000));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${seconds}s`;
+}
+
+function activityIcon(kind: TimelineEntry["kind"]): string {
+  return kind === "command"
+    ? "⌘"
+    : kind === "file"
+      ? "↗"
+      : kind === "reasoning"
+        ? "◇"
+        : kind === "error"
+          ? "!"
+          : "·";
+}
+
+function activityLabel(entry: TimelineEntry): string {
+  if (entry.kind === "command") {
+    return `运行命令 · ${entry.title}`;
+  }
+  if (entry.kind === "file") {
+    return "编辑文件";
+  }
+  if (entry.kind === "reasoning") {
+    return "查看思考过程";
+  }
+  return entry.title;
+}
+
+function activityStatus(status: string): string {
+  return status === "inProgress"
+    ? "进行中"
+    : status === "completed"
+      ? "已完成"
+      : status === "failed"
+        ? "失败"
+        : status === "interrupted"
+          ? "已停止"
+          : status === "accept" || status === "acceptForSession"
+            ? "已允许"
+            : status === "decline" || status === "cancel"
+              ? "已拒绝"
+              : status === "diagnostic"
+                ? "诊断"
+                : status;
 }
 
 function ApprovalCard({

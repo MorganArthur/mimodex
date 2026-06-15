@@ -65,6 +65,8 @@ export type TimelineEntry = {
   title: string;
   content: string;
   status: string | null;
+  startedAt?: number | undefined;
+  completedAt?: number | undefined;
 };
 
 export type PendingApproval = {
@@ -240,6 +242,7 @@ export class DesktopSessionController {
       title: "你",
       content: text,
       status: null,
+      startedAt: Date.now(),
     });
     this.#publish({
       projectPath: input.projectPath,
@@ -403,12 +406,21 @@ export class DesktopSessionController {
       case "turn/completed": {
         const turn = asRecord(params?.turn);
         const status = turnStatus(turn?.status);
+        const completedAt = Date.now();
+        const lastUserIndex = this.#state.timeline.findLastIndex((entry) => entry.kind === "user");
         this.#publish({
           turnStatus: status,
           turnId: stringValue(turn?.id) ?? this.#state.turnId,
-          timeline: this.#state.timeline.map((entry) =>
-            entry.status === "inProgress" ? { ...entry, status } : entry,
-          ),
+          timeline: this.#state.timeline.map((entry, index) => {
+            if (index < lastUserIndex) {
+              return entry;
+            }
+            return {
+              ...entry,
+              status: entry.status === "inProgress" ? status : entry.status,
+              completedAt,
+            };
+          }),
         });
         if (status !== "completed") {
           this.#append({
@@ -574,8 +586,13 @@ export class DesktopSessionController {
   }
 
   #replaceOrAppend(entry: TimelineEntry): void {
-    if (this.#state.timeline.some((item) => item.id === entry.id)) {
-      this.#replaceEntry(entry.id, entry);
+    const existing = this.#state.timeline.find((item) => item.id === entry.id);
+    if (existing) {
+      this.#replaceEntry(entry.id, {
+        ...entry,
+        startedAt: existing.startedAt ?? entry.startedAt,
+        completedAt: entry.completedAt ?? terminalTimestamp(entry.status) ?? existing.completedAt,
+      });
     } else {
       this.#append(entry);
     }
@@ -588,7 +605,16 @@ export class DesktopSessionController {
   }
 
   #append(entry: TimelineEntry): void {
-    this.#publish({ timeline: [...this.#state.timeline, entry] });
+    this.#publish({
+      timeline: [
+        ...this.#state.timeline,
+        {
+          ...entry,
+          startedAt: entry.startedAt ?? Date.now(),
+          completedAt: entry.completedAt ?? terminalTimestamp(entry.status) ?? undefined,
+        },
+      ],
+    });
   }
 
   #recordError(message: string): void {
@@ -663,6 +689,10 @@ function turnStatus(value: unknown): TurnStatus {
   return value === "completed" || value === "failed" || value === "inProgress" || value === "interrupted"
     ? value
     : "failed";
+}
+
+function terminalTimestamp(status: string | null): number | null {
+  return status && status !== "inProgress" ? Date.now() : null;
 }
 
 function approvalKind(method: string): PendingApproval["kind"] | null {

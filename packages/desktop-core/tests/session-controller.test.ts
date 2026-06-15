@@ -20,6 +20,7 @@ test("桌面会话服务连接 Runtime 并以默认模型启动首个任务", as
   assert.equal(session.getSnapshot().threadId, "thread-1");
   assert.equal(session.getSnapshot().turnId, "turn-1");
   assert.equal(session.getSnapshot().timeline[0]?.content, "修复失败测试");
+  assert.equal(typeof session.getSnapshot().timeline[0]?.startedAt, "number");
   assert.equal(runtime.threadStarts[0]?.cwd, "D:\\project");
   assert.equal(runtime.threadStarts[0]?.model, "mimo-v2.5");
   assert.equal(runtime.threadStarts[0]?.modelProvider, "mimo");
@@ -94,6 +95,33 @@ test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状
     totalTokens: 150,
     contextWindow: 131072,
   });
+});
+
+test("轮次完成时记录用户请求与输出的真实处理时间", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  await session.connect();
+  await session.startTask({
+    text: "检查处理时间",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+  });
+  runtime.emitNotification({
+    method: "item/agentMessage/delta",
+    params: { itemId: "message-duration", delta: "完成。" },
+  });
+  runtime.emitNotification({
+    method: "turn/completed",
+    params: { turn: { id: "turn-1", status: "completed" } },
+  });
+
+  const [user, assistant] = session.getSnapshot().timeline;
+  assert.equal(typeof user?.startedAt, "number");
+  assert.equal(typeof user?.completedAt, "number");
+  assert.equal(typeof assistant?.startedAt, "number");
+  assert.equal(typeof assistant?.completedAt, "number");
+  assert.ok((user?.completedAt ?? 0) >= (user?.startedAt ?? Number.MAX_SAFE_INTEGER));
 });
 
 test("桌面会话服务展示并回复 Runtime 审批请求", async () => {
