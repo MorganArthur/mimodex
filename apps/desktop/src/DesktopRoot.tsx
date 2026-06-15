@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 
 import type { DesktopSessionController, SessionState } from "@mimodex/desktop-core";
 import { App } from "./App.js";
+import { ConfirmationDialog } from "./ConfirmationDialog.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
+import { MIMO_MODEL_OPTIONS, PopupSelect, SANDBOX_OPTIONS } from "./PopupSelect.js";
 import type { ProjectService, ProjectState } from "./projects.js";
 import {
   type AppSettings,
@@ -762,19 +764,13 @@ function ProviderSettingsForm({
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnostic, setDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fullAccessWarningOpen, setFullAccessWarningOpen] = useState(false);
   useEffect(() => {
     setApiBaseUrl(settings.apiBaseUrl);
     setDefaultModel(settings.defaultModel);
     setDefaultSandbox(settings.defaultSandbox);
   }, [settings]);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (
-      defaultSandbox === "danger-full-access" &&
-      !window.confirm("确认将完全访问设为默认权限？Agent 将能够访问当前项目之外的内容。")
-    ) {
-      return;
-    }
+  const save = async () => {
     setSaving(true);
     setError(null);
     try {
@@ -784,6 +780,14 @@ function ProviderSettingsForm({
       setError(errorMessage(saveError));
       setSaving(false);
     }
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (defaultSandbox === "danger-full-access") {
+      setFullAccessWarningOpen(true);
+      return;
+    }
+    await save();
   };
   const diagnose = async () => {
     if (diagnosing) {
@@ -801,29 +805,46 @@ function ProviderSettingsForm({
     }
   };
   return (
-    <form className="credential-form provider-settings-form" onSubmit={(event) => void submit(event)}>
-      <SettingsFields
-        apiBaseUrl={apiBaseUrl}
-        defaultModel={defaultModel}
-        defaultSandbox={defaultSandbox}
-        onApiBaseUrlChange={setApiBaseUrl}
-        onDefaultModelChange={setDefaultModel}
-        onDefaultSandboxChange={setDefaultSandbox}
-      />
-      {error && <p className="form-error">{error}</p>}
-      <DiagnosticResult diagnostic={diagnostic} />
-      <button
-        className="credential-secondary"
-        disabled={diagnosing || saving}
-        type="button"
-        onClick={() => void diagnose()}
-      >
-        {diagnosing ? "正在测试连接…" : "测试端点与已保存 Key"}
-      </button>
-      <button className="credential-submit" disabled={saving} type="submit">
-        {saving ? "正在保存…" : "保存默认设置并重启"}
-      </button>
-    </form>
+    <>
+      <form className="credential-form provider-settings-form" onSubmit={(event) => void submit(event)}>
+        <SettingsFields
+          apiBaseUrl={apiBaseUrl}
+          defaultModel={defaultModel}
+          defaultSandbox={defaultSandbox}
+          onApiBaseUrlChange={setApiBaseUrl}
+          onDefaultModelChange={setDefaultModel}
+          onDefaultSandboxChange={setDefaultSandbox}
+        />
+        {error && <p className="form-error">{error}</p>}
+        <DiagnosticResult diagnostic={diagnostic} />
+        <button
+          className="credential-secondary"
+          disabled={diagnosing || saving}
+          type="button"
+          onClick={() => void diagnose()}
+        >
+          {diagnosing ? "正在测试连接…" : "测试端点与已保存 Key"}
+        </button>
+        <button className="credential-submit" disabled={saving} type="submit">
+          {saving ? "正在保存…" : "保存默认设置并重启"}
+        </button>
+      </form>
+      {fullAccessWarningOpen && (
+        <ConfirmationDialog
+          cancelLabel="返回设置"
+          confirmLabel="设为默认完全访问"
+          description="新线程将默认能够访问当前项目之外的文件并运行具有系统级副作用的命令。请只在明确需要时启用。"
+          eyebrow="高风险默认设置"
+          onCancel={() => setFullAccessWarningOpen(false)}
+          onConfirm={() => {
+            setFullAccessWarningOpen(false);
+            void save();
+          }}
+          title="将完全访问设为默认权限？"
+          tone="danger"
+        />
+      )}
+    </>
   );
 }
 
@@ -870,38 +891,33 @@ function SettingsFields({
         />
         <small>自定义端点会收到你的 API Key 与任务上下文，请仅使用可信服务。</small>
       </label>
-      <label>
+      <div className="settings-field">
         <span>默认模型</span>
-        <select
-          aria-label="默认模型"
+        <PopupSelect
+          ariaLabel="默认模型"
+          className="settings-popup-select"
+          label="默认模型"
+          options={MIMO_MODEL_OPTIONS}
           value={defaultModel}
-          onChange={(event) =>
-            onDefaultModelChange(event.target.value as AppSettings["defaultModel"])
-          }
-        >
-          <option value="mimo-v2.5">mimo-v2.5</option>
-          <option value="mimo-v2.5-pro">mimo-v2.5-pro（高级）</option>
-        </select>
-      </label>
-      <label>
+          onChange={(next) => onDefaultModelChange(next as AppSettings["defaultModel"])}
+        />
+      </div>
+      <div className="settings-field">
         <span>默认权限</span>
-        <select
-          aria-label="默认权限"
+        <PopupSelect
+          ariaLabel="默认权限"
+          className="settings-popup-select"
+          label="默认权限"
+          options={SANDBOX_OPTIONS}
           value={defaultSandbox}
-          onChange={(event) =>
-            onDefaultSandboxChange(event.target.value as AppSettings["defaultSandbox"])
-          }
-        >
-          <option value="read-only">只读</option>
-          <option value="workspace-write">工作区写入</option>
-          <option value="danger-full-access">完全访问</option>
-        </select>
+          onChange={(next) => onDefaultSandboxChange(next as AppSettings["defaultSandbox"])}
+        />
         {defaultSandbox === "danger-full-access" && (
           <small className="danger-setting-note">
             完全访问允许 Agent 访问项目外内容并运行具有系统级副作用的命令。
           </small>
         )}
-      </label>
+      </div>
     </>
   );
 }

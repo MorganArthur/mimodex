@@ -7,7 +7,9 @@ import {
   type SessionState,
   type TimelineEntry,
 } from "@mimodex/desktop-core";
+import { ConfirmationDialog } from "./ConfirmationDialog.js";
 import { parseUnifiedDiff, type DiffFile } from "./diff.js";
+import { MIMO_MODEL_OPTIONS, PopupSelect, SANDBOX_OPTIONS } from "./PopupSelect.js";
 import type { ProjectSummary } from "./projects.js";
 import type { AppSettings } from "./settings.js";
 import type { ThreadActivityEvent, ThreadRecord } from "./threads.js";
@@ -69,6 +71,7 @@ export function App({
   const [sandbox, setSandbox] = useState<"danger-full-access" | "read-only" | "workspace-write">(
     settings.defaultSandbox,
   );
+  const [deleteThreadTarget, setDeleteThreadTarget] = useState<ThreadRecord | null>(null);
   const [fullAccessWarningOpen, setFullAccessWarningOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -230,15 +233,7 @@ export function App({
                   archived
                   disabled={threadBusy || state.turnStatus === "inProgress"}
                   key={thread.id}
-                  onDelete={() => {
-                    if (
-                      window.confirm(
-                        `移除线程“${thread.title}”的 Mimodex 本地索引？Runtime 归档历史仍会保留。`,
-                      )
-                    ) {
-                      void onDeleteThread(thread.id);
-                    }
-                  }}
+                  onDelete={() => setDeleteThreadTarget(thread)}
                   onRestore={() => void onSetThreadArchived(thread.id, false)}
                   thread={thread}
                 />
@@ -324,28 +319,21 @@ export function App({
                   {currentProject?.path ?? "请先添加项目"}
                 </strong>
               </label>
-              <label>
-                <span>权限</span>
-                <select
-                  aria-label="权限模式"
-                  value={sandbox}
-                  onChange={(event) => {
-                    const next = event.target.value as
-                      | "danger-full-access"
-                      | "read-only"
-                      | "workspace-write";
-                    if (next === "danger-full-access" && sandbox !== "danger-full-access") {
-                      setFullAccessWarningOpen(true);
-                    } else {
-                      setSandbox(next);
-                    }
-                  }}
-                >
-                  <option value="read-only">只读</option>
-                  <option value="workspace-write">工作区写入</option>
-                  <option value="danger-full-access">完全访问</option>
-                </select>
-              </label>
+              <PopupSelect
+                ariaLabel="权限模式"
+                className="composer-popup-select sandbox-popup-select"
+                label="权限"
+                options={SANDBOX_OPTIONS}
+                placement="top"
+                value={sandbox}
+                onChange={(next) => {
+                  if (next === "danger-full-access" && sandbox !== "danger-full-access") {
+                    setFullAccessWarningOpen(true);
+                  } else {
+                    setSandbox(next as typeof sandbox);
+                  }
+                }}
+              />
               <ModelPicker model={model} onChange={setModel} />
             </div>
             <button
@@ -433,12 +421,33 @@ export function App({
         </section>
       </aside>
       {fullAccessWarningOpen && (
-        <FullAccessWarning
+        <ConfirmationDialog
+          cancelLabel="保持工作区写入"
+          confirmLabel="确认启用完全访问"
+          description="Agent 将能够访问当前项目之外的文件并运行具有系统级副作用的命令。请只在明确需要时启用，并仔细审阅每项操作。"
+          eyebrow="高风险权限"
           onCancel={() => setFullAccessWarningOpen(false)}
           onConfirm={() => {
             setSandbox("danger-full-access");
             setFullAccessWarningOpen(false);
           }}
+          title="启用完全访问？"
+          tone="danger"
+        />
+      )}
+      {deleteThreadTarget && (
+        <ConfirmationDialog
+          cancelLabel="保留索引"
+          confirmLabel="移除本地索引"
+          description={`将移除线程“${deleteThreadTarget.title}”的 Mimodex 本地索引，Runtime 归档历史仍会保留。`}
+          eyebrow="线程管理"
+          onCancel={() => setDeleteThreadTarget(null)}
+          onConfirm={() => {
+            void onDeleteThread(deleteThreadTarget.id);
+            setDeleteThreadTarget(null);
+          }}
+          title="移除本地线程索引？"
+          tone="danger"
         />
       )}
     </div>
@@ -959,36 +968,6 @@ function RuntimeErrorCard({
   );
 }
 
-function FullAccessWarning({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <div className="settings-backdrop full-access-backdrop" role="presentation">
-      <section
-        aria-label="启用完全访问"
-        aria-modal="true"
-        className="full-access-dialog"
-        role="dialog"
-      >
-        <p className="eyebrow">高风险权限</p>
-        <h2>启用完全访问？</h2>
-        <p>
-          Agent 将能够访问当前项目之外的文件并运行具有系统级副作用的命令。请只在明确需要时启用，
-          并仔细审阅每项操作。
-        </p>
-        <div>
-          <button type="button" onClick={onCancel}>保持工作区写入</button>
-          <button className="danger-confirm" type="button" onClick={onConfirm}>确认启用完全访问</button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function ModelPicker({
   model,
   onChange,
@@ -997,31 +976,15 @@ function ModelPicker({
   onChange: (model: "mimo-v2.5" | "mimo-v2.5-pro") => void;
 }) {
   return (
-    <details className="model-picker">
-      <summary>
-        <span>模型</span>
-        <strong>{model}</strong>
-      </summary>
-      <div className="model-popover">
-        <button
-          className={model === "mimo-v2.5" ? "selected" : ""}
-          type="button"
-          onClick={() => onChange("mimo-v2.5")}
-        >
-          <strong>mimo-v2.5</strong>
-          <span>默认模型，适合日常编程任务</span>
-        </button>
-        <div className="advanced-label">高级模型</div>
-        <button
-          className={model === "mimo-v2.5-pro" ? "selected" : ""}
-          type="button"
-          onClick={() => onChange("mimo-v2.5-pro")}
-        >
-          <strong>mimo-v2.5-pro</strong>
-          <span>复杂任务与更深推理</span>
-        </button>
-      </div>
-    </details>
+    <PopupSelect
+      ariaLabel="模型"
+      className="composer-popup-select model-picker"
+      label="模型"
+      options={MIMO_MODEL_OPTIONS}
+      placement="top"
+      value={model}
+      onChange={(next) => onChange(next as typeof model)}
+    />
   );
 }
 

@@ -58,7 +58,7 @@ describe("Mimodex 桌面壳", () => {
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
     expect(screen.getAllByText("mimo-v2.5").length).toBeGreaterThan(0);
 
-    await user.click(screen.getByText("mimo-v2.5", { selector: "summary strong" }));
+    await user.click(screen.getByLabelText("模型"));
     expect(screen.getByText("高级模型")).toBeTruthy();
     expect(screen.getByText("mimo-v2.5-pro")).toBeTruthy();
   });
@@ -225,8 +225,10 @@ describe("Mimodex 桌面壳", () => {
     await user.click(await screen.findByRole("button", { name: "打开设置" }));
     await user.clear(screen.getByLabelText("API Base URL"));
     await user.type(screen.getByLabelText("API Base URL"), "https://gateway.example.com/v1/");
-    await user.selectOptions(screen.getByLabelText("默认模型"), "mimo-v2.5-pro");
-    await user.selectOptions(screen.getByLabelText("默认权限"), "read-only");
+    await user.click(screen.getByLabelText("默认模型"));
+    await user.click(screen.getByRole("option", { name: /mimo-v2.5-pro/ }));
+    await user.click(screen.getByLabelText("默认权限"));
+    await user.click(screen.getByRole("option", { name: /只读/ }));
     await user.click(screen.getByRole("button", { name: "保存默认设置并重启" }));
 
     await waitFor(() =>
@@ -261,20 +263,51 @@ describe("Mimodex 桌面壳", () => {
     expect(settings.diagnosed).toHaveLength(1);
   });
 
+  it("将完全访问设为默认权限前使用应用内确认框", async () => {
+    const settings = new FakeSettingsService();
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService()}
+        settingsService={settings}
+        threadService={new FakeThreadService()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByLabelText("默认权限"));
+    await user.click(screen.getByRole("option", { name: /完全访问/ }));
+    await user.click(screen.getByRole("button", { name: "保存默认设置并重启" }));
+
+    expect(screen.getByRole("dialog", { name: "将完全访问设为默认权限？" })).toBeTruthy();
+    expect(settings.saved).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "设为默认完全访问" }));
+    await waitFor(() =>
+      expect(settings.saved).toEqual([
+        {
+          ...DEFAULT_APP_SETTINGS,
+          defaultSandbox: "danger-full-access",
+        },
+      ]),
+    );
+  });
+
   it("启用完全访问前要求明确确认", async () => {
     const runtime = new UiRuntime();
     const user = userEvent.setup();
     renderApp(runtime);
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
 
-    await user.selectOptions(screen.getByLabelText("权限模式"), "danger-full-access");
-    expect(screen.getByRole("dialog", { name: "启用完全访问" })).toBeTruthy();
-    expect((screen.getByLabelText("权限模式") as HTMLSelectElement).value).toBe("workspace-write");
+    await user.click(screen.getByLabelText("权限模式"));
+    await user.click(screen.getByRole("option", { name: /完全访问/ }));
+    expect(screen.getByRole("dialog", { name: "启用完全访问？" })).toBeTruthy();
+    expect(screen.getByLabelText("权限模式").textContent).toContain("工作区写入");
 
     await user.click(screen.getByRole("button", { name: "确认启用完全访问" }));
-    expect((screen.getByLabelText("权限模式") as HTMLSelectElement).value).toBe(
-      "danger-full-access",
-    );
+    expect(screen.getByLabelText("权限模式").textContent).toContain("完全访问");
     expect(screen.getByText("完全访问", { selector: ".danger-pill" })).toBeTruthy();
   });
 
@@ -569,7 +602,6 @@ diff --git a/src/app.ts b/src/app.ts
     const runtime = new UiRuntime();
     const threads = new FakeThreadService([fixtureThread()]);
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <DesktopRoot
         credentialService={new FakeCredentialService(true)}
@@ -590,9 +622,10 @@ diff --git a/src/app.ts b/src/app.ts
     await user.click(screen.getByRole("button", { name: "归档线程 修复历史测试" }));
     await user.click(screen.getByText("已归档线程 · 1"));
     await user.click(screen.getByRole("button", { name: "移除本地线程索引 修复历史测试" }));
+    expect(screen.getByRole("dialog", { name: "移除本地线程索引？" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "移除本地索引" }));
 
     await waitFor(() => expect(threads.deletedIds).toEqual(["thread-history"]));
-    expect(confirm).toHaveBeenCalledOnce();
   });
 
   it("将 Runtime 原始协议事件批量写入线程服务并实时展示活动", async () => {
