@@ -57,10 +57,16 @@ describe("Mimodex 桌面壳", () => {
 
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
     expect(screen.getAllByText("mimo-v2.5").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("模型选项").getAttribute("aria-hidden")).toBe("true");
 
     await user.click(screen.getByLabelText("模型"));
+    expect(screen.getByLabelText("模型选项").getAttribute("aria-hidden")).toBe("false");
     expect(screen.getByText("高级模型")).toBeTruthy();
     expect(screen.getByText("mimo-v2.5-pro")).toBeTruthy();
+
+    await user.click(screen.getByRole("option", { name: /mimo-v2.5-pro/ }));
+    expect(screen.getByLabelText("模型选项").getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByLabelText("模型").textContent).toContain("mimo-v2.5-pro");
   });
 
   it("提交任务并处理命令审批", async () => {

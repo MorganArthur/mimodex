@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 
 import {
   type ApprovalDecision,
@@ -660,7 +668,7 @@ function formatTokens(value: number | null | undefined): string {
   return value === null || value === undefined ? "等待统计" : value.toLocaleString("zh-CN");
 }
 
-function DiffPanel({
+const DiffPanel = memo(function DiffPanel({
   currentProject,
   diffCount,
   diffFiles,
@@ -701,9 +709,9 @@ function DiffPanel({
       )}
     </section>
   );
-}
+});
 
-function ActivityPanel({
+const ActivityPanel = memo(function ActivityPanel({
   error,
   events,
 }: {
@@ -748,7 +756,7 @@ function ActivityPanel({
       )}
     </section>
   );
-}
+});
 
 function activityKindLabel(kind: ThreadActivityEvent["protocol"]["kind"]): string {
   return kind === "request" ? "请求" : kind === "response" ? "响应" : "通知";
@@ -767,7 +775,7 @@ type TimelineTurn = {
   user: TimelineEntry | null;
 };
 
-function Timeline({
+const Timeline = memo(function Timeline({
   entries,
   turnStatus,
 }: {
@@ -820,9 +828,9 @@ function Timeline({
       })}
     </div>
   );
-}
+});
 
-function TimelineActivity({ entry }: { entry: TimelineEntry }) {
+const TimelineActivity = memo(function TimelineActivity({ entry }: { entry: TimelineEntry }) {
   return (
     <details className={`timeline-activity ${entry.kind}`}>
       <summary>
@@ -833,7 +841,7 @@ function TimelineActivity({ entry }: { entry: TimelineEntry }) {
       {entry.content && <pre>{entry.content}</pre>}
     </details>
   );
-}
+});
 
 function groupTimeline(entries: readonly TimelineEntry[]): TimelineTurn[] {
   const turns: TimelineTurn[] = [];
@@ -968,7 +976,7 @@ function RuntimeErrorCard({
   );
 }
 
-function ModelPicker({
+const ModelPicker = memo(function ModelPicker({
   model,
   onChange,
 }: {
@@ -986,7 +994,7 @@ function ModelPicker({
       onChange={(next) => onChange(next as typeof model)}
     />
   );
-}
+});
 
 function sandboxLabel(sandbox: "danger-full-access" | "read-only" | "workspace-write"): string {
   return sandbox === "read-only" ? "只读模式" : sandbox === "workspace-write" ? "工作区写入" : "完全访问";

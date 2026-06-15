@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 
 export type PopupSelectOption = {
   description?: string;
@@ -92,37 +92,41 @@ export function PopupSelect({
         <span>{label}</span>
         <strong>{selected?.label ?? value}</strong>
       </button>
-      {open && (
-        <div aria-label={`${ariaLabel}选项`} className="popup-select-menu" role="listbox">
-          {options.map((option) => {
-            const showGroup = option.group && option.group !== previousGroup;
-            previousGroup = option.group;
-            return (
-              <div className="popup-select-option-group" key={option.value}>
-                {showGroup && <div className="popup-select-group-label">{option.group}</div>}
-                <button
-                  aria-selected={option.value === value}
-                  className={[option.value === value ? "selected" : "", option.tone ?? ""]
-                    .filter(Boolean)
-                    .join(" ")}
-                  role="option"
-                  type="button"
-                  onClick={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="popup-select-option-copy">
-                    <strong>{option.label}</strong>
-                    {option.description && <small>{option.description}</small>}
-                  </span>
-                  <span aria-hidden="true" className="popup-select-check">✓</span>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div
+        aria-hidden={!open}
+        aria-label={`${ariaLabel}选项`}
+        className="popup-select-menu"
+        role="listbox"
+      >
+        {options.map((option) => {
+          const showGroup = option.group && option.group !== previousGroup;
+          previousGroup = option.group;
+          return (
+            <div className="popup-select-option-group" key={option.value}>
+              {showGroup && <div className="popup-select-group-label">{option.group}</div>}
+              <button
+                aria-selected={option.value === value}
+                className={[option.value === value ? "selected" : "", option.tone ?? ""]
+                  .filter(Boolean)
+                  .join(" ")}
+                role="option"
+                tabIndex={open ? 0 : -1}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  startTransition(() => onChange(option.value));
+                }}
+              >
+                <span className="popup-select-option-copy">
+                  <strong>{option.label}</strong>
+                  {option.description && <small>{option.description}</small>}
+                </span>
+                <span aria-hidden="true" className="popup-select-check">✓</span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

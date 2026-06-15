@@ -1372,13 +1372,23 @@ button {
   position: absolute;
   left: 0;
   z-index: 30;
+  visibility: hidden;
+  contain: layout style;
   width: max(100%, 235px);
   padding: 7px;
+  pointer-events: none;
+  opacity: 0;
   background: #fcfbf8;
   border: 1px solid #d6d2c8;
   border-radius: 12px;
   box-shadow: 0 16px 38px rgba(50, 49, 44, 0.18);
-  animation: popup-select-in 120ms ease-out;
+  will-change: opacity;
+}
+
+.popup-select.open .popup-select-menu {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
 }
 
 .popup-select-top .popup-select-menu {
@@ -1466,17 +1476,6 @@ button {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-}
-
-@keyframes popup-select-in {
-  from {
-    opacity: 0;
-    transform: translateY(3px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .context-panel {
