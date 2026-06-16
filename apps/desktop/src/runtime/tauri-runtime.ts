@@ -116,7 +116,7 @@ export function createTauriRuntimeClient(): MimodexRuntimeClient {
   return new MimodexRuntimeClient(
     new ProcessRuntimeTransport(new TauriRuntimeProcessPort()),
     {
-      clientVersion: "0.1.3",
+      clientVersion: "0.1.4",
       experimentalApi: true,
       requestTimeoutMs: 60_000,
     },
