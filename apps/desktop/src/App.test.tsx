@@ -636,14 +636,14 @@ diff --git a/src/app.ts b/src/app.ts
             reasoningOutputTokens: 24,
             totalTokens: 1024,
           },
-          modelContextWindow: 131072,
+          modelContextWindow: 1_000_000,
         },
       },
     });
 
     expect(await screen.findByText("1,024")).toBeTruthy();
     expect(screen.getByText("上下文占用")).toBeTruthy();
-    expect(screen.getByText("1,024 / 131,072 (<1%)")).toBeTruthy();
+    expect(screen.getByText("1,024 / 1,000,000 (<1%)")).toBeTruthy();
     expect(screen.getByText("自动压缩")).toBeTruthy();
     expect(screen.getByText("监测中")).toBeTruthy();
     expect(screen.queryByText("上下文窗口")).toBeNull();

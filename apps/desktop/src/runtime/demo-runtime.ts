@@ -239,7 +239,7 @@ export class DemoRuntimeClient implements RuntimeClientPort {
             reasoningOutputTokens: 96,
             totalTokens: 1740,
           },
-          modelContextWindow: 131072,
+          modelContextWindow: 1_000_000,
         },
       }),
     );

@@ -635,16 +635,17 @@ index bfe8ebe..ae4534e 100644
      model.additional_speed_tiers.clear();
      model.service_tiers.clear();
      model.default_service_tier = None;
-@@ -73,7 +73,7 @@ fn apply_mimo_capabilities(model: &mut ModelInfo) {
+@@ -73,8 +73,8 @@ fn apply_mimo_capabilities(model: &mut ModelInfo) {
      model.support_verbosity = false;
      model.default_verbosity = None;
      model.apply_patch_tool_type = None;
 -    model.supports_parallel_tool_calls = false;
 +    model.supports_parallel_tool_calls = true;
      model.supports_image_detail_original = false;
-     model.context_window = None;
-     model.max_context_window = None;
-@@ -111,11 +111,11 @@ mod tests {
+     model.context_window = Some(MIMO_CONTEXT_WINDOW);
+     model.max_context_window = Some(MIMO_CONTEXT_WINDOW);
+     model.effective_context_window_percent = 100;
+@@ -111,17 +111,17 @@ mod tests {
      }
  
      #[test]
@@ -658,4 +659,10 @@ index bfe8ebe..ae4534e 100644
 +            assert!(model.supports_parallel_tool_calls);
              assert_eq!(model.input_modalities, vec![InputModality::Text]);
              assert!(model.service_tiers.is_empty());
-             assert!(model.context_window.is_none());
+             assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
+             assert_eq!(model.max_context_window, Some(MIMO_CONTEXT_WINDOW));
+             assert_eq!(model.effective_context_window_percent, 100);
+             assert_eq!(model.base_instructions, BASE_INSTRUCTIONS);
+         }
+     }
+ }

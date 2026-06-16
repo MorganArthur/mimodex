@@ -549,7 +549,7 @@ new file mode 100644
 index 0000000..bfe8ebe
 --- /dev/null
 +++ b/codex-rs/model-provider/src/mimo/catalog.rs
-@@ -0,0 +1,125 @@
+@@ -0,0 +1,129 @@
 +use codex_models_manager::bundled_models_response;
 +use codex_models_manager::model_info::BASE_INSTRUCTIONS;
 +use codex_protocol::openai_models::ConfigShellToolType;
@@ -560,6 +560,7 @@ index 0000000..bfe8ebe
 +
 +pub(crate) const MIMO_DEFAULT_MODEL_ID: &str = "mimo-v2.5";
 +pub(crate) const MIMO_PRO_MODEL_ID: &str = "mimo-v2.5-pro";
++const MIMO_CONTEXT_WINDOW: i64 = 1_000_000;
 +const BASE_MODEL_ID: &str = "gpt-5.4";
 +
 +pub(crate) fn static_model_catalog() -> ModelsResponse {
@@ -627,8 +628,9 @@ index 0000000..bfe8ebe
 +    model.apply_patch_tool_type = None;
 +    model.supports_parallel_tool_calls = false;
 +    model.supports_image_detail_original = false;
-+    model.context_window = None;
-+    model.max_context_window = None;
++    model.context_window = Some(MIMO_CONTEXT_WINDOW);
++    model.max_context_window = Some(MIMO_CONTEXT_WINDOW);
++    model.effective_context_window_percent = 100;
 +    model.auto_compact_token_limit = None;
 +    model.experimental_supported_tools.clear();
 +    model.input_modalities = vec![InputModality::Text];
@@ -670,7 +672,9 @@ index 0000000..bfe8ebe
 +            assert!(!model.supports_parallel_tool_calls);
 +            assert_eq!(model.input_modalities, vec![InputModality::Text]);
 +            assert!(model.service_tiers.is_empty());
-+            assert!(model.context_window.is_none());
++            assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
++            assert_eq!(model.max_context_window, Some(MIMO_CONTEXT_WINDOW));
++            assert_eq!(model.effective_context_window_percent, 100);
 +            assert_eq!(model.base_instructions, BASE_INSTRUCTIONS);
 +        }
 +    }

@@ -51,9 +51,10 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
  use codex_protocol::openai_models::ConfigShellToolType;
  use codex_protocol::openai_models::InputModality;
  use codex_protocol::openai_models::ModelInfo;
-@@ -9,6 +8,11 @@
+@@ -9,7 +8,12 @@
  pub(crate) const MIMO_DEFAULT_MODEL_ID: &str = "mimo-v2.5";
  pub(crate) const MIMO_PRO_MODEL_ID: &str = "mimo-v2.5-pro";
+ const MIMO_CONTEXT_WINDOW: i64 = 1_000_000;
  const BASE_MODEL_ID: &str = "gpt-5.4";
 +const MIMO_BASE_INSTRUCTIONS: &str = r#"You are MiMo, an AI assistant developed by Xiaomi, operating as the coding agent inside the Mimodex desktop application.
 +
@@ -72,10 +73,12 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
      model.model_messages = None;
      model.supports_reasoning_summaries = false;
      model.support_verbosity = false;
-@@ -119,7 +123,12 @@
+@@ -119,9 +123,14 @@
              assert_eq!(model.input_modalities, vec![InputModality::Text]);
              assert!(model.service_tiers.is_empty());
-             assert!(model.context_window.is_none());
+             assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
+             assert_eq!(model.max_context_window, Some(MIMO_CONTEXT_WINDOW));
+             assert_eq!(model.effective_context_window_percent, 100);
 -            assert_eq!(model.base_instructions, BASE_INSTRUCTIONS);
 +            assert_eq!(model.base_instructions, MIMO_BASE_INSTRUCTIONS);
 +            assert!(model.base_instructions.contains("You are MiMo"));
