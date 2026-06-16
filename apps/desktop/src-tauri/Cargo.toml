@@ -1,6 +1,6 @@
 [package]
 name = "mimodex"
-version = "0.1.1"
+version = "0.1.2"
 description = "MiMo 驱动的本地优先桌面编程 Agent"
 authors = ["Mimodex contributors"]
 edition = "2024"

@@ -1,6 +1,6 @@
 {
   "name": "@mimodex/desktop-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,6 +11,6 @@
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@mimodex/runtime-client": "0.1.1"
+    "@mimodex/runtime-client": "0.1.2"
   }
 }
