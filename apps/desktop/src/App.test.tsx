@@ -642,7 +642,11 @@ diff --git a/src/app.ts b/src/app.ts
     });
 
     expect(await screen.findByText("1,024")).toBeTruthy();
-    expect(screen.getByText("131,072")).toBeTruthy();
+    expect(screen.getByText("上下文占用")).toBeTruthy();
+    expect(screen.getByText("1,024 / 131,072 (<1%)")).toBeTruthy();
+    expect(screen.getByText("自动压缩")).toBeTruthy();
+    expect(screen.getByText("监测中")).toBeTruthy();
+    expect(screen.queryByText("上下文窗口")).toBeNull();
   });
 
   it("任务完成后自动静默刷新 Git 状态", async () => {

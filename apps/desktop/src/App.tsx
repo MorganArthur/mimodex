@@ -428,12 +428,14 @@ export function App({
             <div><dt>模型</dt><dd>{state.model}</dd></div>
             <div><dt>线程</dt><dd>{state.threadId ? "已创建" : "待创建"}</dd></div>
             <div><dt>Token 总量</dt><dd>{formatTokens(state.tokenUsage?.totalTokens)}</dd></div>
-            <div><dt>上下文压缩</dt><dd>{contextCompactionLabel(state.contextCompaction)}</dd></div>
+            {state.tokenUsage && (
+              <div><dt>上下文占用</dt><dd>{formatContextUsage(state.tokenUsage)}</dd></div>
+            )}
+            <div><dt>自动压缩</dt><dd>{contextCompactionLabel(state.contextCompaction)}</dd></div>
             {state.tokenUsage && (
               <>
                 <div><dt>输入 / 输出</dt><dd>{formatTokens(state.tokenUsage.inputTokens)} / {formatTokens(state.tokenUsage.outputTokens)}</dd></div>
                 <div><dt>缓存 / 推理</dt><dd>{formatTokens(state.tokenUsage.cachedInputTokens)} / {formatTokens(state.tokenUsage.reasoningOutputTokens)}</dd></div>
-                <div><dt>上下文窗口</dt><dd>{formatTokens(state.tokenUsage.contextWindow)}</dd></div>
               </>
             )}
           </dl>
@@ -681,20 +683,32 @@ function formatTokens(value: number | null | undefined): string {
   return value === null || value === undefined ? "等待统计" : value.toLocaleString("zh-CN");
 }
 
+function formatContextUsage(usage: NonNullable<SessionState["tokenUsage"]>): string {
+  if (!usage.contextWindow || usage.contextWindow <= 0) {
+    return `${formatTokens(usage.totalTokens)} / 未知容量`;
+  }
+  const ratio = usage.totalTokens / usage.contextWindow;
+  const percent =
+    ratio <= 0
+      ? "0%"
+      : ratio < 0.01
+        ? "<1%"
+        : `${Math.round(ratio * 100).toLocaleString("zh-CN")}%`;
+  return `${formatTokens(usage.totalTokens)} / ${formatTokens(usage.contextWindow)} (${percent})`;
+}
+
 function contextCompactionLabel(compaction: SessionState["contextCompaction"]): string {
-  const ratio =
-    compaction.ratio === null ? "" : ` · ${Math.round(compaction.ratio * 100).toLocaleString("zh-CN")}%`;
   if (!compaction.enabled) {
     return "未启用";
   }
   if (compaction.status === "pending") {
-    return `下次提交前自动压缩${ratio}`;
+    return "下次提交前自动压缩";
   }
   if (compaction.status === "injected") {
-    return `本轮已注入压缩${ratio}`;
+    return "本轮已注入压缩";
   }
   if (compaction.status === "watching") {
-    return `监测中${ratio}`;
+    return "监测中";
   }
   return "等待统计";
 }
