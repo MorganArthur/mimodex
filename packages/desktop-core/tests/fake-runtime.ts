@@ -22,6 +22,7 @@ import type {
 import type { RuntimeClientPort } from "../src/index.js";
 
 export class FakeRuntimeClient implements RuntimeClientPort {
+  initializeBarrier: Promise<void> | null = null;
   resumeError: Error | null = null;
   readonly threadStarts: ThreadStartParams[] = [];
   readonly threadResumes: ThreadResumeParams[] = [];
@@ -39,6 +40,7 @@ export class FakeRuntimeClient implements RuntimeClientPort {
   >();
 
   async initialize(): Promise<InitializeResponse> {
+    await this.initializeBarrier;
     return {
       userAgent: "mimodex-test",
       codexHome: "C:\\mimodex",

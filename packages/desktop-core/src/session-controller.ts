@@ -209,6 +209,7 @@ export class DesktopSessionController {
   readonly #protocolSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   readonly #pendingProtocolEvents: RuntimeProtocolEvent[] = [];
   #state: SessionState = initialState;
+  #connectPromise: Promise<void> | null = null;
   #entrySequence = 0;
 
   constructor(runtime: RuntimeClientPort) {
@@ -238,22 +239,15 @@ export class DesktopSessionController {
   };
 
   async connect(): Promise<void> {
-    if (this.#state.connection === "ready" || this.#state.connection === "connecting") {
+    if (this.#state.connection === "ready") {
       return;
     }
-    this.#publish({ connection: "connecting", error: null, structuredError: null });
-    try {
-      const runtime = await this.#runtime.initialize();
-      this.#publish({
-        connection: "ready",
-        platform: runtime.platformOs,
-        error: null,
-        structuredError: null,
-      });
-    } catch (error) {
-      this.#disconnect(errorMessage(error));
-      throw error;
+    if (this.#connectPromise) {
+      return this.#connectPromise;
     }
+    this.#publish({ connection: "connecting", error: null, structuredError: null });
+    this.#connectPromise = this.#initializeRuntime();
+    return this.#connectPromise;
   }
 
   async startTask(input: StartTaskInput): Promise<void> {
@@ -443,6 +437,23 @@ export class DesktopSessionController {
       unsubscribe();
     }
     await this.#runtime.close();
+  }
+
+  async #initializeRuntime(): Promise<void> {
+    try {
+      const runtime = await this.#runtime.initialize();
+      this.#publish({
+        connection: "ready",
+        platform: runtime.platformOs,
+        error: null,
+        structuredError: null,
+      });
+    } catch (error) {
+      this.#disconnect(errorMessage(error));
+      throw error;
+    } finally {
+      this.#connectPromise = null;
+    }
   }
 
   #handleNotification(notification: ServerNotification): void {
