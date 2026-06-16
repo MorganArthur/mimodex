@@ -4,9 +4,9 @@
 - 最后更新：2026-06-16
 - 适用版本：Mimodex `v0.1.1` Windows Pre-release
 - 目标：确认安装包、MiMo Provider、权限边界、项目与线程持久化满足私测条件
-- 当前构建：待 `v0.1.1` Release workflow 完成后更新
+- 当前构建：[Windows Release #27585747825](https://github.com/MorganArthur/mimodex/actions/runs/27585747825)
 - 当前下载：[Mimodex v0.1.1](https://github.com/MorganArthur/mimodex/releases/tag/v0.1.1)
-- 当前 SHA256：待 `v0.1.1` Release workflow 完成后更新
+- 当前 SHA256：`EE181BE4E4DB8C1D8B74091CEE391C9067A6916092940820BF1CF5175E61B003`
 
 ## 1. 验收记录
 

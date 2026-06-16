@@ -66,7 +66,7 @@ Mimodex 参考 Codex 桌面端的核心工作方式：
 MiMo Provider 技术验证、Runtime 工具闭环、桌面流式交互、项目与 Git、线程恢复、
 SQLite 事件账本、设置诊断和持久化活动审计均已实现。当前可下载版本为
 [Mimodex v0.1.1 Windows Pre-release](https://github.com/MorganArthur/mimodex/releases/tag/v0.1.1)，
-未签名 NSIS 安装包。
+未签名 NSIS 安装包大小为 `57.87 MiB`。
 
 仓库已建立 `v*` 标签触发的 Windows Release 工作流，可将未签名 NSIS 安装包与
 SHA256 文件发布为 GitHub Pre-release；稳定公开发布仍需后续接入代码签名。
