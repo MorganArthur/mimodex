@@ -26,6 +26,18 @@ export type DesktopRootProps = {
   threadService: ThreadService;
 };
 
+type ManagedSession = {
+  disposed: boolean;
+  flushTimer: ReturnType<typeof setTimeout> | null;
+  pendingEvents: Parameters<ThreadService["appendRuntimeEvents"]>[0];
+  persistTimer: ReturnType<typeof setTimeout> | null;
+  previousTurnStatus: SessionState["turnStatus"];
+  session: DesktopSessionController;
+  unsubscribeEvents: () => void;
+  unsubscribeState: () => void;
+  writeQueue: Promise<void>;
+};
+
 export function DesktopRoot({
   credentialService,
   createSession,
@@ -47,7 +59,21 @@ export function DesktopRoot({
   const [threadBusy, setThreadBusy] = useState(false);
   const [activityEvents, setActivityEvents] = useState<ThreadActivityEvent[]>([]);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const activityThreadIdRef = useRef<string | null>(null);
+  const managedSessionsRef = useRef(new Map<DesktopSessionController, ManagedSession>());
   const projectRefreshInFlight = useRef(false);
+  const projectStateRef = useRef<ProjectState | null>(null);
+  const selectedSessionRef = useRef<DesktopSessionController | null>(null);
+  const sessionByThreadIdRef = useRef(new Map<string, DesktopSessionController>());
+  const threadStateRef = useRef<ThreadState | null>(null);
+
+  useEffect(() => {
+    projectStateRef.current = projectState;
+  }, [projectState]);
+
+  useEffect(() => {
+    threadStateRef.current = threadState;
+  }, [threadState]);
 
   useEffect(() => {
     void settingsService
@@ -62,18 +88,6 @@ export function DesktopRoot({
       .then(setCredentialStatus)
       .catch((error) => setCredentialError(errorMessage(error)));
   }, [credentialService]);
-
-  useEffect(() => {
-    if (!credentialStatus?.configured || !settings) {
-      return;
-    }
-    const nextSession = createSession();
-    setSession(nextSession);
-    return () => {
-      setSession(null);
-      void nextSession.close();
-    };
-  }, [createSession, credentialStatus?.configured, settings]);
 
   useEffect(() => {
     if (!credentialStatus?.configured) {
@@ -95,140 +109,198 @@ export function DesktopRoot({
       .catch((error) => setThreadError(errorMessage(error)));
   }, [credentialStatus?.configured, threadService]);
 
-  useEffect(() => {
-    if (!session || !projectState) {
+  const syncSelectedActivity = useCallback((force = false) => {
+    const threadId = selectedSessionRef.current?.getSnapshot().threadId ?? null;
+    if (!force && threadId === activityThreadIdRef.current) {
       return;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let disposed = false;
-    const persistSnapshot = () => {
-      const state = session.getSnapshot();
-      const project = projectState.projects.find((candidate) =>
+    activityThreadIdRef.current = threadId;
+    setActivityError(null);
+    if (!threadId) {
+      setActivityEvents([]);
+      return;
+    }
+    setActivityEvents([]);
+    void threadService
+      .listActivity(threadId)
+      .then((events) => {
+        if (activityThreadIdRef.current === threadId) {
+          setActivityEvents((current) => mergeActivityEvents(current, events));
+        }
+      })
+      .catch((error) => {
+        if (activityThreadIdRef.current === threadId) {
+          setActivityError(errorMessage(error));
+        }
+      });
+  }, [threadService]);
+
+  const refreshProjectForSession = useCallback(async (state: SessionState) => {
+    const projectId = projectStateRef.current?.projects.find((project) =>
+      sameProjectPath(project.path, state.projectPath),
+    )?.id;
+    if (!projectId || projectRefreshInFlight.current) {
+      return;
+    }
+    projectRefreshInFlight.current = true;
+    try {
+      const nextState = await projectService.refresh(projectId);
+      setProjectState((current) => stabilizeProjectState(current, nextState));
+    } catch {
+      // 后台刷新失败不打断用户正在看的线程。
+    } finally {
+      projectRefreshInFlight.current = false;
+    }
+  }, [projectService]);
+
+  const attachSession = useCallback((nextSession: DesktopSessionController) => {
+    const existing = managedSessionsRef.current.get(nextSession);
+    if (existing) {
+      return nextSession;
+    }
+
+    const managed: ManagedSession = {
+      disposed: false,
+      flushTimer: null,
+      pendingEvents: [],
+      persistTimer: null,
+      previousTurnStatus: nextSession.getSnapshot().turnStatus,
+      session: nextSession,
+      unsubscribeEvents: () => undefined,
+      unsubscribeState: () => undefined,
+      writeQueue: Promise.resolve(),
+    };
+
+    const flushRuntimeEvents = () => {
+      if (managed.flushTimer) {
+        clearTimeout(managed.flushTimer);
+        managed.flushTimer = null;
+      }
+      if (managed.pendingEvents.length === 0) {
+        return;
+      }
+      const events = managed.pendingEvents;
+      managed.pendingEvents = [];
+      managed.writeQueue = managed.writeQueue
+        .then(() => threadService.appendRuntimeEvents(events))
+        .catch((error) => {
+          if (!managed.disposed) {
+            setThreadError(errorMessage(error));
+          }
+        });
+    };
+
+    const persistSnapshot = (markUnread: boolean) => {
+      const state = nextSession.getSnapshot();
+      const project = projectStateRef.current?.projects.find((candidate) =>
         sameProjectPath(candidate.path, state.projectPath),
       );
       if (!state.threadId || !project) {
         return;
       }
+      const existingThread = threadStateRef.current?.threads.find(
+        (thread) => thread.id === state.threadId,
+      );
+      const selected = selectedSessionRef.current === nextSession;
+      const unread = selected ? false : markUnread ? true : existingThread?.unread ?? false;
       void threadService
-        .upsert(threadRecordFromSession(state, project.id))
+        .upsert(threadRecordFromSession(state, project.id, { existingThread, unread }), {
+          select: selected,
+        })
         .then((nextState) => {
-          if (!disposed) {
+          if (!managed.disposed) {
             setThreadState((current) => stabilizeThreadState(current, nextState));
             setThreadError(null);
           }
         })
         .catch((error) => {
-          if (!disposed) {
+          if (!managed.disposed) {
             setThreadError(errorMessage(error));
           }
         });
     };
-    const persist = () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-      if (session.getSnapshot().turnStatus !== "inProgress") {
-        persistSnapshot();
-        return;
-      }
-      timer = setTimeout(persistSnapshot, 1_000);
-    };
-    const unsubscribe = session.subscribe(persist);
-    persist();
-    return () => {
-      disposed = true;
-      unsubscribe();
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-  }, [projectState, session, threadService]);
 
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-    let disposed = false;
-    let activeThreadId: string | null = null;
-    const syncActivity = () => {
-      const threadId = session.getSnapshot().threadId;
-      if (threadId === activeThreadId) {
+    const schedulePersist = (markUnread = false) => {
+      if (managed.persistTimer) {
+        clearTimeout(managed.persistTimer);
+        managed.persistTimer = null;
+      }
+      if (nextSession.getSnapshot().turnStatus !== "inProgress") {
+        persistSnapshot(markUnread);
         return;
       }
-      activeThreadId = threadId;
-      setActivityError(null);
-      if (!threadId) {
-        setActivityEvents([]);
-        return;
-      }
-      setActivityEvents([]);
-      void threadService
-        .listActivity(threadId)
-        .then((events) => {
-          if (!disposed && activeThreadId === threadId) {
-            setActivityEvents((current) => mergeActivityEvents(current, events));
-          }
-        })
-        .catch((error) => {
-          if (!disposed && activeThreadId === threadId) {
-            setActivityError(errorMessage(error));
-          }
-        });
+      managed.persistTimer = setTimeout(() => persistSnapshot(markUnread), 1_000);
     };
-    const unsubscribe = session.subscribe(syncActivity);
-    syncActivity();
-    return () => {
-      disposed = true;
-      unsubscribe();
-    };
-  }, [session, threadService]);
 
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-    let disposed = false;
-    let writeQueue = Promise.resolve();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let pending: Parameters<ThreadService["appendRuntimeEvents"]>[0] = [];
-    const flush = () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
+    managed.unsubscribeState = nextSession.subscribe(() => {
+      const state = nextSession.getSnapshot();
+      if (state.threadId) {
+        sessionByThreadIdRef.current.set(state.threadId, nextSession);
       }
-      if (pending.length === 0) {
-        return;
+      if (selectedSessionRef.current === nextSession) {
+        syncSelectedActivity();
       }
-      const events = pending;
-      pending = [];
-      writeQueue = writeQueue
-        .then(() => threadService.appendRuntimeEvents(events))
-        .catch((error) => {
-          if (!disposed) {
-            setThreadError(errorMessage(error));
-          }
-        });
-    };
-    const unsubscribe = session.subscribeRuntimeEvents((event) => {
-      pending.push(event);
-      if (session.getSnapshot().threadId === event.threadId) {
+      const justFinished =
+        managed.previousTurnStatus === "inProgress" && state.turnStatus !== "inProgress";
+      if (justFinished) {
+        void refreshProjectForSession(state);
+      }
+      schedulePersist(justFinished && selectedSessionRef.current !== nextSession);
+      managed.previousTurnStatus = state.turnStatus;
+    });
+
+    managed.unsubscribeEvents = nextSession.subscribeRuntimeEvents((event) => {
+      managed.pendingEvents.push(event);
+      if (selectedSessionRef.current === nextSession && nextSession.getSnapshot().threadId === event.threadId) {
         setActivityEvents((current) =>
           mergeActivityEvents(current, [{ ...event, occurredAt: Date.now() }]),
         );
       }
-      if (pending.length >= 100) {
-        flush();
-      } else if (!timer) {
-        timer = setTimeout(flush, 100);
+      if (managed.pendingEvents.length >= 100) {
+        flushRuntimeEvents();
+      } else if (!managed.flushTimer) {
+        managed.flushTimer = setTimeout(flushRuntimeEvents, 100);
       }
     });
+
+    managedSessionsRef.current.set(nextSession, managed);
+    void nextSession.connect().catch((error) => setThreadError(errorMessage(error)));
+    schedulePersist();
+    return nextSession;
+  }, [refreshProjectForSession, syncSelectedActivity, threadService]);
+
+  const selectSession = useCallback((nextSession: DesktopSessionController) => {
+    selectedSessionRef.current = nextSession;
+    setSession(nextSession);
+    syncSelectedActivity(true);
+  }, [syncSelectedActivity]);
+
+  const createManagedSession = useCallback(() => {
+    return attachSession(createSession());
+  }, [attachSession, createSession]);
+
+  useEffect(() => {
+    if (!credentialStatus?.configured || !settings) {
+      return;
+    }
+    for (const managed of managedSessionsRef.current.values()) {
+      disposeManagedSession(managed);
+    }
+    managedSessionsRef.current.clear();
+    sessionByThreadIdRef.current.clear();
+    activityThreadIdRef.current = null;
+    const nextSession = createManagedSession();
+    selectSession(nextSession);
     return () => {
-      unsubscribe();
-      flush();
-      disposed = true;
+      setSession(null);
+      selectedSessionRef.current = null;
+      for (const managed of managedSessionsRef.current.values()) {
+        disposeManagedSession(managed);
+      }
+      managedSessionsRef.current.clear();
+      sessionByThreadIdRef.current.clear();
     };
-  }, [session, threadService]);
+  }, [createManagedSession, credentialStatus?.configured, selectSession, settings]);
 
   const saveCredential = async (apiKey: string, nextSettings?: AppSettings) => {
     const diagnostic = await settingsService.diagnose({
@@ -258,6 +330,13 @@ export function DesktopRoot({
     await credentialService.restart();
   };
 
+  const selectDraftSession = (projectPath: string | null) => {
+    const nextSession = createManagedSession();
+    nextSession.newThread(projectPath);
+    selectSession(nextSession);
+    return nextSession;
+  };
+
   const addProject = async () => {
     setProjectBusy(true);
     setProjectError(null);
@@ -269,7 +348,7 @@ export function DesktopRoot({
         const project =
           nextState.projects.find((candidate) => candidate.id === nextState.selectedProjectId) ??
           null;
-        session?.newThread(project?.path ?? null);
+        selectDraftSession(project?.path ?? null);
         const nextThreadState = await threadService.select(null);
         setThreadState((current) => stabilizeThreadState(current, nextThreadState));
       }
@@ -294,7 +373,8 @@ export function DesktopRoot({
     setProjectBusy(true);
     setProjectError(null);
     setProjectState((current) => current ? { ...current, selectedProjectId: projectId } : current);
-    session?.newThread(project.path);
+    const previousSession = session;
+    selectDraftSession(project.path);
     setThreadState((current) => current ? { ...current, selectedThreadId: null } : current);
     try {
       const [nextState, nextThreadState] = await Promise.all([
@@ -307,7 +387,11 @@ export function DesktopRoot({
       setProjectState((current) =>
         current ? { ...current, selectedProjectId: previousProject?.id ?? null } : current,
       );
-      session?.newThread(previousProject?.path ?? null);
+      if (previousSession) {
+        selectSession(previousSession);
+      } else {
+        selectDraftSession(previousProject?.path ?? null);
+      }
       setProjectError(errorMessage(error));
     } finally {
       setProjectBusy(false);
@@ -315,16 +399,13 @@ export function DesktopRoot({
   };
 
   const newThread = async () => {
-    if (!session) {
-      return;
-    }
     setThreadBusy(true);
     setThreadError(null);
     try {
       const project =
         projectState?.projects.find((candidate) => candidate.id === projectState.selectedProjectId) ??
         null;
-      session.newThread(project?.path ?? null);
+      selectDraftSession(project?.path ?? null);
       const nextState = await threadService.select(null);
       setThreadState((current) => stabilizeThreadState(current, nextState));
     } catch (error) {
@@ -335,7 +416,7 @@ export function DesktopRoot({
   };
 
   const selectThread = async (threadId: string) => {
-    if (!session || !threadState) {
+    if (!threadState) {
       return;
     }
     const thread = threadState.threads.find((candidate) => candidate.id === threadId);
@@ -345,8 +426,10 @@ export function DesktopRoot({
     setThreadBusy(true);
     setThreadError(null);
     try {
-      const [, nextState] = await Promise.all([
-        session.resumeThread({
+      const existingSession = sessionByThreadIdRef.current.get(thread.id);
+      const nextSession = existingSession ?? createManagedSession();
+      if (!existingSession) {
+        const resume = nextSession.resumeThread({
           threadId: thread.id,
           projectPath: thread.projectPath,
           model: thread.model,
@@ -354,9 +437,11 @@ export function DesktopRoot({
           turnStatus: thread.turnStatus,
           timeline: thread.timeline,
           diff: thread.diff,
-        }),
-        threadService.select(threadId),
-      ]);
+        });
+        void resume.catch((error) => setThreadError(errorMessage(error)));
+      }
+      selectSession(nextSession);
+      const nextState = await threadService.upsert({ ...thread, unread: false }, { select: true });
       setThreadState((current) => stabilizeThreadState(current, nextState));
     } catch (error) {
       setThreadError(errorMessage(error));
@@ -372,13 +457,16 @@ export function DesktopRoot({
     setThreadBusy(true);
     setThreadError(null);
     try {
-      await session.setThreadArchived(threadId, archived);
+      const archiveSession =
+        session.getSnapshot().turnStatus === "inProgress" ? createManagedSession() : session;
+      await archiveSession.connect();
+      await archiveSession.setThreadArchived(threadId, archived);
       if (session.getSnapshot().threadId === threadId) {
         const project =
           projectState?.projects.find(
             (candidate) => candidate.id === projectState.selectedProjectId,
           ) ?? null;
-        session.newThread(project?.path ?? null);
+        selectDraftSession(project?.path ?? null);
       }
       const nextState = await threadService.setArchived(threadId, archived);
       setThreadState((current) => stabilizeThreadState(current, nextState));
@@ -401,7 +489,7 @@ export function DesktopRoot({
           projectState?.projects.find(
             (candidate) => candidate.id === projectState.selectedProjectId,
           ) ?? null;
-        session.newThread(project?.path ?? null);
+        selectDraftSession(project?.path ?? null);
       }
       const nextState = await threadService.delete(threadId);
       setThreadState((current) => stabilizeThreadState(current, nextState));
@@ -533,7 +621,28 @@ export function DesktopRoot({
   );
 }
 
-function threadRecordFromSession(state: SessionState, projectId: string): ThreadRecord {
+function disposeManagedSession(managed: ManagedSession): void {
+  if (managed.disposed) {
+    return;
+  }
+  managed.disposed = true;
+  managed.unsubscribeState();
+  managed.unsubscribeEvents();
+  if (managed.persistTimer) {
+    clearTimeout(managed.persistTimer);
+  }
+  if (managed.flushTimer) {
+    clearTimeout(managed.flushTimer);
+  }
+  managed.pendingEvents = [];
+  void managed.session.close();
+}
+
+function threadRecordFromSession(
+  state: SessionState,
+  projectId: string,
+  options: { existingThread: ThreadRecord | undefined; unread: boolean },
+): ThreadRecord {
   const now = Date.now();
   const firstUserMessage = state.timeline.find((entry) => entry.kind === "user")?.content.trim();
   return {
@@ -549,9 +658,10 @@ function threadRecordFromSession(state: SessionState, projectId: string): Thread
       content: entry.content.slice(-30_000),
     })),
     diff: state.diff.slice(-100_000),
-    createdAt: now,
+    createdAt: options.existingThread?.createdAt ?? now,
     updatedAt: now,
-    archived: false,
+    archived: options.existingThread?.archived ?? false,
+    unread: options.unread,
   };
 }
 

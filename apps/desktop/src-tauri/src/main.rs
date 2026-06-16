@@ -134,6 +134,8 @@ struct ThreadRecord {
     updated_at: i64,
     #[serde(default)]
     archived: bool,
+    #[serde(default)]
+    unread: bool,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -448,7 +450,11 @@ async fn append_runtime_events(
 }
 
 #[tauri::command]
-async fn upsert_thread(app: AppHandle, thread: ThreadRecord) -> Result<ThreadState, String> {
+async fn upsert_thread(
+    app: AppHandle,
+    thread: ThreadRecord,
+    select: Option<bool>,
+) -> Result<ThreadState, String> {
     run_background(move || {
         validate_thread(&thread)?;
         let mut connection = open_thread_database(&app)?;
@@ -457,7 +463,9 @@ async fn upsert_thread(app: AppHandle, thread: ThreadRecord) -> Result<ThreadSta
             .transaction()
             .map_err(|_| thread_database_error("开始写入事务"))?;
         record_thread_projection(&transaction, &thread, "threadProjectionRecorded")?;
-        set_app_state(&transaction, "selectedThreadId", Some(&thread.id))?;
+        if select.unwrap_or(true) {
+            set_app_state(&transaction, "selectedThreadId", Some(&thread.id))?;
+        }
         transaction
             .commit()
             .map_err(|_| thread_database_error("提交写入事务"))?;
@@ -817,7 +825,8 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
                 diff TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
-                archived INTEGER NOT NULL DEFAULT 0
+                archived INTEGER NOT NULL DEFAULT 0,
+                unread INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_threads_project_updated
                 ON threads(project_id, archived, updated_at DESC);
@@ -845,6 +854,22 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
             ",
         )
         .map_err(|_| thread_database_error("执行 Runtime 事件迁移"))?;
+    if !table_has_column(connection, "threads", "unread")? {
+        connection
+            .execute(
+                "ALTER TABLE threads ADD COLUMN unread INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|_| thread_database_error("迁移线程未读状态"))?;
+    }
+    connection
+        .execute_batch(
+            "
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                VALUES (3, unixepoch('subsec') * 1000);
+            ",
+        )
+        .map_err(|_| thread_database_error("执行线程未读迁移"))?;
     Ok(())
 }
 
@@ -1079,9 +1104,9 @@ fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> R
             "
             INSERT INTO threads(
                 id, project_id, project_path, title, model, sandbox, turn_status,
-                timeline_json, diff, created_at, updated_at, archived
+                timeline_json, diff, created_at, updated_at, archived, unread
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             ON CONFLICT(id) DO UPDATE SET
                 project_id = excluded.project_id,
                 project_path = excluded.project_path,
@@ -1092,7 +1117,8 @@ fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> R
                 timeline_json = excluded.timeline_json,
                 diff = excluded.diff,
                 updated_at = excluded.updated_at,
-                archived = excluded.archived
+                archived = excluded.archived,
+                unread = excluded.unread
             ",
             params![
                 thread.id,
@@ -1106,7 +1132,8 @@ fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> R
                 thread.diff,
                 thread.created_at,
                 thread.updated_at,
-                thread.archived
+                thread.archived,
+                thread.unread
             ],
         )
         .map_err(|_| thread_database_error("更新线程投影"))?;
@@ -1118,7 +1145,7 @@ fn load_thread_state(connection: &Connection) -> Result<ThreadState, String> {
         .prepare(
             "
             SELECT id, project_id, project_path, title, model, sandbox, turn_status,
-                   timeline_json, diff, created_at, updated_at, archived
+                   timeline_json, diff, created_at, updated_at, archived, unread
             FROM threads
             ORDER BY archived ASC, created_at DESC, id ASC
             ",
@@ -1140,7 +1167,7 @@ fn load_thread(connection: &Connection, thread_id: &str) -> Result<Option<Thread
         .query_row(
             "
             SELECT id, project_id, project_path, title, model, sandbox, turn_status,
-                   timeline_json, diff, created_at, updated_at, archived
+                   timeline_json, diff, created_at, updated_at, archived, unread
             FROM threads WHERE id = ?1
             ",
             [thread_id],
@@ -1168,6 +1195,7 @@ fn thread_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadRecord> {
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
         archived: row.get(11)?,
+        unread: row.get(12)?,
     })
 }
 
@@ -1694,7 +1722,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 2);
+        assert_eq!(migration_count, 3);
     }
 
     #[test]
@@ -1729,7 +1757,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 2);
+        assert_eq!(migration_count, 3);
     }
 
     #[test]
@@ -1871,6 +1899,7 @@ mod tests {
             created_at: 1,
             updated_at: 1,
             archived: false,
+            unread: false,
         }
     }
 }

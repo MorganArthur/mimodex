@@ -500,6 +500,7 @@ button {
 
 .project-row,
 .thread-row {
+  position: relative;
   display: flex;
   align-items: center;
   width: 100%;
@@ -510,6 +511,7 @@ button {
   border: 0;
   border-radius: 10px;
   text-align: left;
+  overflow: hidden;
 }
 
 .thread-list-item {
@@ -632,6 +634,50 @@ button {
 
 .thread-state.interrupted {
   background: #d4ad5a;
+}
+
+.thread-unread {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  margin: 0 !important;
+  background: #e4b95a;
+  border: 2px solid #292e28;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(228, 185, 90, 0.08);
+}
+
+.thread-progress {
+  position: absolute;
+  right: 9px;
+  bottom: 6px;
+  left: 42px;
+  height: 3px;
+  margin: 0 !important;
+  overflow: hidden;
+  background: rgba(198, 236, 139, 0.12);
+  border-radius: 999px;
+}
+
+.thread-progress i {
+  display: block;
+  width: 42%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, #c6ec8b, transparent);
+  border-radius: inherit;
+  animation: thread-progress-sweep 1.35s ease-in-out infinite;
+}
+
+@keyframes thread-progress-sweep {
+  from {
+    transform: translateX(-115%);
+  }
+
+  to {
+    transform: translateX(260%);
+  }
 }
 
 .project-row i.dirty {

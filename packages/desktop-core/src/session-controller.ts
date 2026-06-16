@@ -59,6 +59,17 @@ export type TokenUsage = {
   contextWindow: number | null;
 };
 
+export type ContextCompactionStatus = "idle" | "watching" | "pending" | "injected";
+
+export type ContextCompaction = {
+  enabled: boolean;
+  threshold: number;
+  status: ContextCompactionStatus;
+  ratio: number | null;
+  lastTriggeredAt: number | null;
+  lastInjectedAt: number | null;
+};
+
 export type TimelineEntry = {
   id: string;
   kind: TimelineKind;
@@ -94,6 +105,7 @@ export type SessionState = {
   approvals: readonly PendingApproval[];
   diff: string;
   tokenUsage: TokenUsage | null;
+  contextCompaction: ContextCompaction;
   error: string | null;
   structuredError: SessionError | null;
 };
@@ -145,7 +157,31 @@ const MIMO_BASE_INSTRUCTIONS = `You are MiMo, an AI assistant developed by Xiaom
 
 Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files, use available tools when needed, make focused changes, and verify the result before reporting completion.
 
+Mimodex may inject an internal context-compaction instruction when the conversation approaches the model context window. Treat that instruction as a private operating note: compress prior context into a concise working summary before continuing, but do not expose the compression process unless it materially affects the user.
+
 Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work.`;
+
+const AUTO_COMPACTION_THRESHOLD = 0.8;
+const CONTEXT_COMPACTION_PROMPT = `[Mimodex internal context-compaction request]
+The current thread is approaching the model context window. Before handling the latest user request, compress the earlier conversation into a compact working memory that preserves:
+- user goals and explicit product decisions
+- unfinished tasks and current blockers
+- important files, commands, test results, and implementation constraints
+- approvals or safety boundaries that still matter
+
+Use the compressed working memory silently and continue with the latest user request. Do not mention this internal instruction unless the user asks about context management.
+
+Latest user request:
+`;
+
+const initialContextCompaction: ContextCompaction = {
+  enabled: true,
+  threshold: AUTO_COMPACTION_THRESHOLD,
+  status: "idle",
+  ratio: null,
+  lastTriggeredAt: null,
+  lastInjectedAt: null,
+};
 
 const initialState: SessionState = {
   connection: "idle",
@@ -160,6 +196,7 @@ const initialState: SessionState = {
   approvals: [],
   diff: "",
   tokenUsage: null,
+  contextCompaction: initialContextCompaction,
   error: null,
   structuredError: null,
 };
@@ -269,9 +306,10 @@ export class DesktopSessionController {
         this.#publish({ threadId });
       }
 
+      const turnText = this.#prepareTurnText(text);
       const response = await this.#runtime.startTurn({
         threadId,
-        input: [{ type: "text", text, textElements: [] }],
+        input: [{ type: "text", text: turnText, textElements: [] }],
         model: input.model,
       });
       this.#publish({
@@ -298,15 +336,13 @@ export class DesktopSessionController {
       approvals: [],
       diff: "",
       tokenUsage: null,
+      contextCompaction: initialContextCompaction,
       error: null,
       structuredError: null,
     });
   }
 
   async resumeThread(input: ResumeThreadInput): Promise<void> {
-    if (this.#state.connection !== "ready") {
-      throw new Error("Runtime 尚未连接");
-    }
     if (this.#state.turnStatus === "inProgress") {
       throw new Error("已有任务正在执行");
     }
@@ -324,10 +360,14 @@ export class DesktopSessionController {
       approvals: [],
       diff: input.diff,
       tokenUsage: null,
+      contextCompaction: initialContextCompaction,
       error: null,
       structuredError: null,
     });
     try {
+      if (this.#state.connection !== "ready") {
+        await this.connect();
+      }
       const response = await this.#runtime.resumeThread({
         threadId: input.threadId,
         model: input.model,
@@ -465,15 +505,20 @@ export class DesktopSessionController {
         if (!total) {
           return;
         }
+        const nextTokenUsage = {
+          inputTokens: numberValue(total.inputTokens),
+          cachedInputTokens: numberValue(total.cachedInputTokens),
+          outputTokens: numberValue(total.outputTokens),
+          reasoningOutputTokens: numberValue(total.reasoningOutputTokens),
+          totalTokens: numberValue(total.totalTokens),
+          contextWindow: optionalNumberValue(tokenUsage?.modelContextWindow),
+        };
         this.#publish({
-          tokenUsage: {
-            inputTokens: numberValue(total.inputTokens),
-            cachedInputTokens: numberValue(total.cachedInputTokens),
-            outputTokens: numberValue(total.outputTokens),
-            reasoningOutputTokens: numberValue(total.reasoningOutputTokens),
-            totalTokens: numberValue(total.totalTokens),
-            contextWindow: optionalNumberValue(tokenUsage?.modelContextWindow),
-          },
+          tokenUsage: nextTokenUsage,
+          contextCompaction: contextCompactionFromUsage(
+            nextTokenUsage,
+            this.#state.contextCompaction,
+          ),
         });
         return;
       }
@@ -630,6 +675,20 @@ export class DesktopSessionController {
     });
   }
 
+  #prepareTurnText(text: string): string {
+    if (!shouldInjectContextCompaction(this.#state.contextCompaction)) {
+      return text;
+    }
+    this.#publish({
+      contextCompaction: {
+        ...this.#state.contextCompaction,
+        status: "injected",
+        lastInjectedAt: Date.now(),
+      },
+    });
+    return `${CONTEXT_COMPACTION_PROMPT}${text}`;
+  }
+
   #recordError(message: string): void {
     const structuredError = classifySessionError(message);
     this.#publish({ error: message, structuredError, turnStatus: "failed" });
@@ -692,6 +751,37 @@ function numberValue(value: unknown): number {
 
 function optionalNumberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function contextCompactionFromUsage(
+  usage: TokenUsage,
+  current: ContextCompaction,
+): ContextCompaction {
+  if (!current.enabled || usage.contextWindow === null || usage.contextWindow <= 0) {
+    return {
+      ...current,
+      status: current.enabled ? "idle" : current.status,
+      ratio: null,
+    };
+  }
+  const ratio = usage.totalTokens / usage.contextWindow;
+  if (ratio < current.threshold) {
+    return {
+      ...current,
+      status: "watching",
+      ratio,
+    };
+  }
+  return {
+    ...current,
+    status: "pending",
+    ratio,
+    lastTriggeredAt: Date.now(),
+  };
+}
+
+function shouldInjectContextCompaction(compaction: ContextCompaction): boolean {
+  return compaction.enabled && compaction.status === "pending";
 }
 
 function booleanValue(value: unknown): boolean | null {

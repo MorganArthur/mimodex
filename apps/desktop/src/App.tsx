@@ -180,12 +180,7 @@ export function App({
 
         <button
           className="new-thread"
-          disabled={
-            !currentProject?.available ||
-            projectBusy ||
-            threadBusy ||
-            state.turnStatus === "inProgress"
-          }
+          disabled={!currentProject?.available || projectBusy || threadBusy}
           type="button"
           onClick={() => void onNewThread()}
         >
@@ -197,7 +192,7 @@ export function App({
           <div className="section-heading">
             <span>项目</span>
             <button
-              disabled={projectBusy || state.turnStatus === "inProgress"}
+              disabled={projectBusy}
               type="button"
               aria-label="添加项目"
               onClick={() => void onAddProject()}
@@ -208,7 +203,7 @@ export function App({
           {projects.length === 0 ? (
             <button
               className="empty-projects"
-              disabled={state.turnStatus === "inProgress"}
+              disabled={projectBusy}
               type="button"
               onClick={() => void onAddProject()}
             >
@@ -217,7 +212,7 @@ export function App({
           ) : projects.map((project) => (
             <button
               className={`project-row ${project.id === currentProject?.id ? "active" : ""}`}
-              disabled={projectBusy || state.turnStatus === "inProgress"}
+              disabled={projectBusy}
               key={project.id}
               title={project.path}
               type="button"
@@ -244,12 +239,7 @@ export function App({
             threads.map((thread) => (
               <ThreadRow
                 active={thread.id === state.threadId}
-                disabled={
-                  projectBusy ||
-                  threadBusy ||
-                  state.turnStatus === "inProgress" ||
-                  !currentProject?.available
-                }
+                disabled={projectBusy || threadBusy || !currentProject?.available}
                 key={thread.id}
                 onArchive={() => void onSetThreadArchived(thread.id, true)}
                 onSelect={() => void onSelectThread(thread.id)}
@@ -263,7 +253,7 @@ export function App({
               {archivedThreads.map((thread) => (
                 <ThreadRow
                   archived
-                  disabled={threadBusy || state.turnStatus === "inProgress"}
+                  disabled={threadBusy}
                   key={thread.id}
                   onDelete={() => setDeleteThreadTarget(thread)}
                   onRestore={() => void onSetThreadArchived(thread.id, false)}
@@ -295,7 +285,7 @@ export function App({
             {currentProject && (
               <button
                 className="refresh-project"
-                disabled={projectBusy || state.turnStatus === "inProgress"}
+                disabled={projectBusy}
                 type="button"
                 onClick={() => void onRefreshProject()}
               >
@@ -438,6 +428,7 @@ export function App({
             <div><dt>模型</dt><dd>{state.model}</dd></div>
             <div><dt>线程</dt><dd>{state.threadId ? "已创建" : "待创建"}</dd></div>
             <div><dt>Token 总量</dt><dd>{formatTokens(state.tokenUsage?.totalTokens)}</dd></div>
+            <div><dt>上下文压缩</dt><dd>{contextCompactionLabel(state.contextCompaction)}</dd></div>
             {state.tokenUsage && (
               <>
                 <div><dt>输入 / 输出</dt><dd>{formatTokens(state.tokenUsage.inputTokens)} / {formatTokens(state.tokenUsage.outputTokens)}</dd></div>
@@ -629,6 +620,8 @@ function ThreadRow({
           <strong>{thread.title}</strong>
           <span>{threadSubtitle(thread)}</span>
         </div>
+        {thread.unread && <span aria-label="线程有未读更新" className="thread-unread" />}
+        {thread.turnStatus === "inProgress" && <span aria-hidden="true" className="thread-progress"><i /></span>}
       </button>
       <div className="thread-actions">
         {archived ? (
@@ -686,6 +679,24 @@ function relativeTime(timestamp: number): string {
 
 function formatTokens(value: number | null | undefined): string {
   return value === null || value === undefined ? "等待统计" : value.toLocaleString("zh-CN");
+}
+
+function contextCompactionLabel(compaction: SessionState["contextCompaction"]): string {
+  const ratio =
+    compaction.ratio === null ? "" : ` · ${Math.round(compaction.ratio * 100).toLocaleString("zh-CN")}%`;
+  if (!compaction.enabled) {
+    return "未启用";
+  }
+  if (compaction.status === "pending") {
+    return `下次提交前自动压缩${ratio}`;
+  }
+  if (compaction.status === "injected") {
+    return `本轮已注入压缩${ratio}`;
+  }
+  if (compaction.status === "watching") {
+    return `监测中${ratio}`;
+  }
+  return "等待统计";
 }
 
 const DiffPanel = memo(function DiffPanel({

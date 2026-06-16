@@ -124,6 +124,51 @@ test("轮次完成时记录用户请求与输出的真实处理时间", async ()
   assert.ok((user?.completedAt ?? 0) >= (user?.startedAt ?? Number.MAX_SAFE_INTEGER));
 });
 
+test("上下文窗口接近阈值时下一轮自动注入压缩指令", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+  await session.connect();
+  await session.startTask({
+    text: "第一轮任务",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+  });
+  runtime.emitNotification({
+    method: "thread/tokenUsage/updated",
+    params: {
+      tokenUsage: {
+        total: {
+          inputTokens: 840,
+          cachedInputTokens: 0,
+          outputTokens: 80,
+          reasoningOutputTokens: 0,
+          totalTokens: 920,
+        },
+        modelContextWindow: 1000,
+      },
+    },
+  });
+  runtime.emitNotification({
+    method: "turn/completed",
+    params: { turn: { id: "turn-1", status: "completed" } },
+  });
+
+  assert.equal(session.getSnapshot().contextCompaction.status, "pending");
+  await session.startTask({
+    text: "继续处理",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+  });
+
+  const submitted = runtime.turnStarts.at(-1)?.input[0]?.text ?? "";
+  assert.match(submitted, /context-compaction request/);
+  assert.match(submitted, /Latest user request:\n继续处理/);
+  assert.equal(session.getSnapshot().timeline.at(-1)?.content, "继续处理");
+  assert.equal(session.getSnapshot().contextCompaction.status, "injected");
+});
+
 test("桌面会话服务展示并回复 Runtime 审批请求", async () => {
   const runtime = new FakeRuntimeClient();
   const session = new DesktopSessionController(runtime);

@@ -21,6 +21,7 @@ export type ThreadRecord = {
   createdAt: number;
   updatedAt: number;
   archived: boolean;
+  unread: boolean;
 };
 
 export type ThreadState = {
@@ -35,7 +36,7 @@ export type ThreadActivityEvent = SessionRuntimeEvent & {
 export interface ThreadService {
   list(): Promise<ThreadState>;
   listActivity(threadId: string): Promise<ThreadActivityEvent[]>;
-  upsert(thread: ThreadRecord): Promise<ThreadState>;
+  upsert(thread: ThreadRecord, options?: { select?: boolean }): Promise<ThreadState>;
   select(threadId: string | null): Promise<ThreadState>;
   setArchived(threadId: string, archived: boolean): Promise<ThreadState>;
   delete(threadId: string): Promise<ThreadState>;
@@ -55,8 +56,8 @@ class TauriThreadService implements ThreadService {
     return invoke("list_thread_activity", { threadId });
   }
 
-  upsert(thread: ThreadRecord): Promise<ThreadState> {
-    return invoke("upsert_thread", { thread });
+  upsert(thread: ThreadRecord, options: { select?: boolean } = {}): Promise<ThreadState> {
+    return invoke("upsert_thread", { thread, select: options.select ?? true });
   }
 
   select(threadId: string | null): Promise<ThreadState> {
@@ -98,14 +99,14 @@ class DemoThreadService implements ThreadService {
       .map((event, index) => ({ ...event, occurredAt: Date.now() - index }));
   }
 
-  async upsert(thread: ThreadRecord): Promise<ThreadState> {
+  async upsert(thread: ThreadRecord, options: { select?: boolean } = {}): Promise<ThreadState> {
     const existing = this.#state.threads.find((candidate) => candidate.id === thread.id);
     const next = { ...thread, createdAt: existing?.createdAt ?? thread.createdAt };
     this.#state = {
       threads: existing
         ? this.#state.threads.map((candidate) => candidate.id === thread.id ? next : candidate)
         : [next, ...this.#state.threads],
-      selectedThreadId: thread.id,
+      selectedThreadId: options.select === false ? this.#state.selectedThreadId : thread.id,
     };
     return this.#state;
   }
@@ -179,5 +180,6 @@ function demoThread(id: string, title: string, updatedAt: number): ThreadRecord 
     createdAt: updatedAt,
     updatedAt,
     archived: false,
+    unread: false,
   };
 }

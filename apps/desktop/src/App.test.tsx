@@ -485,6 +485,68 @@ describe("Mimodex 桌面壳", () => {
     selectBarrier.resolve();
   });
 
+  it("当前线程执行中仍可切换项目并提交另一个任务", async () => {
+    const runtimes = [new UiRuntime("thread-first"), new UiRuntime("thread-second")];
+    const user = userEvent.setup();
+    let index = 0;
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtimes[index++] ?? new UiRuntime(`thread-extra-${index}`))}
+        projectService={new FakeProjectService([fixtureProject(), secondProject()])}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService([])}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    await user.type(screen.getByLabelText("任务内容"), "第一个任务");
+    await user.click(screen.getByRole("button", { name: /开始任务/ }));
+    await waitFor(() => expect(runtimes[0]?.turnStarts).toHaveLength(1));
+
+    await user.click(screen.getByTitle("D:\\projects\\second"));
+    expect(screen.getByRole("heading", { name: "second", level: 1 })).toBeTruthy();
+    await user.type(screen.getByLabelText("任务内容"), "第二个任务");
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: /开始任务/ }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    await user.click(screen.getByRole("button", { name: /开始任务/ }));
+
+    await waitFor(() => expect(runtimes[1]?.turnStarts).toHaveLength(1));
+    expect(runtimes[1]?.threadStarts[0]?.cwd).toBe("D:\\projects\\second");
+  });
+
+  it("后台线程完成后显示未读标记，点击线程后清除", async () => {
+    const runtimes = [new UiRuntime("thread-background"), new UiRuntime("thread-draft")];
+    const user = userEvent.setup();
+    let index = 0;
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(runtimes[index++] ?? new UiRuntime(`thread-extra-${index}`))}
+        projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService([])}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+    await user.type(screen.getByLabelText("任务内容"), "第一个后台任务");
+    await user.click(screen.getByRole("button", { name: /开始任务/ }));
+    await waitFor(() => expect(runtimes[0]?.turnStarts).toHaveLength(1));
+
+    await user.click(screen.getByRole("button", { name: /新建线程/ }));
+    runtimes[0]?.emitNotification({
+      method: "turn/completed",
+      params: { turn: { id: "turn-1", status: "completed" } },
+    });
+
+    expect(await screen.findByLabelText("线程有未读更新")).toBeTruthy();
+    await user.click(screen.getByTitle("第一个后台任务"));
+
+    await waitFor(() => expect(screen.queryByLabelText("线程有未读更新")).toBeNull());
+  });
+
   it("项目文件夹不可用时禁止启动任务", async () => {
     const runtime = new UiRuntime();
     const unavailableProject = { ...fixtureProject(), available: false };
@@ -874,6 +936,8 @@ class UiRuntime implements RuntimeClientPort {
   readonly #protocolEvents = new Set<(event: RuntimeProtocolEvent) => void>();
   readonly #requests = new Set<(request: ServerRequest) => void>();
 
+  constructor(readonly startedThreadId = "thread-1") {}
+
   async initialize(): Promise<InitializeResponse> {
     this.initializeCount += 1;
     return {
@@ -887,7 +951,7 @@ class UiRuntime implements RuntimeClientPort {
   async startThread(params: ThreadStartParams): Promise<ThreadStartResponse> {
     this.threadStarts.push(params);
     return {
-      thread: { id: "thread-1" },
+      thread: { id: this.startedThreadId },
       model: params.model ?? "mimo-v2.5",
       modelProvider: "mimo",
       cwd: params.cwd ?? "D:\\project",
@@ -1105,10 +1169,10 @@ class FakeThreadService implements ThreadService {
     ];
   }
 
-  async upsert(thread: ThreadRecord): Promise<ThreadState> {
+  async upsert(thread: ThreadRecord, options: { select?: boolean } = {}): Promise<ThreadState> {
     this.#state = {
       threads: [thread, ...this.#state.threads.filter((candidate) => candidate.id !== thread.id)],
-      selectedThreadId: thread.id,
+      selectedThreadId: options.select === false ? this.#state.selectedThreadId : thread.id,
     };
     return this.#state;
   }
@@ -1246,6 +1310,7 @@ function fixtureThread(): ThreadRecord {
     createdAt: 1,
     updatedAt: 2,
     archived: false,
+    unread: false,
   };
 }
 
