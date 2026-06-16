@@ -178,11 +178,15 @@ jobs:
             -Label "Windows 技术预览安装包"
 
           $artifactDir = New-Item -ItemType Directory -Force -Path "./artifacts/windows-preview"
-          $artifactPath = Join-Path $artifactDir.FullName "Mimodex_0.1.0_x64-setup.exe"
+          $tauriConfig = Get-Content -Raw "./apps/desktop/src-tauri/tauri.conf.json" |
+            ConvertFrom-Json
+          $appVersion = [string]$tauriConfig.version
+          $assetName = "Mimodex_$appVersion`_x64-setup.exe"
+          $artifactPath = Join-Path $artifactDir.FullName $assetName
           Copy-Item -LiteralPath $installer.FullName -Destination $artifactPath
           $hash = Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256
-          "$($hash.Hash)  $([IO.Path]::GetFileName($artifactPath))" |
-            Set-Content -LiteralPath (Join-Path $artifactDir.FullName "Mimodex_0.1.0_x64-setup.exe.sha256")
+          "$($hash.Hash)  $assetName" |
+            Set-Content -LiteralPath "$artifactPath.sha256"
 
           $sizeMiB = [math]::Round((Get-Item -LiteralPath $artifactPath).Length / 1MB, 2)
           "installer_size_mib=$sizeMiB" >> $env:GITHUB_OUTPUT
