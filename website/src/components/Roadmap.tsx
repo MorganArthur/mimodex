@@ -1,46 +1,4 @@
 import { useScrollReveal } from "@/hooks/useScrollReveal";
-import { Check, Clock, Rocket } from "lucide-react";
-
-const phases = [
-  {
-    label: "Now",
-    icon: Check,
-    color: "bg-brand-400",
-    textColor: "text-brand-400",
-    borderColor: "border-brand-400/30",
-    bgColor: "bg-brand-400/5",
-    models: [
-      { name: "MiMo v2.5", status: "available" },
-      { name: "MiMo v2.5 Pro", status: "available" },
-    ],
-  },
-  {
-    label: "Next",
-    icon: Clock,
-    color: "bg-blue-400",
-    textColor: "text-blue-400",
-    borderColor: "border-blue-400/30",
-    bgColor: "bg-blue-400/5",
-    models: [
-      { name: "Qwen", status: "planned" },
-      { name: "DeepSeek", status: "planned" },
-      { name: "OpenAI Compatible", status: "planned" },
-    ],
-  },
-  {
-    label: "Future",
-    icon: Rocket,
-    color: "bg-purple-400",
-    textColor: "text-purple-400",
-    borderColor: "border-purple-400/30",
-    bgColor: "bg-purple-400/5",
-    models: [
-      { name: "Local Models", status: "planned" },
-      { name: "Plugin Providers", status: "planned" },
-      { name: "Multi-Agent", status: "planned" },
-    ],
-  },
-];
 
 export default function Roadmap() {
   const { ref, isVisible } = useScrollReveal<HTMLElement>();

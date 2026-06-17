@@ -1,15 +1,4 @@
 import { useScrollReveal } from "@/hooks/useScrollReveal";
-import { FolderOpen, MessageSquare, Search, Lightbulb, Shield, GitCompare, GitCommit } from "lucide-react";
-
-const steps = [
-  { icon: FolderOpen, title: "选择本地项目", desc: "选择或打开本地项目作为工作区" },
-  { icon: MessageSquare, title: "创建对话线程", desc: "开启与 Agent 的对话，明确目标与需求" },
-  { icon: Search, title: "理解项目上下文", desc: "Agent 读取项目结构，理解代码与依赖关系" },
-  { icon: Lightbulb, title: "生成修改方案", desc: "Agent 基于需求生成可执行的修改方案" },
-  { icon: Shield, title: "审批写入/命令执行", desc: "你审批后，Agent 写入文件或执行终端命令" },
-  { icon: GitCompare, title: "Diff 审阅", desc: "查看变更差异，确认修改内容" },
-  { icon: GitCommit, title: "Git 提交", desc: "提交到本地仓库，完成闭环" },
-];
 
 export default function Workflow() {
   const { ref, isVisible } = useScrollReveal<HTMLElement>();
