@@ -9,6 +9,7 @@ on:
       - "apps/**"
       - "packages/**"
       - ".github/workflows/desktop-ci.yml"
+      - "!website/**"
   push:
     branches:
       - main
@@ -19,6 +20,7 @@ on:
       - "apps/**"
       - "packages/**"
       - ".github/workflows/desktop-ci.yml"
+      - "!website/**"
   workflow_dispatch:
 
 concurrency:

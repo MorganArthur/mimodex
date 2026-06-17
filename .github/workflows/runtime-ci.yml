@@ -5,12 +5,14 @@ on:
     paths:
       - "runtime/**"
       - ".github/workflows/runtime-ci.yml"
+      - "!website/**"
   push:
     branches:
       - main
     paths:
       - "runtime/**"
       - ".github/workflows/runtime-ci.yml"
+      - "!website/**"
   workflow_dispatch:
 
 concurrency:

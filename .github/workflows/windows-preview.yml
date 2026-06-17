@@ -11,6 +11,7 @@ on:
       - "runtime/**"
       - "scripts/ci/**"
       - ".github/workflows/windows-preview.yml"
+      - "!website/**"
   push:
     branches:
       - main
@@ -23,6 +24,7 @@ on:
       - "runtime/**"
       - "scripts/ci/**"
       - ".github/workflows/windows-preview.yml"
+      - "!website/**"
   workflow_dispatch:
 
 concurrency:
