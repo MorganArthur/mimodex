@@ -8,3 +8,4 @@
 0007-use-mimo-identity-and-disable-thinking.patch
 0008-stream-deltas-and-fast-simple-chat.patch
 0009-configurable-mimo-base-url.patch
+0010-fix-mimo-context-window-fallback.patch

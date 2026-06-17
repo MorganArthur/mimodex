@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "要重新构建并发布的既有版本标签，例如 v0.1.4"
+        description: "要重新构建并发布的既有版本标签，例如 v0.1.5"
         required: true
-        default: "v0.1.4"
+        default: "v0.1.5"
         type: string
 
 concurrency:

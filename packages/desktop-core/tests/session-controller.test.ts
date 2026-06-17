@@ -93,7 +93,7 @@ test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状
     outputTokens: 30,
     reasoningOutputTokens: 10,
     totalTokens: 150,
-    contextWindow: 131072,
+    contextWindow: 1_000_000,
   });
 });
 
@@ -139,13 +139,13 @@ test("上下文窗口接近阈值时下一轮自动注入压缩指令", async ()
     params: {
       tokenUsage: {
         total: {
-          inputTokens: 840,
+          inputTokens: 820000,
           cachedInputTokens: 0,
           outputTokens: 80,
           reasoningOutputTokens: 0,
-          totalTokens: 920,
+          totalTokens: 820080,
         },
-        modelContextWindow: 1000,
+        modelContextWindow: 258400,
       },
     },
   });

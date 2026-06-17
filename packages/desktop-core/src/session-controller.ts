@@ -159,8 +159,11 @@ Help the user complete software-development tasks in the shared workspace. For s
 
 Mimodex may inject an internal context-compaction instruction when the conversation approaches the model context window. Treat that instruction as a private operating note: compress prior context into a concise working summary before continuing, but do not expose the compression process unless it materially affects the user.
 
+MiMo v2.5 and MiMo v2.5 Pro in Mimodex use a 1,000,000-token context window unless the runtime explicitly configures a different limit.
+
 Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work.`;
 
+const MIMO_CONTEXT_WINDOW = 1_000_000;
 const AUTO_COMPACTION_THRESHOLD = 0.8;
 const CONTEXT_COMPACTION_PROMPT = `[Mimodex internal context-compaction request]
 The current thread is approaching the model context window. Before handling the latest user request, compress the earlier conversation into a compact working memory that preserves:
@@ -522,7 +525,10 @@ export class DesktopSessionController {
           outputTokens: numberValue(total.outputTokens),
           reasoningOutputTokens: numberValue(total.reasoningOutputTokens),
           totalTokens: numberValue(total.totalTokens),
-          contextWindow: optionalNumberValue(tokenUsage?.modelContextWindow),
+          contextWindow: contextWindowForModel(
+            this.#state.model,
+            optionalNumberValue(tokenUsage?.modelContextWindow),
+          ),
         };
         this.#publish({
           tokenUsage: nextTokenUsage,
@@ -762,6 +768,13 @@ function numberValue(value: unknown): number {
 
 function optionalNumberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function contextWindowForModel(model: string, reportedContextWindow: number | null): number | null {
+  if (model === "mimo-v2.5" || model === "mimo-v2.5-pro") {
+    return MIMO_CONTEXT_WINDOW;
+  }
+  return reportedContextWindow;
 }
 
 function contextCompactionFromUsage(

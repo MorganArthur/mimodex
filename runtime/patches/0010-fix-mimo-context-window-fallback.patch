@@ -1,0 +1,93 @@
+diff --git a/codex-rs/models-manager/src/model_info.rs b/codex-rs/models-manager/src/model_info.rs
+index 81a5c6e..f141838 100644
+--- a/codex-rs/models-manager/src/model_info.rs
++++ b/codex-rs/models-manager/src/model_info.rs
+@@ -1,5 +1,6 @@
+ use codex_protocol::config_types::ReasoningSummary;
+ use codex_protocol::openai_models::ConfigShellToolType;
++use codex_protocol::openai_models::InputModality;
+ use codex_protocol::openai_models::ModelInfo;
+ use codex_protocol::openai_models::ModelInstructionsVariables;
+ use codex_protocol::openai_models::ModelMessages;
+@@ -19,6 +20,16 @@ const LOCAL_FRIENDLY_TEMPLATE: &str =
+     "You optimize for team morale and being a supportive teammate as much as code quality.";
+ const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
+ const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
++const MIMO_DEFAULT_MODEL_ID: &str = "mimo-v2.5";
++const MIMO_PRO_MODEL_ID: &str = "mimo-v2.5-pro";
++const MIMO_CONTEXT_WINDOW: i64 = 1_000_000;
++const MIMO_BASE_INSTRUCTIONS: &str = r#"You are MiMo, an AI assistant developed by Xiaomi, operating as the coding agent inside the Mimodex desktop application.
++
++Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files, use available tools when needed, make focused changes, and verify the result before reporting completion.
++
++MiMo v2.5 and MiMo v2.5 Pro in Mimodex use a 1,000,000-token context window unless the runtime explicitly configures a different limit.
++
++Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work."#;
+ 
+ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
+     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
+@@ -65,7 +76,7 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
+ /// Build a minimal fallback model descriptor for missing/unknown slugs.
+ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
+     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
+-    ModelInfo {
++    let mut model = ModelInfo {
+         slug: slug.to_string(),
+         display_name: slug.to_string(),
+         description: None,
+@@ -103,7 +114,34 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
+         auto_review_model_override: None,
+         tool_mode: None,
+         multi_agent_version: None,
++    };
++    if is_mimo_model_slug(slug) {
++        apply_mimo_fallback_metadata(&mut model);
+     }
++    model
++}
++
++fn is_mimo_model_slug(slug: &str) -> bool {
++    matches!(slug, MIMO_DEFAULT_MODEL_ID | MIMO_PRO_MODEL_ID)
++}
++
++fn apply_mimo_fallback_metadata(model: &mut ModelInfo) {
++    model.default_reasoning_level = None;
++    model.supported_reasoning_levels.clear();
++    model.shell_type = ConfigShellToolType::ShellCommand;
++    model.additional_speed_tiers.clear();
++    model.service_tiers.clear();
++    model.default_service_tier = None;
++    model.base_instructions = MIMO_BASE_INSTRUCTIONS.to_string();
++    model.model_messages = None;
++    model.supports_reasoning_summaries = false;
++    model.apply_patch_tool_type = None;
++    model.supports_parallel_tool_calls = true;
++    model.context_window = Some(MIMO_CONTEXT_WINDOW);
++    model.max_context_window = Some(MIMO_CONTEXT_WINDOW);
++    model.effective_context_window_percent = 100;
++    model.input_modalities = vec![InputModality::Text];
++    model.used_fallback_model_metadata = false;
+ }
+ 
+ fn local_personality_messages_for_slug(slug: &str) -> Option<ModelMessages> {
+diff --git a/codex-rs/models-manager/src/model_info_tests.rs b/codex-rs/models-manager/src/model_info_tests.rs
+index 70ad3da..881371e 100644
+--- a/codex-rs/models-manager/src/model_info_tests.rs
++++ b/codex-rs/models-manager/src/model_info_tests.rs
+@@ -72,3 +72,16 @@ fn model_context_window_uses_model_value_without_override() {
+ 
+     assert_eq!(updated, model);
+ }
++
++#[test]
++fn mimo_fallback_metadata_uses_one_million_context_window() {
++    let model = model_info_from_slug("mimo-v2.5");
++
++    assert_eq!(model.context_window, Some(1_000_000));
++    assert_eq!(model.max_context_window, Some(1_000_000));
++    assert_eq!(model.effective_context_window_percent, 100);
++    assert!(!model.used_fallback_model_metadata);
++    assert!(model.base_instructions.contains("You are MiMo"));
++    assert!(model.base_instructions.contains("1,000,000-token context window"));
++    assert!(!model.base_instructions.contains("Codex CLI"));
++}
