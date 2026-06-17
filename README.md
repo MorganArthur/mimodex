@@ -191,4 +191,4 @@ Mimodex 使用 CI-only 原生构建流程：
 
 ## License
 
-当前仓库尚未提供正式 LICENSE 文件。公开发布或接受外部贡献前，应先明确许可证策略。
+Mimodex 使用 [MIT License](LICENSE) 开源。

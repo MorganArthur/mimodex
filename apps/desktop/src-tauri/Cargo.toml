@@ -4,7 +4,7 @@ version = "0.1.5"
 description = "MiMo 驱动的本地优先桌面编程 Agent"
 authors = ["Mimodex contributors"]
 edition = "2024"
-license = "Apache-2.0"
+license = "MIT"
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }

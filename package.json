@@ -2,6 +2,7 @@
   "name": "mimodex",
   "version": "0.1.5",
   "private": true,
+  "license": "MIT",
   "workspaces": [
     "apps/*",
     "packages/*"
