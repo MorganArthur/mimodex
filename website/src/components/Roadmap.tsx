@@ -70,7 +70,7 @@ export default function Roadmap() {
         >
           <div className="rounded-2xl overflow-hidden border border-dark-800 bg-dark-900/30">
             <img
-              src="/images/模型路线图.png"
+              src="./images/模型路线图.png"
               alt="Mimodex 模型支持路线图"
               className="w-full h-auto"
               loading="lazy"

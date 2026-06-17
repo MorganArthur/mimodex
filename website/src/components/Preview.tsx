@@ -28,7 +28,7 @@ export default function Preview() {
         >
           <div className="rounded-2xl overflow-hidden border border-dark-800 shadow-2xl shadow-brand-400/5">
             <img
-              src="/images/真实界面包装图.png"
+              src="./images/真实界面包装图.png"
               alt="Mimodex 真实界面"
               className="w-full h-auto"
               loading="lazy"
@@ -45,7 +45,7 @@ export default function Preview() {
           >
             <div className="rounded-2xl overflow-hidden border border-dark-800">
               <img
-                src="/images/核心功能四宫格图.png"
+                src="./images/核心功能四宫格图.png"
                 alt="Mimodex 核心功能"
                 className="w-full h-auto"
                 loading="lazy"
@@ -59,7 +59,7 @@ export default function Preview() {
           >
             <div className="rounded-2xl overflow-hidden border border-dark-800">
               <img
-                src="/images/主宣传图.png"
+                src="./images/主宣传图.png"
                 alt="Mimodex 主宣传图"
                 className="w-full h-auto"
                 loading="lazy"

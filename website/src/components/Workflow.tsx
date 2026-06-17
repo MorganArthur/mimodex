@@ -39,7 +39,7 @@ export default function Workflow() {
         >
           <div className="rounded-2xl overflow-hidden border border-dark-800 bg-dark-900/30">
             <img
-              src="/images/工作流程图.png"
+              src="./images/工作流程图.png"
               alt="Mimodex 工作流程"
               className="w-full h-auto"
               loading="lazy"
