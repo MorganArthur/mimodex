@@ -38,7 +38,7 @@ export default function Hero() {
 
         {/* Subtitle */}
         <p className="opacity-0-init animate-fade-in-up animate-delay-200 text-lg sm:text-xl text-dark-400 max-w-2xl mx-auto mb-4">
-          像 Codex 一样工作，但更懂你的项目
+          像 Codex 一样工作，但更懂你的项目。
         </p>
         <p className="opacity-0-init animate-fade-in-up animate-delay-300 text-base text-dark-500 max-w-xl mx-auto mb-10">
           由小米 mimo-v2.5 驱动，把对话线程、项目文件、Git 变更、工具执行集中到一个 Windows 桌面应用中
