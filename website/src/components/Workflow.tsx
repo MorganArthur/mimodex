@@ -47,41 +47,7 @@ export default function Workflow() {
           </div>
         </div>
 
-        {/* Steps grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
-          {steps.map((step, index) => (
-            <div
-              key={step.title}
-              className={`relative flex flex-col items-center text-center p-4 rounded-xl bg-dark-900/30 border border-dark-800 hover:border-brand-400/20 transition-all duration-300 group ${
-                isVisible
-                  ? "opacity-100 translate-y-0"
-                  : "opacity-0 translate-y-6"
-              }`}
-              style={{
-                transitionDelay: isVisible ? `${300 + index * 80}ms` : "0ms",
-                transitionDuration: "700ms",
-              }}
-            >
-              {/* Step number */}
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-brand-400 text-dark-950 text-xs font-bold flex items-center justify-center">
-                {index + 1}
-              </div>
 
-              {/* Icon */}
-              <div className="w-10 h-10 rounded-lg bg-brand-400/10 flex items-center justify-center mb-3 mt-2 group-hover:bg-brand-400/20 transition-colors">
-                <step.icon className="w-5 h-5 text-brand-400" />
-              </div>
-
-              {/* Content */}
-              <h3 className="text-sm font-semibold text-white mb-1">
-                {step.title}
-              </h3>
-              <p className="text-dark-500 text-xs leading-relaxed">
-                {step.desc}
-              </p>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );
