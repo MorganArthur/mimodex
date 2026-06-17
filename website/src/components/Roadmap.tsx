@@ -78,62 +78,7 @@ export default function Roadmap() {
           </div>
         </div>
 
-        {/* Phase cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {phases.map((phase, index) => (
-            <div
-              key={phase.label}
-              className={`relative p-6 rounded-2xl border ${phase.borderColor} ${phase.bgColor} transition-all duration-700 ${
-                isVisible
-                  ? "opacity-100 translate-y-0"
-                  : "opacity-0 translate-y-6"
-              }`}
-              style={{
-                transitionDelay: isVisible ? `${300 + index * 150}ms` : "0ms",
-              }}
-            >
-              {/* Phase label */}
-              <div className="flex items-center gap-3 mb-6">
-                <div
-                  className={`w-10 h-10 rounded-lg ${phase.color} flex items-center justify-center`}
-                >
-                  <phase.icon className="w-5 h-5 text-dark-950" />
-                </div>
-                <span
-                  className={`text-xl font-bold font-mono ${phase.textColor}`}
-                >
-                  {phase.label}
-                </span>
-              </div>
 
-              {/* Model list */}
-              <div className="space-y-3">
-                {phase.models.map((model) => (
-                  <div
-                    key={model.name}
-                    className="flex items-center gap-3 py-2 px-3 rounded-lg bg-dark-900/50"
-                  >
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        model.status === "available"
-                          ? "bg-brand-400"
-                          : "bg-dark-600"
-                      }`}
-                    />
-                    <span className="text-white text-sm font-medium">
-                      {model.name}
-                    </span>
-                    {model.status === "available" && (
-                      <span className="ml-auto text-xs text-brand-400 font-mono">
-                        已支持
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );
