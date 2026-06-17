@@ -47,7 +47,7 @@ export default function Hero() {
         {/* CTA Buttons */}
         <div className="opacity-0-init animate-fade-in-up animate-delay-400 flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
           <a
-            href="https://github.com/MorganArthur/mimodex/releases/tag/0.1.5"
+            href="https://github.com/MorganArthur/mimodex/releases/tag/v0.1.5"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-8 py-4 bg-brand-400 text-dark-950 font-semibold rounded-lg hover:bg-brand-300 transition-colors duration-200 text-base"
