@@ -425,6 +425,14 @@ button {
   font-size: 11px;
 }
 
+.brand .app-version {
+  margin-top: 6px;
+  color: #c6ec8b;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+}
+
 .new-thread {
   display: flex;
   align-items: center;

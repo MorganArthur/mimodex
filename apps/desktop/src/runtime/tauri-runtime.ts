@@ -6,6 +6,7 @@ import {
   type RuntimeProcessPort,
   type Unsubscribe,
 } from "@mimodex/runtime-client";
+import { APP_VERSION } from "../version.js";
 
 type Listener<T> = (value: T) => void;
 export type TauriRawOutput = Uint8Array | number[];
@@ -116,7 +117,7 @@ export function createTauriRuntimeClient(): MimodexRuntimeClient {
   return new MimodexRuntimeClient(
     new ProcessRuntimeTransport(new TauriRuntimeProcessPort()),
     {
-      clientVersion: "0.1.5",
+      clientVersion: APP_VERSION,
       experimentalApi: true,
       requestTimeoutMs: 60_000,
     },

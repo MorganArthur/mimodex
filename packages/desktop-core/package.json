@@ -1,6 +1,6 @@
 {
   "name": "@mimodex/desktop-core",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -12,6 +12,6 @@
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@mimodex/runtime-client": "0.1.5"
+    "@mimodex/runtime-client": "0.1.6"
   }
 }

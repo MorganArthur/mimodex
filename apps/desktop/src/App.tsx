@@ -23,6 +23,7 @@ import { MIMO_MODEL_OPTIONS, PopupSelect, SANDBOX_OPTIONS } from "./PopupSelect.
 import type { ProjectSummary } from "./projects.js";
 import type { AppSettings } from "./settings.js";
 import type { ThreadActivityEvent, ThreadRecord } from "./threads.js";
+import { APP_VERSION } from "./version.js";
 
 export type AppProps = {
   activityError: string | null;
@@ -175,6 +176,7 @@ export function App({
           <div>
             <strong>Mimodex</strong>
             <span>本地编程 Agent</span>
+            <span className="app-version">当前版本 v{APP_VERSION}</span>
           </div>
         </div>
 
@@ -426,6 +428,7 @@ export function App({
           <dl>
             <div><dt>连接</dt><dd>{statusLabels[state.connection]}</dd></div>
             <div><dt>模型</dt><dd>{state.model}</dd></div>
+            <div><dt>软件版本</dt><dd>v{APP_VERSION}</dd></div>
             <div><dt>线程</dt><dd>{state.threadId ? "已创建" : "待创建"}</dd></div>
             <div><dt>Token 总量</dt><dd>{formatTokens(state.tokenUsage?.totalTokens)}</dd></div>
             {state.tokenUsage && (

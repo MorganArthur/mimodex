@@ -17,6 +17,7 @@ import type {
   ThreadService,
   ThreadState,
 } from "./threads.js";
+import { APP_VERSION } from "./version.js";
 
 export type DesktopRootProps = {
   credentialService: CredentialService;
@@ -718,7 +719,7 @@ function CredentialSetup({
       <section className="setup-card">
         <div className="setup-brand">
           <span className="brand-mark">M</span>
-          <div><strong>Mimodex</strong><span>首次设置</span></div>
+          <div><strong>Mimodex</strong><span>首次设置 · v{APP_VERSION}</span></div>
         </div>
         <p className="eyebrow">MIMO PROVIDER</p>
         <h1>连接你的 MiMo API</h1>

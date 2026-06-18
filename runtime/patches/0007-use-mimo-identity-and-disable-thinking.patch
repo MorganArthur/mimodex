@@ -27,7 +27,7 @@ diff --git a/codex-rs/core/src/client_tests.rs b/codex-rs/core/src/client_tests.
 diff --git a/codex-rs/core/tests/suite/chat_completions.rs b/codex-rs/core/tests/suite/chat_completions.rs
 --- a/codex-rs/core/tests/suite/chat_completions.rs
 +++ b/codex-rs/core/tests/suite/chat_completions.rs
-@@ -135,6 +135,14 @@
+@@ -135,6 +135,15 @@
          serde_json::from_slice(&requests[1].body).expect("second request should be JSON");
  
      assert_eq!(first["model"], "mimo-v2.5");
@@ -37,6 +37,7 @@ diff --git a/codex-rs/core/tests/suite/chat_completions.rs b/codex-rs/core/tests
 +        .expect("first message should contain the MiMo system prompt");
 +    assert!(system_prompt.contains("You are MiMo"));
 +    assert!(system_prompt.contains("Mimodex"));
++    assert!(system_prompt.contains("UTF-8 encoding"));
 +    assert!(!system_prompt.contains("Codex CLI"));
 +    assert!(!system_prompt.contains("Anthropic"));
      assert!(
@@ -51,7 +52,7 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
  use codex_protocol::openai_models::ConfigShellToolType;
  use codex_protocol::openai_models::InputModality;
  use codex_protocol::openai_models::ModelInfo;
-@@ -9,7 +8,12 @@
+@@ -9,7 +8,14 @@
  pub(crate) const MIMO_DEFAULT_MODEL_ID: &str = "mimo-v2.5";
  pub(crate) const MIMO_PRO_MODEL_ID: &str = "mimo-v2.5-pro";
  const MIMO_CONTEXT_WINDOW: i64 = 1_000_000;
@@ -60,11 +61,13 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
 +
 +Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files, use available tools when needed, make focused changes, and verify the result before reporting completion.
 +
++Use UTF-8 encoding for all file reads and writes. After modifying files, run the narrowest relevant compile, typecheck, or test validation to confirm there are no syntax or compilation errors before reporting completion; if validation cannot be run, say so clearly.
++
 +Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work."#;
  
  pub(crate) fn static_model_catalog() -> ModelsResponse {
      ModelsResponse {
-@@ -67,7 +71,7 @@
+@@ -67,7 +73,7 @@
      model.additional_speed_tiers.clear();
      model.service_tiers.clear();
      model.default_service_tier = None;
@@ -73,7 +76,7 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
      model.model_messages = None;
      model.supports_reasoning_summaries = false;
      model.support_verbosity = false;
-@@ -119,9 +123,14 @@
+@@ -119,9 +125,16 @@
              assert_eq!(model.input_modalities, vec![InputModality::Text]);
              assert!(model.service_tiers.is_empty());
              assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
@@ -83,6 +86,8 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
 +            assert_eq!(model.base_instructions, MIMO_BASE_INSTRUCTIONS);
 +            assert!(model.base_instructions.contains("You are MiMo"));
 +            assert!(model.base_instructions.contains("Mimodex"));
++            assert!(model.base_instructions.contains("UTF-8 encoding"));
++            assert!(model.base_instructions.contains("syntax or compilation errors"));
 +            assert!(!model.base_instructions.contains("Codex CLI"));
 +            assert!(!model.base_instructions.contains("Anthropic"));
 +            assert!(model.base_instructions.len() < 2_000);

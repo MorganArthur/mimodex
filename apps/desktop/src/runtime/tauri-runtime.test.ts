@@ -47,7 +47,7 @@ describe("Tauri Runtime sidecar 端口", () => {
     const command = new FakeCommand();
     const client = new MimodexRuntimeClient(
       new ProcessRuntimeTransport(new TauriRuntimeProcessPort(() => command)),
-      { clientVersion: "0.1.5" },
+      { clientVersion: __APP_VERSION__ },
     );
 
     const initialization = client.initialize();

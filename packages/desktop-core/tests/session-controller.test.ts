@@ -26,7 +26,10 @@ test("桌面会话服务连接 Runtime 并以默认模型启动首个任务", as
   assert.equal(runtime.threadStarts[0]?.modelProvider, "mimo");
   assert.equal(runtime.threadStarts[0]?.approvalPolicy, "on-request");
   assert.equal(runtime.threadStarts[0]?.sandbox, "workspace-write");
-  assert.match(runtime.threadStarts[0]?.baseInstructions ?? "", /You are MiMo.*Mimodex/s);
+  const baseInstructions = runtime.threadStarts[0]?.baseInstructions ?? "";
+  assert.match(baseInstructions, /You are MiMo.*Mimodex/s);
+  assert.match(baseInstructions, /UTF-8 encoding/);
+  assert.match(baseInstructions, /syntax or compilation errors/);
 });
 
 test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状态", async () => {
