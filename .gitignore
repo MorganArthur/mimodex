@@ -18,6 +18,7 @@ spikes/codex-runtime/upstream/
 runtime-worktree/
 
 # Editors and operating systems
+.trae/
 .idea/
 .vscode/
 .DS_Store
