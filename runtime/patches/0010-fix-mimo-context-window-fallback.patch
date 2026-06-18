@@ -76,7 +76,7 @@ diff --git a/codex-rs/models-manager/src/model_info_tests.rs b/codex-rs/models-m
 index 70ad3da..881371e 100644
 --- a/codex-rs/models-manager/src/model_info_tests.rs
 +++ b/codex-rs/models-manager/src/model_info_tests.rs
-@@ -72,3 +72,18 @@ fn model_context_window_uses_model_value_without_override() {
+@@ -72,3 +72,26 @@ fn model_context_window_uses_model_value_without_override() {
  
      assert_eq!(updated, model);
  }
@@ -90,8 +90,16 @@ index 70ad3da..881371e 100644
 +    assert_eq!(model.effective_context_window_percent, 100);
 +    assert!(!model.used_fallback_model_metadata);
 +    assert!(model.base_instructions.contains("You are MiMo"));
-+    assert!(model.base_instructions.contains("1,000,000-token context window"));
++    assert!(
++        model
++            .base_instructions
++            .contains("1,000,000-token context window")
++    );
 +    assert!(model.base_instructions.contains("UTF-8 encoding"));
-+    assert!(model.base_instructions.contains("syntax or compilation errors"));
++    assert!(
++        model
++            .base_instructions
++            .contains("syntax or compilation errors")
++    );
 +    assert!(!model.base_instructions.contains("Codex CLI"));
 +}
