@@ -54,11 +54,12 @@ commit。
 
 7. `0007-use-mimo-identity-and-disable-thinking.patch`
 
-   使用简短、明确的 Mimodex 专属 MiMo 系统提示替换上游 Codex 默认提示，避免模型
-   错误声称自己是 Claude、Anthropic、Codex 或 OpenAI；按照小米 MiMo 官方对工具
-   调用场景的建议，为 Chat Completions 请求设置 `thinking.type = disabled`，缩短
-   简单交互首字等待并提高工具调用稳定性。补丁同时验证实际请求中的身份提示和
-   thinking 参数。该补丁已通过 Windows Runtime CI 权威验证。验证记录：
+   使用 Mimodex 专属 MiMo 系统提示替换上游 Codex 默认提示，避免模型错误声称自己是
+   Claude、Anthropic、Codex 或 OpenAI；提示中补入 Codex 风格任务执行规范，包括先读项目、
+   遵守 `AGENTS.md`、保护用户改动、聚焦修改和验证结果。Chat Completions 请求只在无工具
+   简单轮次设置 `thinking.type = disabled`，带工具编码任务不再强制禁用 thinking。补丁同时验证
+   实际请求中的身份提示和 thinking 策略。该补丁已通过 Windows Runtime CI 权威验证，`v0.1.7`
+   的策略调整仍需新一轮 Runtime CI 复验。验证记录：
    [Runtime CI #27393023486](https://github.com/MorganArthur/mimodex/actions/runs/27393023486)。
 
 8. `0008-stream-deltas-and-fast-simple-chat.patch`
@@ -76,6 +77,13 @@ commit。
    Chat Completions 兼容端点；未配置或值为空时继续使用小米 MiMo 官方端点。
    API Key 仍沿用独立的 Windows 凭据管理器链路，不写入普通设置文件。
 
-全部 9 个补丁已在当前锁定上游 commit 上通过 Windows Runtime CI，并被 Windows
-Preview 用于构建真实 Runtime sidecar。当前阶段不再新增首版 Adapter 大功能，重点是
-真实失败路径、异常恢复、上游基线维护和私测验收。
+10. `0010-fix-mimo-context-window-fallback.patch`
+
+   修复 MiMo 模型 slug 走 fallback metadata 时丢失 1,000,000 token 上下文窗口、
+   MiMo 专属身份提示和工具能力元数据的问题；同时让 fallback 路径使用 `v0.1.7`
+   的任务执行强化提示，避免模型目录刷新或未知 slug 路径退回薄提示。
+
+当前补丁队列包含 10 个补丁。前 9 个补丁已在锁定上游 commit 上通过 Windows Runtime CI，
+并被 Windows Preview 用于构建真实 Runtime sidecar；`v0.1.7` 对 0007 与 0010 的任务质量
+调整需要由下一轮 Runtime CI 和 Windows Release 复验。当前阶段不再新增首版 Adapter 大功能，
+重点是真实失败路径、异常恢复、上游基线维护和私测验收。

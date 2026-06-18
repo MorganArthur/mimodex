@@ -30,6 +30,9 @@ test("桌面会话服务连接 Runtime 并以默认模型启动首个任务", as
   assert.match(baseInstructions, /You are MiMo.*Mimodex/s);
   assert.match(baseInstructions, /UTF-8 encoding/);
   assert.match(baseInstructions, /syntax or compilation errors/);
+  assert.match(baseInstructions, /inspect the relevant project files/);
+  assert.match(baseInstructions, /AGENTS\.md/);
+  assert.match(baseInstructions, /never revert unrelated work/);
 });
 
 test("桌面会话服务投影流式文本、推理、命令、Diff 与完成状态", async () => {

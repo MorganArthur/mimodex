@@ -121,7 +121,7 @@ index ea8a8c4ee..7d927d20b 100644
  use futures::StreamExt;
  use pretty_assertions::assert_eq;
  use serde_json::json;
-@@ -279,6 +282,65 @@ fn chat_completions_rejects_unverified_request_capabilities() {
+@@ -279,6 +282,67 @@ fn chat_completions_rejects_unverified_request_capabilities() {
      );
  }
  
@@ -140,6 +140,7 @@ index ea8a8c4ee..7d927d20b 100644
 +
 +    assert_eq!(request.get("tools"), None);
 +    assert_eq!(request.get("tool_choice"), None);
++    assert_eq!(request["thinking"], json!({"type": "disabled"}));
 +}
 +
 +#[test]
@@ -160,6 +161,7 @@ index ea8a8c4ee..7d927d20b 100644
 +        request["tools"][0]["function"]["name"],
 +        json!("shell_command")
 +    );
++    assert_eq!(request.get("thinking"), None);
 +}
 +
 +fn user_message(text: &str) -> ResponseItem {

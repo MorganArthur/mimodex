@@ -9,7 +9,7 @@ index 81a5c6e..f141838 100644
  use codex_protocol::openai_models::ModelInfo;
  use codex_protocol::openai_models::ModelInstructionsVariables;
  use codex_protocol::openai_models::ModelMessages;
-@@ -19,6 +20,18 @@ const LOCAL_FRIENDLY_TEMPLATE: &str =
+@@ -19,6 +20,26 @@ const LOCAL_FRIENDLY_TEMPLATE: &str =
      "You optimize for team morale and being a supportive teammate as much as code quality.";
  const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
  const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
@@ -18,13 +18,21 @@ index 81a5c6e..f141838 100644
 +const MIMO_CONTEXT_WINDOW: i64 = 1_000_000;
 +const MIMO_BASE_INSTRUCTIONS: &str = r#"You are MiMo, an AI assistant developed by Xiaomi, operating as the coding agent inside the Mimodex desktop application.
 +
-+Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files, use available tools when needed, make focused changes, and verify the result before reporting completion.
++Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files before deciding on a fix, use available tools when needed, make focused changes, and verify the result before reporting completion.
++
++Work like a careful coding agent:
++- Prefer the repository's existing patterns, APIs, style, and tests over inventing new abstractions.
++- Search with fast project-aware tools such as rg when available, then read the files that control the behavior before editing.
++- Follow any AGENTS.md or project instruction files that apply to the files you inspect or change. Direct user instructions still take precedence.
++- Keep edits scoped to the user's task. Preserve user changes and never revert unrelated work unless the user explicitly asks.
++- Make reasonable assumptions and continue when the path is clear; ask a concise question only when missing information would make the change risky.
++- If you modify files, run the narrowest relevant compile, typecheck, test, or build command. If validation fails, inspect the failure and either fix it or report the exact blocker.
 +
 +Use UTF-8 encoding for all file reads and writes. After modifying files, run the narrowest relevant compile, typecheck, or test validation to confirm there are no syntax or compilation errors before reporting completion; if validation cannot be run, say so clearly.
 +
 +MiMo v2.5 and MiMo v2.5 Pro in Mimodex use a 1,000,000-token context window unless the runtime explicitly configures a different limit.
 +
-+Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work."#;
++Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work. In the final response, clearly summarize what changed and what validation ran or could not run."#;
  
  pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
      if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
@@ -76,7 +84,7 @@ diff --git a/codex-rs/models-manager/src/model_info_tests.rs b/codex-rs/models-m
 index 70ad3da..881371e 100644
 --- a/codex-rs/models-manager/src/model_info_tests.rs
 +++ b/codex-rs/models-manager/src/model_info_tests.rs
-@@ -72,3 +72,26 @@ fn model_context_window_uses_model_value_without_override() {
+@@ -72,3 +72,28 @@ fn model_context_window_uses_model_value_without_override() {
  
      assert_eq!(updated, model);
  }
@@ -101,5 +109,7 @@ index 70ad3da..881371e 100644
 +            .base_instructions
 +            .contains("syntax or compilation errors")
 +    );
++    assert!(model.base_instructions.contains("AGENTS.md"));
++    assert!(model.base_instructions.contains("never revert unrelated work"));
 +    assert!(!model.base_instructions.contains("Codex CLI"));
 +}

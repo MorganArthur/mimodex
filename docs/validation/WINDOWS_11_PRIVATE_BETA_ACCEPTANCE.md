@@ -1,12 +1,12 @@
 # Windows 11 私测验收清单
 
-- 状态：当前主阶段，使用 `v0.1.4` Windows Pre-release 完成真实安装验收
-- 最后更新：2026-06-16
-- 适用版本：Mimodex `v0.1.4` Windows Pre-release
+- 状态：当前主阶段，使用 `v0.1.7` Windows Pre-release 完成真实安装验收
+- 最后更新：2026-06-18
+- 适用版本：Mimodex `v0.1.7` Windows Pre-release
 - 目标：确认安装包、MiMo Provider、权限边界、项目与线程持久化满足私测条件
-- 当前构建：`v0.1.4` 标签触发的 [Windows Release #27604579174](https://github.com/MorganArthur/mimodex/actions/runs/27604579174)
-- 当前下载：[Mimodex v0.1.4](https://github.com/MorganArthur/mimodex/releases/tag/v0.1.4)
-- 当前 SHA256：`AA339BA0C2927FAA628FD1089995D41A5360DB88CEFB0BA596EC0B380679B31F`
+- 当前构建：待 `v0.1.7` 标签触发 Windows Release
+- 当前下载：[Mimodex v0.1.7](https://github.com/MorganArthur/mimodex/releases/tag/v0.1.7)
+- 当前 SHA256：待 Release 生成后回填
 
 ## 1. 验收记录
 
@@ -44,6 +44,8 @@
 
 - [ ] `mimo-v2.5` 为默认模型，`mimo-v2.5-pro` 位于高级模型选择。
 - [ ] 普通对话有真实流式输出，首段输出无明显整段等待。
+- [ ] 对话数轮后提交编码任务，Agent 能先检查项目文件、遵守 `AGENTS.md`、修改并运行最小验证。
+- [ ] 简单身份/能力问答仍走无工具快速路径，编码任务保留工具能力且不强制禁用 thinking。
 - [ ] 只读模式不会修改文件。
 - [ ] 工作区写入模式可修改当前项目，并对越界操作请求审批。
 - [ ] 选择完全访问时必须先显示高风险确认；取消后仍保持原权限。

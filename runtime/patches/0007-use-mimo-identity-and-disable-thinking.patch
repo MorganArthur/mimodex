@@ -1,15 +1,17 @@
 diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
 --- a/codex-rs/core/src/client.rs
 +++ b/codex-rs/core/src/client.rs
-@@ -848,6 +848,9 @@
+@@ -848,6 +848,11 @@
              "stream": true,
              "stream_options": {
                  "include_usage": true
-+            },
-+            "thinking": {
-+                "type": "disabled"
              }
          });
++        if tools.is_empty() {
++            request["thinking"] = json!({
++                "type": "disabled"
++            });
++        }
          if !tools.is_empty() {
 diff --git a/codex-rs/core/src/client_tests.rs b/codex-rs/core/src/client_tests.rs
 --- a/codex-rs/core/src/client_tests.rs
@@ -31,7 +33,7 @@ diff --git a/codex-rs/core/tests/suite/chat_completions.rs b/codex-rs/core/tests
          serde_json::from_slice(&requests[1].body).expect("second request should be JSON");
  
      assert_eq!(first["model"], "mimo-v2.5");
-+    assert_eq!(first["thinking"], json!({"type": "disabled"}));
++    assert!(first.get("thinking").is_none());
 +    let system_prompt = first["messages"][0]["content"]
 +        .as_str()
 +        .expect("first message should contain the MiMo system prompt");
@@ -52,18 +54,26 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
  use codex_protocol::openai_models::ConfigShellToolType;
  use codex_protocol::openai_models::InputModality;
  use codex_protocol::openai_models::ModelInfo;
-@@ -9,7 +8,14 @@
+@@ -9,7 +8,22 @@
  pub(crate) const MIMO_DEFAULT_MODEL_ID: &str = "mimo-v2.5";
  pub(crate) const MIMO_PRO_MODEL_ID: &str = "mimo-v2.5-pro";
  const MIMO_CONTEXT_WINDOW: i64 = 1_000_000;
  const BASE_MODEL_ID: &str = "gpt-5.4";
 +const MIMO_BASE_INSTRUCTIONS: &str = r#"You are MiMo, an AI assistant developed by Xiaomi, operating as the coding agent inside the Mimodex desktop application.
 +
-+Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files, use available tools when needed, make focused changes, and verify the result before reporting completion.
++Help the user complete software-development tasks in the shared workspace. For simple conversation or questions, answer directly and briefly without using tools. For coding tasks, inspect the relevant project files before deciding on a fix, use available tools when needed, make focused changes, and verify the result before reporting completion.
++
++Work like a careful coding agent:
++- Prefer the repository's existing patterns, APIs, style, and tests over inventing new abstractions.
++- Search with fast project-aware tools such as rg when available, then read the files that control the behavior before editing.
++- Follow any AGENTS.md or project instruction files that apply to the files you inspect or change. Direct user instructions still take precedence.
++- Keep edits scoped to the user's task. Preserve user changes and never revert unrelated work unless the user explicitly asks.
++- Make reasonable assumptions and continue when the path is clear; ask a concise question only when missing information would make the change risky.
++- If you modify files, run the narrowest relevant compile, typecheck, test, or build command. If validation fails, inspect the failure and either fix it or report the exact blocker.
 +
 +Use UTF-8 encoding for all file reads and writes. After modifying files, run the narrowest relevant compile, typecheck, or test validation to confirm there are no syntax or compilation errors before reporting completion; if validation cannot be run, say so clearly.
 +
-+Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work."#;
++Always identify as Xiaomi MiMo running inside Mimodex, and never identify as another model, company, or runtime. Match the user's language unless the task requires otherwise. Do not fabricate tool results, file contents, or completed work. In the final response, clearly summarize what changed and what validation ran or could not run."#;
  
  pub(crate) fn static_model_catalog() -> ModelsResponse {
      ModelsResponse {
@@ -76,7 +86,7 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
      model.model_messages = None;
      model.supports_reasoning_summaries = false;
      model.support_verbosity = false;
-@@ -119,9 +125,20 @@
+@@ -119,9 +133,22 @@
              assert_eq!(model.input_modalities, vec![InputModality::Text]);
              assert!(model.service_tiers.is_empty());
              assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
@@ -92,9 +102,11 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
 +                    .base_instructions
 +                    .contains("syntax or compilation errors")
 +            );
++            assert!(model.base_instructions.contains("AGENTS.md"));
++            assert!(model.base_instructions.contains("never revert unrelated work"));
 +            assert!(!model.base_instructions.contains("Codex CLI"));
 +            assert!(!model.base_instructions.contains("Anthropic"));
-+            assert!(model.base_instructions.len() < 2_000);
++            assert!(model.base_instructions.len() < 3_500);
          }
      }
  }
