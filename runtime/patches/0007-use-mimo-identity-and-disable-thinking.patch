@@ -86,7 +86,7 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
      model.model_messages = None;
      model.supports_reasoning_summaries = false;
      model.support_verbosity = false;
-@@ -119,9 +133,22 @@
+@@ -119,9 +133,26 @@
              assert_eq!(model.input_modalities, vec![InputModality::Text]);
              assert!(model.service_tiers.is_empty());
              assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
@@ -103,7 +103,11 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
 +                    .contains("syntax or compilation errors")
 +            );
 +            assert!(model.base_instructions.contains("AGENTS.md"));
-+            assert!(model.base_instructions.contains("never revert unrelated work"));
++            assert!(
++                model
++                    .base_instructions
++                    .contains("never revert unrelated work")
++            );
 +            assert!(!model.base_instructions.contains("Codex CLI"));
 +            assert!(!model.base_instructions.contains("Anthropic"));
 +            assert!(model.base_instructions.len() < 3_500);
