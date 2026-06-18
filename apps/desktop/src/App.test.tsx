@@ -54,7 +54,7 @@ describe("Mimodex 桌面壳", () => {
     renderApp(new UiRuntime());
 
     expect(screen.getAllByText(`当前版本 v${__APP_VERSION__}`).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(`v${__APP_VERSION__}`).length).toBeGreaterThan(0);
+    expect(screen.queryByText("软件版本")).toBeNull();
   });
 
   it("默认展示 mimo-v2.5，并将 Pro 放入高级模型选择", async () => {

@@ -428,7 +428,6 @@ export function App({
           <dl>
             <div><dt>连接</dt><dd>{statusLabels[state.connection]}</dd></div>
             <div><dt>模型</dt><dd>{state.model}</dd></div>
-            <div><dt>软件版本</dt><dd>v{APP_VERSION}</dd></div>
             <div><dt>线程</dt><dd>{state.threadId ? "已创建" : "待创建"}</dd></div>
             <div><dt>Token 总量</dt><dd>{formatTokens(state.tokenUsage?.totalTokens)}</dd></div>
             {state.tokenUsage && (
