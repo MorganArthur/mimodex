@@ -66,18 +66,18 @@ button {
   place-items: center;
   padding: 32px;
   background:
-    radial-gradient(circle at 20% 15%, rgba(198, 236, 139, 0.25), transparent 32%),
-    #e9e6de;
+    linear-gradient(180deg, rgba(233, 250, 222, 0.96), rgba(250, 241, 221, 0.96)),
+    #eef9e7;
 }
 
 .setup-card,
 .settings-dialog {
   width: min(520px, 100%);
   padding: 28px;
-  background: #f8f6f1;
-  border: 1px solid #d3cfc5;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #dfe5dc;
   border-radius: 16px;
-  box-shadow: 0 24px 70px rgba(49, 49, 42, 0.16);
+  box-shadow: 0 24px 70px rgba(67, 80, 60, 0.14);
 }
 
 .setup-brand {
@@ -135,8 +135,8 @@ button {
 .credential-form input {
   width: 100%;
   padding: 11px 12px;
-  background: #fffefa;
-  border: 1px solid #d6d2c8;
+  background: #fff;
+  border: 1px solid #d9dfd3;
   border-radius: 8px;
   outline: none;
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -150,7 +150,7 @@ button {
 
 .credential-form input:disabled {
   color: #7c8178;
-  background: #efede7;
+  background: #f1f3ef;
 }
 
 .credential-form small,
@@ -165,7 +165,8 @@ button {
   align-items: center;
   gap: 9px;
   padding: 10px 11px;
-  background: #eeece5;
+  background: #f1f5ee;
+  border: 1px solid #e2e9dd;
   border-radius: 8px;
 }
 
@@ -188,7 +189,7 @@ button {
 .credential-submit {
   padding: 11px 14px;
   color: #f2f6ed;
-  background: #34422c;
+  background: #2f402b;
   border: 0;
   border-radius: 8px;
   font-size: 10px;
@@ -203,8 +204,8 @@ button {
 .credential-secondary {
   padding: 10px 14px;
   color: #46533e;
-  background: #f2f0e9;
-  border: 1px solid #d5d1c6;
+  background: #fafbf8;
+  border: 1px solid #dce3d7;
   border-radius: 8px;
   font-size: 10px;
   font-weight: 750;
@@ -231,9 +232,9 @@ button {
 }
 
 .diagnostic-result.failure {
-  color: #7b3832;
-  background: #fff0ed;
-  border-color: #e9c2bd;
+  color: #7a453f;
+  background: #fff7f4;
+  border-color: #edd4cf;
 }
 
 .diagnostic-result span,
@@ -259,7 +260,7 @@ button {
 .provider-settings-form {
   margin-bottom: 22px;
   padding-bottom: 22px;
-  border-bottom: 1px solid #dedad1;
+  border-bottom: 1px solid #e2e7dd;
 }
 
 .global-error {
@@ -289,7 +290,8 @@ button {
   display: grid;
   place-items: center;
   padding: 30px;
-  background: rgba(32, 35, 31, 0.62);
+  background: rgba(38, 48, 37, 0.48);
+  backdrop-filter: blur(4px);
 }
 
 .settings-dialog {
@@ -313,8 +315,8 @@ button {
   width: 28px;
   height: 28px;
   color: #70766d;
-  background: #ebe8e0;
-  border: 1px solid #dad6cc;
+  background: #f3f5f0;
+  border: 1px solid #dfe5dc;
   border-radius: 7px;
   font-size: 18px;
 }
@@ -326,7 +328,7 @@ button {
   gap: 16px;
   margin-top: 24px;
   padding-top: 18px;
-  border-top: 1px solid #dedad1;
+  border-top: 1px solid #e2e7dd;
 }
 
 .danger-zone strong,
@@ -348,9 +350,9 @@ button {
 .danger-zone button {
   flex: none;
   padding: 8px 10px;
-  color: #943c36;
-  background: #fff0ed;
-  border: 1px solid #e8c0bb;
+  color: #8d4038;
+  background: #fff7f4;
+  border: 1px solid #edd4cf;
   border-radius: 7px;
   font-size: 9px;
   font-weight: 750;
@@ -1300,15 +1302,15 @@ button {
 .confirmation-dialog {
   width: min(440px, 100%);
   padding: 26px;
-  background: #f8f6f1;
-  border: 1px solid #d3cfc5;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #dfe5dc;
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(45, 30, 27, 0.25);
+  box-shadow: 0 22px 62px rgba(67, 80, 60, 0.18);
 }
 
 .confirmation-dialog.danger {
-  background: #fffaf6;
-  border-color: #dfb8af;
+  background: rgba(255, 255, 255, 0.97);
+  border-color: #dfe5dc;
 }
 
 .confirmation-dialog h2 {
@@ -1325,7 +1327,7 @@ button {
 }
 
 .confirmation-dialog.danger p:not(.eyebrow) {
-  color: #6f5d57;
+  color: #676d64;
 }
 
 .confirmation-actions {
@@ -1337,28 +1339,28 @@ button {
 .confirmation-actions button {
   padding: 9px 11px;
   color: #5f625a;
-  background: #fffefa;
-  border: 1px solid #d7d2c8;
+  background: #fafbf8;
+  border: 1px solid #dce3d7;
   border-radius: 8px;
   font-size: 10px;
   font-weight: 750;
 }
 
 .confirmation-actions button:hover {
-  background: #f1efe8;
-  border-color: #c5c0b5;
+  background: #f1f5ee;
+  border-color: #d0dbc8;
 }
 
 .confirmation-actions button.primary-confirm {
   color: #f2f6ed;
-  background: #34422c;
-  border-color: #34422c;
+  background: #2f402b;
+  border-color: #2f402b;
 }
 
 .confirmation-actions button.danger-confirm {
-  color: #fff7f5;
-  background: #8d4038;
-  border-color: #8d4038;
+  color: #fff;
+  background: #33432f;
+  border-color: #33432f;
 }
 
 .approval-actions {
@@ -2470,14 +2472,14 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 34px 0 0;
+  padding: 12px 0 0;
   background: transparent;
 }
 
 .codex-window {
   display: grid;
   grid-template-rows: 50px minmax(0, 1fr);
-  height: calc(100vh - 34px);
+  height: calc(100vh - 12px);
   min-height: 0;
   overflow: hidden;
   background: #fff;
@@ -3406,10 +3408,12 @@ body {
   align-items: center;
   justify-content: center;
   gap: 7px;
+  flex-wrap: nowrap;
   width: 100%;
   color: #2e322d;
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
 }
 
 .popup-select-trigger::after {
@@ -3433,14 +3437,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 94px;
+  min-width: 118px;
   height: 30px;
-  padding: 7px 12px 0;
+  padding: 0 11px;
   color: #394037;
   background: transparent;
   border: 0;
   border-radius: 999px;
   text-align: center;
+}
+
+.composer-popup-select .popup-select-trigger::after {
+  transform: translateY(5px) rotate(45deg);
+}
+
+.composer-popup-select.open .popup-select-trigger::after {
+  transform: translateY(5px) rotate(225deg);
 }
 
 .composer-popup-select .popup-select-trigger:hover {
@@ -3453,29 +3465,39 @@ body {
 
 .composer-popup-select .popup-select-trigger strong {
   display: inline-flex;
-  height: 100%;
+  min-width: 0;
+  height: auto;
   align-items: center;
   overflow: hidden;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1;
+  line-height: 30px;
   text-overflow: ellipsis;
+  transform: translateY(5px);
   white-space: nowrap;
 }
 
 .composer-popup-select.sandbox-popup-select .popup-select-trigger {
-  min-width: 112px;
+  min-width: 126px;
 }
 
 .settings-popup-select .popup-select-trigger {
   justify-content: space-between;
-  padding: 11px 34px 11px 12px;
-  background: #fffefa;
-  border: 1px solid #d6d2c8;
+  min-height: 36px;
+  padding: 0 12px;
+  background: #fff;
+  border: 1px solid #d9dfd3;
   border-radius: 8px;
   outline: none;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 11px;
+}
+
+.settings-popup-select .popup-select-trigger strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .popup-select-trigger:disabled {
