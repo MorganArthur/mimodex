@@ -174,15 +174,6 @@ export function App({
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-chrome" aria-label="窗口菜单">
-          <span className="brand-mark">M</span>
-          <span>文件</span>
-          <span>编辑</span>
-          <span>查看</span>
-          <span>窗口</span>
-          <span>帮助</span>
-        </div>
-
         <nav className="primary-nav" aria-label="主导航">
           <button
             aria-label="新建线程"
@@ -193,18 +184,6 @@ export function App({
           >
             <span aria-hidden="true">+</span>
             新对话
-          </button>
-          <button className="nav-command" type="button">
-            <span aria-hidden="true">⌕</span>
-            搜索
-          </button>
-          <button className="nav-command" type="button">
-            <span aria-hidden="true">◇</span>
-            插件
-          </button>
-          <button className="nav-command" type="button">
-            <span aria-hidden="true">◷</span>
-            自动化
           </button>
         </nav>
 
@@ -403,22 +382,22 @@ export function App({
                 <div className="composer-spacer" />
                 <ContextWindowControl state={state} />
                 <ModelPicker model={model} onChange={setModel} />
-                <button aria-label="语音输入" className="composer-icon-button muted" disabled type="button">
-                  μ
-                </button>
                 <button
                   aria-label="开始任务"
                   className="send-button"
                   type="submit"
                   disabled={!canSubmit}
                 >
-                  <span aria-hidden="true">{submitting ? "…" : "↑"}</span>
+                  {submitting ? <span aria-hidden="true" className="send-loading" /> : <SendArrowIcon />}
                 </button>
               </div>
               <div className="composer-meta">
-                <span className="meta-chip" title={currentProject?.path}>
-                  ▱ {currentProject?.name ?? "未选择项目"}
-                </span>
+                <ProjectPicker
+                  currentProject={currentProject}
+                  disabled={projectBusy}
+                  projects={projects}
+                  onSelectProject={onSelectProject}
+                />
                 <span className="meta-chip">本地模式</span>
                 <span className="meta-chip">
                   {currentProject?.git.branch ?? currentProject?.git.head ?? "无 Git 分支"}
@@ -1365,6 +1344,63 @@ const ModelPicker = memo(function ModelPicker({
     />
   );
 });
+
+function ProjectPicker({
+  currentProject,
+  disabled,
+  onSelectProject,
+  projects,
+}: {
+  currentProject: ProjectSummary | null;
+  disabled: boolean;
+  onSelectProject: (projectId: string) => void | Promise<void>;
+  projects: ProjectSummary[];
+}) {
+  const options = useMemo(
+    () =>
+      projects.map((project) => ({
+        description: project.path,
+        label: project.name,
+        value: project.id,
+      })),
+    [projects],
+  );
+
+  if (options.length === 0) {
+    return (
+      <button className="project-meta-empty" disabled type="button">
+        <span aria-hidden="true">▱</span>
+        未选择项目
+      </button>
+    );
+  }
+
+  return (
+    <PopupSelect
+      ariaLabel="切换项目"
+      className="project-meta-select"
+      disabled={disabled}
+      label="▱"
+      options={options}
+      placement="top"
+      value={currentProject?.id ?? options[0]?.value ?? ""}
+      onChange={(projectId) => {
+        if (projectId !== currentProject?.id) {
+          void onSelectProject(projectId);
+        }
+      }}
+    />
+  );
+}
+
+function SendArrowIcon() {
+  return (
+    <svg aria-hidden="true" className="send-icon" focusable="false" viewBox="0 0 20 20">
+      <path d="M10 15.5V4.5" />
+      <path d="M5.5 9L10 4.5L14.5 9" />
+    </svg>
+  );
+}
 
 function sandboxLabel(sandbox: "danger-full-access" | "read-only" | "workspace-write"): string {
   return sandbox === "read-only" ? "只读模式" : sandbox === "workspace-write" ? "工作区写入" : "完全访问";

@@ -33,6 +33,7 @@ export const SANDBOX_OPTIONS: PopupSelectOption[] = [
 export function PopupSelect({
   ariaLabel,
   className = "",
+  disabled = false,
   label,
   onChange,
   options,
@@ -41,6 +42,7 @@ export function PopupSelect({
 }: {
   ariaLabel: string;
   className?: string;
+  disabled?: boolean;
   label: string;
   onChange: (value: string) => void;
   options: PopupSelectOption[];
@@ -50,6 +52,12 @@ export function PopupSelect({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const selected = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
 
   useEffect(() => {
     if (!open) {
@@ -86,8 +94,9 @@ export function PopupSelect({
         aria-haspopup="listbox"
         aria-label={ariaLabel}
         className="popup-select-trigger"
+        disabled={disabled}
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen((current) => !disabled && !current)}
       >
         <span>{label}</span>
         <strong>{selected?.label ?? value}</strong>
