@@ -57,6 +57,21 @@ describe("Mimodex 桌面壳", () => {
     expect(screen.queryByText("软件版本")).toBeNull();
   });
 
+  it("将背景信息窗口作为输入框里的可点击悬浮控件", async () => {
+    const user = userEvent.setup();
+    renderApp(new UiRuntime());
+
+    const composer = document.querySelector(".composer");
+    const contextWindow = document.querySelector(".context-window-control");
+
+    expect(composer?.contains(contextWindow)).toBe(true);
+    expect(screen.queryByRole("dialog", { name: "背景信息窗口详情" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "背景信息窗口" }));
+    expect(screen.getByRole("dialog", { name: "背景信息窗口详情" })).toBeTruthy();
+    expect(screen.getByText("提交任务后显示用量")).toBeTruthy();
+    expect(document.querySelector(".context-panel")).toBeNull();
+  });
+
   it("默认展示 mimo-v2.5，并将 Pro 放入高级模型选择", async () => {
     const runtime = new UiRuntime();
     const user = userEvent.setup();
@@ -571,6 +586,7 @@ describe("Mimodex 桌面壳", () => {
 
   it("右侧只展示 Git 暂存区中的文件变更摘要", async () => {
     const runtime = new UiRuntime();
+    const user = userEvent.setup();
     const project = {
       ...fixtureProject(),
       git: {
@@ -584,6 +600,7 @@ describe("Mimodex 桌面壳", () => {
     };
     renderApp(runtime, [project], project);
 
+    await user.click(screen.getByRole("button", { name: "环境信息" }));
     expect(await screen.findByText("1 个文件 · 1 已暂存")).toBeTruthy();
     expect(screen.getAllByText("+2 -0")).toHaveLength(2);
     expect(screen.getByText(".gitignore")).toBeTruthy();
@@ -592,6 +609,7 @@ describe("Mimodex 桌面壳", () => {
 
   it("右侧多文件变更只展示各文件修改数量", async () => {
     const runtime = new UiRuntime();
+    const user = userEvent.setup();
     const project = {
       ...fixtureProject(),
       git: {
@@ -619,6 +637,7 @@ diff --git a/src/app.ts b/src/app.ts
     };
     renderApp(runtime, [project], project);
 
+    await user.click(screen.getByRole("button", { name: "环境信息" }));
     expect(await screen.findByText(".gitignore")).toBeTruthy();
     expect(screen.getByText("src/app.ts")).toBeTruthy();
     expect(screen.getByText("+1 -0")).toBeTruthy();
@@ -629,6 +648,7 @@ diff --git a/src/app.ts b/src/app.ts
 
   it("展示 Runtime 上报的 Token 用量", async () => {
     const runtime = new UiRuntime();
+    const user = userEvent.setup();
     renderApp(runtime);
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
 
@@ -648,12 +668,47 @@ diff --git a/src/app.ts b/src/app.ts
       },
     });
 
+    await user.click(screen.getByRole("button", { name: "背景信息窗口" }));
     expect(await screen.findByText("1,024")).toBeTruthy();
     expect(screen.getByText("上下文占用")).toBeTruthy();
     expect(screen.getByText("1,024 / 1,000,000 (<1%)")).toBeTruthy();
     expect(screen.getByText("自动压缩")).toBeTruthy();
     expect(screen.getByText("监测中")).toBeTruthy();
     expect(screen.queryByText("上下文窗口")).toBeNull();
+  });
+
+  it("环境进度只展示当前任务的执行步骤", async () => {
+    const runtime = new UiRuntime();
+    const user = userEvent.setup();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    await user.type(screen.getByLabelText("任务内容"), "检查任务步骤");
+    await user.click(screen.getByRole("button", { name: /开始任务/ }));
+    runtime.emitNotification({
+      method: "item/reasoning/textDelta",
+      params: { itemId: "reasoning-progress", delta: "先检查项目结构" },
+    });
+    runtime.emitNotification({
+      method: "item/started",
+      params: {
+        item: {
+          id: "command-progress",
+          type: "commandExecution",
+          command: "npm test",
+          status: "inProgress",
+        },
+      },
+    });
+
+    await user.click(screen.getByRole("button", { name: "环境信息" }));
+    await user.click(screen.getByRole("button", { name: "进度" }));
+
+    expect(await screen.findByText("分析任务")).toBeTruthy();
+    expect(screen.getByText("运行命令")).toBeTruthy();
+    expect(screen.getByText("npm test")).toBeTruthy();
+    expect(screen.queryByText("Runtime 状态")).toBeNull();
+    expect(screen.queryByText("Runtime 审计记录")).toBeNull();
   });
 
   it("任务完成后自动静默刷新 Git 状态", async () => {
@@ -719,7 +774,7 @@ diff --git a/src/app.ts b/src/app.ts
     expect(document.querySelector(".entry-label")).toBeNull();
   });
 
-  it("恢复历史线程后读取持久化活动记录", async () => {
+  it("进度窗口不展示持久化 Runtime 审计记录", async () => {
     const runtime = new UiRuntime();
     const threads = new FakeThreadService([fixtureThread()], [fixtureActivityEvent()]);
     const user = userEvent.setup();
@@ -734,37 +789,41 @@ diff --git a/src/app.ts b/src/app.ts
     );
 
     await user.click(await screen.findByTitle("修复历史测试"));
-    await user.click(screen.getByRole("button", { name: "活动" }));
+    await user.click(screen.getByRole("button", { name: "环境信息" }));
+    await user.click(screen.getByRole("button", { name: "进度" }));
 
-    expect(await screen.findByText("item/commandExecution/requestApproval")).toBeTruthy();
-    expect(screen.getByText("已记录最近 1 条线程协议事件。")).toBeTruthy();
+    expect(await screen.findByText("暂无进度")).toBeTruthy();
+    expect(screen.queryByText("item/commandExecution/requestApproval")).toBeNull();
+    expect(screen.queryByText("Runtime 审计记录")).toBeNull();
   });
 
-  it("切换线程后只展示当前线程的活动记录", async () => {
+  it("切换到已中断的历史线程后不把历史命令当作当前进度", async () => {
     const runtime = new UiRuntime();
     const secondThread = {
       ...fixtureThread(),
       id: "thread-second",
       title: "第二个历史线程",
-      timeline: fixtureThread().timeline.map((entry) =>
-        entry.kind === "user" ? { ...entry, content: "第二个历史线程" } : entry,
-      ),
+      turnStatus: "inProgress" as const,
+      timeline: [
+        {
+          id: "second-user",
+          kind: "user" as const,
+          title: "你",
+          content: "第二个历史线程",
+          status: null,
+          startedAt: 1_000,
+        },
+        {
+          id: "second-command",
+          kind: "command" as const,
+          title: "npm test",
+          content: "",
+          status: "inProgress",
+          startedAt: 2_000,
+        },
+      ],
       updatedAt: 3,
     };
-    const secondActivity = {
-      ...fixtureActivityEvent(),
-      eventId: "activity-second-1",
-      threadId: secondThread.id,
-      protocol: {
-        ...fixtureActivityEvent().protocol,
-        threadId: secondThread.id,
-        method: "turn/completed",
-      },
-    };
-    const threads = new FakeThreadService(
-      [fixtureThread(), secondThread],
-      [fixtureActivityEvent(), secondActivity],
-    );
     const user = userEvent.setup();
     render(
       <DesktopRoot
@@ -772,17 +831,18 @@ diff --git a/src/app.ts b/src/app.ts
         createSession={() => new DesktopSessionController(runtime)}
         projectService={new FakeProjectService()}
         settingsService={new FakeSettingsService()}
-        threadService={threads}
+        threadService={new FakeThreadService([fixtureThread(), secondThread])}
       />,
     );
 
     await user.click(await screen.findByTitle("修复历史测试"));
-    await user.click(screen.getByRole("button", { name: "活动" }));
-    expect(await screen.findByText("item/commandExecution/requestApproval")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "环境信息" }));
+    await user.click(screen.getByRole("button", { name: "进度" }));
+    expect(await screen.findByText("暂无进度")).toBeTruthy();
 
     await user.click(screen.getByTitle("第二个历史线程"));
-    expect(await screen.findByText("turn/completed")).toBeTruthy();
-    expect(screen.queryByText("item/commandExecution/requestApproval")).toBeNull();
+    expect(await screen.findByText("运行命令 · npm test")).toBeTruthy();
+    expect(screen.getByText("暂无进度")).toBeTruthy();
   });
 
   it("切换线程时保持线程列表顺序不变", async () => {
@@ -868,7 +928,7 @@ diff --git a/src/app.ts b/src/app.ts
     await waitFor(() => expect(threads.deletedIds).toEqual(["thread-history"]));
   });
 
-  it("将 Runtime 原始协议事件批量写入线程服务并实时展示活动", async () => {
+  it("将 Runtime 原始协议事件写入线程服务但不作为进度展示", async () => {
     const runtime = new UiRuntime();
     const threads = new FakeThreadService();
     const user = userEvent.setup();
@@ -901,8 +961,10 @@ diff --git a/src/app.ts b/src/app.ts
 
     await waitFor(() => expect(threads.runtimeEvents).toHaveLength(1));
     expect(threads.runtimeEvents[0]?.threadId).toBe("thread-1");
-    await user.click(screen.getByRole("button", { name: "活动" }));
-    expect(await screen.findByText("turn/started")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "环境信息" }));
+    await user.click(screen.getByRole("button", { name: "进度" }));
+    expect((await screen.findAllByText("等待步骤")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("turn/started")).toBeNull();
   });
 });
 

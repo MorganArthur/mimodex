@@ -86,7 +86,8 @@ export function App({
   const [fullAccessWarningOpen, setFullAccessWarningOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [contextTab, setContextTab] = useState<"activity" | "changes">("changes");
+  const [environmentPanel, setEnvironmentPanel] = useState<"changes" | "progress">("changes");
+  const [environmentOpen, setEnvironmentOpen] = useState(false);
   const conversationRef = useRef<HTMLElement>(null);
   const submittingRef = useRef(false);
   const gitDiff = currentProject?.git.diff ?? "";
@@ -102,6 +103,8 @@ export function App({
     : state.diff
       ? "+1 -1"
       : "0";
+  const hasConversationContent =
+    state.timeline.length > 0 || state.approvals.length > 0 || Boolean(state.structuredError);
 
   useEffect(() => {
     void session.connect().catch(() => undefined);
@@ -171,32 +174,47 @@ export function App({
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">M</div>
-          <div>
-            <strong>Mimodex</strong>
-            <span>本地编程 Agent</span>
-            <span className="app-version">当前版本 v{APP_VERSION}</span>
-          </div>
+        <div className="sidebar-chrome" aria-label="窗口菜单">
+          <span className="brand-mark">M</span>
+          <span>文件</span>
+          <span>编辑</span>
+          <span>查看</span>
+          <span>窗口</span>
+          <span>帮助</span>
         </div>
 
-        <button
-          className="new-thread"
-          disabled={!currentProject?.available || projectBusy || threadBusy}
-          type="button"
-          onClick={() => void onNewThread()}
-        >
-          <span>+</span>
-          新建线程
-        </button>
+        <nav className="primary-nav" aria-label="主导航">
+          <button
+            aria-label="新建线程"
+            className="nav-command"
+            disabled={!currentProject?.available || projectBusy || threadBusy}
+            type="button"
+            onClick={() => void onNewThread()}
+          >
+            <span aria-hidden="true">+</span>
+            新对话
+          </button>
+          <button className="nav-command" type="button">
+            <span aria-hidden="true">⌕</span>
+            搜索
+          </button>
+          <button className="nav-command" type="button">
+            <span aria-hidden="true">◇</span>
+            插件
+          </button>
+          <button className="nav-command" type="button">
+            <span aria-hidden="true">◷</span>
+            自动化
+          </button>
+        </nav>
 
-        <div className="sidebar-section">
+        <div className="sidebar-section projects">
           <div className="section-heading">
             <span>项目</span>
             <button
+              aria-label="添加项目"
               disabled={projectBusy}
               type="button"
-              aria-label="添加项目"
               onClick={() => void onAddProject()}
             >
               +
@@ -211,238 +229,205 @@ export function App({
             >
               添加本地项目文件夹
             </button>
-          ) : projects.map((project) => (
-            <button
-              className={`project-row ${project.id === currentProject?.id ? "active" : ""}`}
-              disabled={projectBusy}
-              key={project.id}
-              title={project.path}
-              type="button"
-              onClick={() => void onSelectProject(project.id)}
-            >
-              <span className="project-icon">{projectInitials(project.name)}</span>
-              <div>
-                <strong>{project.name}</strong>
-                <span>{projectSubtitle(project)}</span>
-              </div>
-              <i className={project.git.dirty ? "dirty" : ""} />
-            </button>
-          ))}
-          {projectError && <p className="sidebar-error">{projectError}</p>}
-        </div>
-
-        <div className="sidebar-section threads">
-          <div className="section-heading">
-            <span>最近线程</span>
-          </div>
-          {threads.length === 0 ? (
-            <p className="empty-threads">这个项目还没有线程。</p>
           ) : (
-            threads.map((thread) => (
-              <ThreadRow
-                active={thread.id === state.threadId}
-                disabled={projectBusy || threadBusy || !currentProject?.available}
-                key={thread.id}
-                onArchive={() => void onSetThreadArchived(thread.id, true)}
-                onSelect={() => void onSelectThread(thread.id)}
-                thread={thread}
-              />
-            ))
+            projects.map((project) => {
+              const activeProject = project.id === currentProject?.id;
+              return (
+                <div className={`project-group ${activeProject ? "active" : ""}`} key={project.id}>
+                  <button
+                    className={`project-row ${activeProject ? "active" : ""}`}
+                    disabled={projectBusy}
+                    title={project.path}
+                    type="button"
+                    onClick={() => void onSelectProject(project.id)}
+                  >
+                    <span className="project-icon" aria-hidden="true">▱</span>
+                    <span className="project-copy">
+                      <strong>{project.name}</strong>
+                      {project.git.dirty && <i>{project.git.changedFiles + project.git.untrackedFiles}</i>}
+                    </span>
+                  </button>
+                  {activeProject && (
+                    <div className="project-thread-list">
+                      {threads.length === 0 ? (
+                        <p className="empty-threads">这个项目还没有线程。</p>
+                      ) : (
+                        threads.map((thread) => (
+                          <ThreadRow
+                            active={thread.id === state.threadId}
+                            disabled={projectBusy || threadBusy || !currentProject?.available}
+                            key={thread.id}
+                            onArchive={() => void onSetThreadArchived(thread.id, true)}
+                            onSelect={() => void onSelectThread(thread.id)}
+                            thread={thread}
+                          />
+                        ))
+                      )}
+                      {archivedThreads.length > 0 && (
+                        <details className="archived-threads">
+                          <summary>已归档线程 · {archivedThreads.length}</summary>
+                          {archivedThreads.map((thread) => (
+                            <ThreadRow
+                              archived
+                              disabled={threadBusy}
+                              key={thread.id}
+                              onDelete={() => setDeleteThreadTarget(thread)}
+                              onRestore={() => void onSetThreadArchived(thread.id, false)}
+                              thread={thread}
+                            />
+                          ))}
+                        </details>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
-          {archivedThreads.length > 0 && (
-            <details className="archived-threads">
-              <summary>已归档线程 · {archivedThreads.length}</summary>
-              {archivedThreads.map((thread) => (
-                <ThreadRow
-                  archived
-                  disabled={threadBusy}
-                  key={thread.id}
-                  onDelete={() => setDeleteThreadTarget(thread)}
-                  onRestore={() => void onSetThreadArchived(thread.id, false)}
-                  thread={thread}
-                />
-              ))}
-            </details>
-          )}
+          {projectError && <p className="sidebar-error">{projectError}</p>}
           {threadError && <p className="sidebar-error">{threadError}</p>}
         </div>
 
+        <div className="sidebar-spacer" />
+
         <div className="sidebar-footer">
-          <span className={`connection-dot ${state.connection}`} />
-          <div>
-            <strong>{statusLabels[state.connection]}</strong>
-            <span>{state.platform ?? "本地演示连接"}</span>
-          </div>
-          <button type="button" aria-label="打开设置" onClick={onOpenSettings}>···</button>
+          <button type="button" aria-label="打开设置" onClick={onOpenSettings}>
+            <span aria-hidden="true">⚙</span>
+            设置
+          </button>
+          <span className="app-version">当前版本 v{APP_VERSION}</span>
         </div>
       </aside>
 
-      <main className="workspace">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">{currentProject ? projectBreadcrumb(currentProject) : "尚未选择项目"}</p>
-            <h1>{currentProject?.name ?? "添加一个本地项目"}</h1>
-          </div>
-          <div className="topbar-actions">
-            {currentProject && (
-              <button
-                className="refresh-project"
-                disabled={projectBusy}
-                type="button"
-                onClick={() => void onRefreshProject()}
-              >
-                {projectBusy ? "刷新中" : "刷新 Git"}
-              </button>
-            )}
-            <span className="model-pill">{model}</span>
-            {sandbox === "danger-full-access" && <span className="danger-pill">完全访问</span>}
-            <span className={`run-status ${state.turnStatus}`}>
-              {state.turnStatus === "inProgress" ? "执行中" : "就绪"}
-            </span>
-            {state.turnStatus === "inProgress" && (
-              <button className="stop-button" type="button" onClick={() => void session.stop()}>
-                停止
-              </button>
-            )}
-          </div>
-        </header>
-
-        <section className="conversation" ref={conversationRef}>
-          {!currentProject ? (
-            <ProjectWelcome onAdd={() => void onAddProject()} />
-          ) : !currentProject.available ? (
-            <UnavailableProject project={currentProject} onAdd={() => void onAddProject()} />
-          ) : state.timeline.length === 0 ? (
-            <WelcomePanel onSelect={setMessage} project={currentProject} />
-          ) : (
-            <Timeline entries={state.timeline} turnStatus={state.turnStatus} />
-          )}
-          {state.approvals.map((approval) => (
-            <ApprovalCard
-              approval={approval}
-              key={String(approval.id)}
-              onDecision={(decision) => void session.resolveApproval(approval.id, decision)}
-            />
-          ))}
-          {state.structuredError && <RuntimeErrorCard error={state.structuredError} />}
-        </section>
-
-        <form className="composer" onSubmit={(event) => void submit(event)}>
-          <textarea
-            aria-label="任务内容"
-            enterKeyHint="send"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={submitOnEnter}
-            placeholder="描述你希望 Mimodex 在当前项目中完成的任务"
-            rows={3}
-          />
-          <div className="composer-toolbar">
-            <div className="composer-options">
-              <label>
-                <span>项目路径</span>
-                <strong className="selected-project-path" title={currentProject?.path}>
-                  {currentProject?.path ?? "请先添加项目"}
-                </strong>
-              </label>
-              <PopupSelect
-                ariaLabel="权限模式"
-                className="composer-popup-select sandbox-popup-select"
-                label="权限"
-                options={SANDBOX_OPTIONS}
-                placement="top"
-                value={sandbox}
-                onChange={(next) => {
-                  if (next === "danger-full-access" && sandbox !== "danger-full-access") {
-                    setFullAccessWarningOpen(true);
-                  } else {
-                    setSandbox(next as typeof sandbox);
-                  }
-                }}
-              />
-              <ModelPicker model={model} onChange={setModel} />
+      <main className={`workspace ${hasConversationContent ? "has-thread" : "empty-thread"}`}>
+        <section className="codex-window">
+          <header className="topbar">
+            <div className="topbar-title-group">
+              <p className="eyebrow">{currentProject ? projectBreadcrumb(currentProject) : "尚未选择项目"}</p>
+              <h1>{currentProject?.name ?? "添加一个本地项目"}</h1>
             </div>
-            <button
-              className="send-button"
-              type="submit"
-              disabled={!canSubmit}
-            >
-              {submitting ? "提交中" : "开始任务"}
-              <span>↗</span>
-            </button>
-          </div>
-        </form>
-      </main>
+            <div className="topbar-actions">
+              {currentProject && (
+                <button
+                  aria-label="刷新 Git"
+                  className="refresh-project"
+                  disabled={projectBusy}
+                  title={currentProject.path}
+                  type="button"
+                  onClick={() => void onRefreshProject()}
+                >
+                  <span aria-hidden="true">↻</span>
+                  {projectBusy ? "刷新中" : "刷新 Git"}
+                </button>
+              )}
+              <span className="model-pill">{model}</span>
+              {sandbox === "danger-full-access" && <span className="danger-pill">完全访问</span>}
+              <span className={`run-status ${state.turnStatus}`}>
+                {state.turnStatus === "inProgress" ? "执行中" : "就绪"}
+              </span>
+              <span className="runtime-status-compat">{statusLabels[state.connection]}</span>
+              {state.turnStatus === "inProgress" && (
+                <button className="stop-button" type="button" onClick={() => void session.stop()}>
+                  停止
+                </button>
+              )}
+              <EnvironmentPopover
+                contextPanel={environmentPanel}
+                currentProject={currentProject}
+                diffCount={diffCount}
+                diffFiles={diffFiles}
+                files={parsedDiffFiles}
+                open={environmentOpen}
+                state={state}
+                onOpenChange={setEnvironmentOpen}
+                onPanelChange={setEnvironmentPanel}
+              />
+            </div>
+          </header>
 
-      <aside className={`context-panel ${contextTab}`}>
-        <div className="context-tabs">
-          <button
-            className={contextTab === "changes" ? "active" : ""}
-            type="button"
-            onClick={() => setContextTab("changes")}
-          >
-            变更
-          </button>
-          <button
-            className={contextTab === "activity" ? "active" : ""}
-            type="button"
-            onClick={() => setContextTab("activity")}
-          >
-            活动
-          </button>
-        </div>
-        <section className="context-summary">
-          <p className="eyebrow">{contextTab === "changes" ? "当前项目" : "当前线程"}</p>
-          <h2>
-            {contextTab === "changes"
-              ? currentProject?.name ?? "尚未选择"
-              : state.threadId
-                ? "Runtime 活动审计"
-                : "尚未创建线程"}
-          </h2>
-          <p>
-            {contextTab === "changes"
-              ? currentProject
-                ? projectSummary(currentProject)
-                : "添加项目后才能创建 Agent 任务。"
-              : state.threadId
-                ? `已记录最近 ${activityEvents.length} 条线程协议事件。`
-                : "提交任务或恢复历史线程后，这里会显示持久化活动。"}
-          </p>
-        </section>
-        {contextTab === "changes" ? (
-          <DiffPanel
-            currentProject={currentProject}
-            diffCount={diffCount}
-            diffFiles={diffFiles}
-            files={parsedDiffFiles}
-          />
-        ) : (
-          <ActivityPanel error={activityError} events={activityEvents} />
-        )}
-        <section className="runtime-card">
-          <div>
-            <span className={`connection-dot ${state.connection}`} />
-            <strong>Runtime 状态</strong>
+          <div className="workspace-stage">
+            <section className="conversation" ref={conversationRef}>
+              {!currentProject ? (
+                <ProjectWelcome onAdd={() => void onAddProject()} />
+              ) : !currentProject.available ? (
+                <UnavailableProject project={currentProject} onAdd={() => void onAddProject()} />
+              ) : state.timeline.length === 0 ? (
+                <WelcomePanel onSelect={setMessage} project={currentProject} />
+              ) : (
+                <Timeline entries={state.timeline} turnStatus={state.turnStatus} />
+              )}
+              {state.approvals.map((approval) => (
+                <ApprovalCard
+                  approval={approval}
+                  key={String(approval.id)}
+                  onDecision={(decision) => void session.resolveApproval(approval.id, decision)}
+                />
+              ))}
+              {state.structuredError && <RuntimeErrorCard error={state.structuredError} />}
+            </section>
+
+            <form className="composer" onSubmit={(event) => void submit(event)}>
+              <textarea
+                aria-label="任务内容"
+                enterKeyHint="send"
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={submitOnEnter}
+                placeholder="描述你希望 Mimodex 在当前项目中完成的任务"
+                rows={3}
+              />
+              <div className="composer-toolbar">
+                <button
+                  aria-label="添加上下文"
+                  className="composer-icon-button"
+                  disabled={!currentProject?.available}
+                  type="button"
+                >
+                  +
+                </button>
+                <PopupSelect
+                  ariaLabel="权限模式"
+                  className="composer-popup-select sandbox-popup-select"
+                  label="权限"
+                  options={SANDBOX_OPTIONS}
+                  placement="top"
+                  value={sandbox}
+                  onChange={(next) => {
+                    if (next === "danger-full-access" && sandbox !== "danger-full-access") {
+                      setFullAccessWarningOpen(true);
+                    } else {
+                      setSandbox(next as typeof sandbox);
+                    }
+                  }}
+                />
+                <div className="composer-spacer" />
+                <ContextWindowControl state={state} />
+                <ModelPicker model={model} onChange={setModel} />
+                <button aria-label="语音输入" className="composer-icon-button muted" disabled type="button">
+                  μ
+                </button>
+                <button
+                  aria-label="开始任务"
+                  className="send-button"
+                  type="submit"
+                  disabled={!canSubmit}
+                >
+                  <span aria-hidden="true">{submitting ? "…" : "↑"}</span>
+                </button>
+              </div>
+              <div className="composer-meta">
+                <span className="meta-chip" title={currentProject?.path}>
+                  ▱ {currentProject?.name ?? "未选择项目"}
+                </span>
+                <span className="meta-chip">本地模式</span>
+                <span className="meta-chip">
+                  {currentProject?.git.branch ?? currentProject?.git.head ?? "无 Git 分支"}
+                </span>
+              </div>
+            </form>
           </div>
-          <dl>
-            <div><dt>连接</dt><dd>{statusLabels[state.connection]}</dd></div>
-            <div><dt>模型</dt><dd>{state.model}</dd></div>
-            <div><dt>线程</dt><dd>{state.threadId ? "已创建" : "待创建"}</dd></div>
-            <div><dt>Token 总量</dt><dd>{formatTokens(state.tokenUsage?.totalTokens)}</dd></div>
-            {state.tokenUsage && (
-              <div><dt>上下文占用</dt><dd>{formatContextUsage(state.tokenUsage)}</dd></div>
-            )}
-            <div><dt>自动压缩</dt><dd>{contextCompactionLabel(state.contextCompaction)}</dd></div>
-            {state.tokenUsage && (
-              <>
-                <div><dt>输入 / 输出</dt><dd>{formatTokens(state.tokenUsage.inputTokens)} / {formatTokens(state.tokenUsage.outputTokens)}</dd></div>
-                <div><dt>缓存 / 推理</dt><dd>{formatTokens(state.tokenUsage.cachedInputTokens)} / {formatTokens(state.tokenUsage.reasoningOutputTokens)}</dd></div>
-              </>
-            )}
-          </dl>
         </section>
-      </aside>
+      </main>
       {fullAccessWarningOpen && (
         <ConfirmationDialog
           cancelLabel="保持工作区写入"
@@ -516,9 +501,7 @@ function WelcomePanel({
 }) {
   return (
     <div className="welcome-panel">
-      <span className="welcome-kicker">LOCAL-FIRST CODING AGENT</span>
-      <h2>把任务交给 MiMo，<br />把每一步留在你眼前。</h2>
-      <p>当前项目为 {project.name}。输入任务后，Agent 将以该文件夹作为工作目录。</p>
+      <h2>我们应该在 {project.name} 中构建什么？</h2>
       <div className="suggestion-grid">
         <button type="button" onClick={() => onSelect("定位并修复当前项目中的失败测试。")}>
           <strong>修复失败测试</strong><span>定位根因并运行聚焦验证</span>
@@ -532,22 +515,6 @@ function WelcomePanel({
       </div>
     </div>
   );
-}
-
-function projectInitials(name: string): string {
-  return name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, "").slice(0, 2).toUpperCase() || "PR";
-}
-
-function projectSubtitle(project: ProjectSummary): string {
-  if (!project.available) {
-    return "文件夹不可用";
-  }
-  if (!project.git.isRepository) {
-    return "非 Git 文件夹";
-  }
-  const branch = project.git.branch ?? project.git.head ?? "Git 仓库";
-  const changes = project.git.changedFiles + project.git.untrackedFiles;
-  return changes > 0 ? `${branch} · ${changes} 项变更` : branch;
 }
 
 function projectBreadcrumb(project: ProjectSummary): string {
@@ -713,6 +680,362 @@ function contextCompactionLabel(compaction: SessionState["contextCompaction"]): 
     return "监测中";
   }
   return "等待统计";
+}
+
+function ContextWindowControl({ state }: { state: SessionState }) {
+  const [open, setOpen] = useState(false);
+  const usage = contextWindowCardSummary(state.tokenUsage);
+  return (
+    <div className={`context-window-control ${open ? "open" : ""}`}>
+      <button
+        aria-expanded={open}
+        aria-label="背景信息窗口"
+        className="context-window-trigger"
+        title={usage.detail}
+        type="button"
+        onClick={() => setOpen(!open)}
+      >
+        <span aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="context-window-popover" role="dialog" aria-label="背景信息窗口详情">
+          <span>背景信息窗口:</span>
+          <strong>{usage.primary}</strong>
+          <small>{usage.detail}</small>
+          <dl>
+            <div>
+              <dt>Token 总量</dt>
+              <dd>{formatTokens(state.tokenUsage?.totalTokens)}</dd>
+            </div>
+            <div>
+              <dt>上下文占用</dt>
+              <dd>{state.tokenUsage ? formatContextUsage(state.tokenUsage) : "等待统计"}</dd>
+            </div>
+            <div>
+              <dt>自动压缩</dt>
+              <dd>{contextCompactionLabel(state.contextCompaction)}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function contextWindowCardSummary(usage: SessionState["tokenUsage"]): {
+  detail: string;
+  primary: string;
+} {
+  if (!usage) {
+    return { primary: "等待统计", detail: "提交任务后显示用量" };
+  }
+  if (!usage.contextWindow || usage.contextWindow <= 0) {
+    return {
+      primary: `${formatCompactTokens(usage.totalTokens)} 已用`,
+      detail: "上下文容量未知",
+    };
+  }
+  const percent = Math.min(100, Math.max(0, Math.round((usage.totalTokens / usage.contextWindow) * 100)));
+  const remaining = Math.max(0, 100 - percent);
+  return {
+    primary: `${percent}% 已用（剩余 ${remaining}%）`,
+    detail: `已用 ${formatCompactTokens(usage.totalTokens)} 标记，共 ${formatCompactTokens(usage.contextWindow)}`,
+  };
+}
+
+function formatCompactTokens(value: number): string {
+  if (value >= 1_000_000) {
+    const millions = value / 1_000_000;
+    return `${Number.isInteger(millions) ? millions.toFixed(0) : millions.toFixed(1)}m`;
+  }
+  if (value >= 1_000) {
+    return `${Math.round(value / 1_000)}k`;
+  }
+  return value.toLocaleString("zh-CN");
+}
+
+function EnvironmentPopover({
+  contextPanel,
+  currentProject,
+  diffCount,
+  diffFiles,
+  files,
+  open,
+  state,
+  onOpenChange,
+  onPanelChange,
+}: {
+  contextPanel: "changes" | "progress";
+  currentProject: ProjectSummary | null;
+  diffCount: string;
+  diffFiles: number;
+  files: DiffFile[];
+  open: boolean;
+  state: SessionState;
+  onOpenChange: (open: boolean) => void;
+  onPanelChange: (panel: "changes" | "progress") => void;
+}) {
+  const branch = currentProject?.git.branch ?? currentProject?.git.head ?? "无 Git 分支";
+  return (
+    <div className={`environment-control ${open ? "open" : ""}`}>
+      <button
+        aria-expanded={open}
+        aria-label="环境信息"
+        className="environment-toggle"
+        type="button"
+        onClick={() => onOpenChange(!open)}
+      >
+        <span aria-hidden="true">☷</span>
+      </button>
+      {open && (
+        <section aria-label="环境信息" className="environment-popover">
+          <header>
+            <span>环境信息</span>
+            <button aria-label="环境设置" type="button">⚙</button>
+          </header>
+          {contextPanel === "changes" ? (
+            <>
+              <EnvironmentChangesView
+                branch={branch}
+                currentProject={currentProject}
+                diffCount={diffCount}
+                diffFiles={diffFiles}
+                files={files}
+                sandbox={state.sandbox}
+                state={state}
+                onOpenProgress={() => onPanelChange("progress")}
+              />
+              <div className="environment-divider" />
+              <EnvironmentRow icon="◎" label="浏览器" value="Mimodex 127.0.0.1:1420" />
+              <div className="environment-divider" />
+              <div className="environment-source">
+                <span>来源</span>
+                <strong>暂无来源</strong>
+              </div>
+            </>
+          ) : (
+            <EnvironmentProgressView state={state} onBack={() => onPanelChange("changes")} />
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function EnvironmentChangesView({
+  branch,
+  currentProject,
+  diffCount,
+  diffFiles,
+  files,
+  onOpenProgress,
+  sandbox,
+  state,
+}: {
+  branch: string;
+  currentProject: ProjectSummary | null;
+  diffCount: string;
+  diffFiles: number;
+  files: DiffFile[];
+  onOpenProgress: () => void;
+  sandbox: SessionState["sandbox"];
+  state: SessionState;
+}) {
+  return (
+    <div className="environment-view">
+      <EnvironmentRow
+        accent
+        icon="±"
+        label="变更"
+        value={diffCount}
+      />
+      <EnvironmentRow icon="▱" label="本地" value={sandboxLabel(sandbox)} />
+      <EnvironmentRow icon="⌁" label="分支" value={branch} />
+      <EnvironmentRow icon="↗" label="提交或推送" value={diffFiles > 0 ? "可审阅" : "等待变更"} />
+      <EnvironmentRow icon="◌" label="GitHub CLI" value="不可用" muted />
+      {diffFiles > 0 && (
+        <>
+          <div className="environment-divider" />
+          <section className="environment-detail">
+            <span>当前变更</span>
+            <strong>{gitChangeSummary(currentProject, diffFiles)}</strong>
+            {files.length > 0 && (
+              <div className="environment-file-list">
+                {files.map((file) => (
+                  <div className="environment-file-row" key={file.id}>
+                    <span title={file.path}>{file.path}</span>
+                    <i>+{file.additions} -{file.deletions}</i>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+      <div className="environment-divider" />
+      <button className="environment-progress-row" type="button" aria-label="进度" onClick={onOpenProgress}>
+        <span>
+          <i aria-hidden="true">◷</i>
+          进度
+        </span>
+        <small>
+          {progressSummary(state)}
+          <strong aria-hidden="true">›</strong>
+        </small>
+      </button>
+      {currentProject && <span className="environment-project-note">{projectSummary(currentProject)}</span>}
+    </div>
+  );
+}
+
+function EnvironmentProgressView({
+  onBack,
+  state,
+}: {
+  onBack: () => void;
+  state: SessionState;
+}) {
+  const steps = taskProgressSteps(state);
+  return (
+    <div className="environment-view">
+      <button className="environment-progress-row back" type="button" onClick={onBack}>
+        <strong aria-hidden="true">‹</strong>
+        <span>环境信息</span>
+      </button>
+      <div className="environment-divider" />
+      <section className="environment-detail environment-progress-detail">
+        <span>进度</span>
+        <strong>{progressSummary(state)}</strong>
+        <p>
+          {state.turnStatus === "inProgress"
+            ? "这里仅显示当前任务执行中的分步骤。"
+            : "当前没有正在执行的任务。"}
+        </p>
+        {steps.length > 0 ? (
+          <ol className="progress-step-list">
+            {steps.map((step) => (
+              <li className={step.statusClass} key={step.id}>
+                <span aria-hidden="true" />
+                <div>
+                  <strong>{step.label}</strong>
+                  {step.detail && <small>{step.detail}</small>}
+                </div>
+                <em>{step.status}</em>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div className="empty-progress">
+            <span aria-hidden="true">◷</span>
+            <strong>{state.turnStatus === "inProgress" ? "等待步骤" : "暂无进度"}</strong>
+            <p>任务开始并产生工具、文件、审批或推理步骤后才会显示在这里。</p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+type TaskProgressStep = {
+  detail: string;
+  id: string;
+  label: string;
+  status: string;
+  statusClass: string;
+};
+
+function progressSummary(state: SessionState): string {
+  if (state.turnStatus !== "inProgress") {
+    return "空闲";
+  }
+  const steps = taskProgressSteps(state);
+  return steps.length > 0 ? `${steps.length} 个步骤` : "等待步骤";
+}
+
+function taskProgressSteps(state: SessionState): TaskProgressStep[] {
+  if (state.turnStatus !== "inProgress" && state.approvals.length === 0) {
+    return [];
+  }
+  const lastUserIndex = state.timeline.findLastIndex((entry) => entry.kind === "user");
+  const currentTurnEntries = (lastUserIndex >= 0 ? state.timeline.slice(lastUserIndex + 1) : state.timeline)
+    .filter((entry) => entry.kind !== "assistant" || entry.status === "inProgress")
+    .filter((entry) => entry.kind !== "user");
+  const entrySteps = currentTurnEntries.map((entry) => ({
+    detail: progressStepDetail(entry),
+    id: entry.id,
+    label: progressStepLabel(entry),
+    status: activityStatus(entry.status ?? (state.turnStatus === "inProgress" ? "inProgress" : "completed")),
+    statusClass: progressStatusClass(entry.status),
+  }));
+  const approvalSteps = state.approvals.map((approval) => ({
+    detail: approval.detail || approval.reason,
+    id: String(approval.id),
+    label: `等待审批 · ${approval.title}`,
+    status: "待处理",
+    statusClass: "waiting",
+  }));
+  return [...entrySteps, ...approvalSteps];
+}
+
+function progressStepLabel(entry: TimelineEntry): string {
+  if (entry.kind === "command") {
+    return "运行命令";
+  }
+  if (entry.kind === "file") {
+    return "编辑文件";
+  }
+  if (entry.kind === "reasoning") {
+    return "分析任务";
+  }
+  if (entry.kind === "assistant") {
+    return "生成回复";
+  }
+  if (entry.kind === "error") {
+    return "处理错误";
+  }
+  return entry.title;
+}
+
+function progressStepDetail(entry: TimelineEntry): string {
+  if (entry.kind === "command") {
+    return entry.title;
+  }
+  if (entry.kind === "reasoning") {
+    return entry.content.trim().split(/\r?\n/)[0] ?? "";
+  }
+  return entry.content.trim().split(/\r?\n/)[0] || entry.title;
+}
+
+function progressStatusClass(status: string | null): string {
+  return status === "completed"
+    ? "completed"
+    : status === "failed"
+      ? "failed"
+      : status === "interrupted"
+        ? "interrupted"
+        : "running";
+}
+
+function EnvironmentRow({
+  accent = false,
+  icon,
+  label,
+  muted = false,
+  value,
+}: {
+  accent?: boolean;
+  icon: string;
+  label: string;
+  muted?: boolean;
+  value: string;
+}) {
+  return (
+    <div className={`environment-row ${accent ? "accent" : ""} ${muted ? "muted" : ""}`}>
+      <span aria-hidden="true">{icon}</span>
+      <strong>{label}</strong>
+      <small>{value}</small>
+    </div>
+  );
 }
 
 const DiffPanel = memo(function DiffPanel({
