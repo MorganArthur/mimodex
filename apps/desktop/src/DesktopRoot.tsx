@@ -54,13 +54,19 @@ type RunningAutomation = {
 };
 
 export function DesktopRoot({
-  automationService = createAutomationService(),
+  automationService: providedAutomationService,
   credentialService,
   createSession,
   projectService,
   settingsService,
   threadService,
 }: DesktopRootProps) {
+  const fallbackAutomationServiceRef = useRef<AutomationService | null>(null);
+  if (!fallbackAutomationServiceRef.current) {
+    fallbackAutomationServiceRef.current = createAutomationService();
+  }
+  const automationService = providedAutomationService ?? fallbackAutomationServiceRef.current;
+
   const [credentialStatus, setCredentialStatus] = useState<CredentialStatus | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [session, setSession] = useState<DesktopSessionController | null>(null);
