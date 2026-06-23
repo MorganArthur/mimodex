@@ -63,6 +63,9 @@ type UiIconName =
   | "folder"
   | "github"
   | "laptop"
+  | "menu"
+  | "plus"
+  | "refresh"
   | "settings"
   | "square-pen";
 
@@ -117,17 +120,31 @@ const iconPaths: Record<UiIconName, ReactNode> = {
       <path d="M7.7 13.5h4.6" />
     </>
   ),
+  menu: (
+    <>
+      <path d="M5 6.6h10" />
+      <path d="M5 10h10" />
+      <path d="M5 13.4h10" />
+    </>
+  ),
+  plus: (
+    <>
+      <path d="M10 4.8v10.4" />
+      <path d="M4.8 10h10.4" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M15.8 7.8A5.8 5.8 0 0 0 5.3 5.6L4 7.4" />
+      <path d="M4 3.9v3.5h3.5" />
+      <path d="M4.2 12.2a5.8 5.8 0 0 0 10.5 2.2l1.3-1.8" />
+      <path d="M16 16.1v-3.5h-3.5" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="10" cy="10" r="2.4" />
-      <path d="M10 2.8v2" />
-      <path d="M10 15.2v2" />
-      <path d="M4.9 4.9l1.4 1.4" />
-      <path d="M13.7 13.7l1.4 1.4" />
-      <path d="M2.8 10h2" />
-      <path d="M15.2 10h2" />
-      <path d="M4.9 15.1l1.4-1.4" />
-      <path d="M13.7 6.3l1.4-1.4" />
+      <path d="M8.8 2.9h2.4l.4 2.1c.5.1.9.3 1.3.5l1.8-1.2 1.7 1.7-1.2 1.8c.2.4.4.8.5 1.3l2.1.4v2.4l-2.1.4c-.1.5-.3.9-.5 1.3l1.2 1.8-1.7 1.7-1.8-1.2c-.4.2-.8.4-1.3.5l-.4 2.1H8.8l-.4-2.1c-.5-.1-.9-.3-1.3-.5l-1.8 1.2-1.7-1.7 1.2-1.8c-.2-.4-.4-.8-.5-1.3l-2.1-.4V9.5l2.1-.4c.1-.5.3-.9.5-1.3L3.6 6l1.7-1.7 1.8 1.2c.4-.2.8-.4 1.3-.5l.4-2.1Z" />
     </>
   ),
   "square-pen": (
@@ -359,7 +376,9 @@ export function App({
 
         <div className="sidebar-footer">
           <button type="button" aria-label="打开设置" onClick={onOpenSettings}>
-            <span aria-hidden="true">⚙</span>
+            <span aria-hidden="true">
+              <UiIcon name="settings" />
+            </span>
             设置
           </button>
           <span className="app-version">当前版本 v{APP_VERSION}</span>
@@ -383,7 +402,9 @@ export function App({
                   type="button"
                   onClick={() => void onRefreshProject()}
                 >
-                  <span aria-hidden="true">↻</span>
+                  <span aria-hidden="true">
+                    <UiIcon name="refresh" />
+                  </span>
                   {projectBusy ? "刷新中" : "刷新 Git"}
                 </button>
               )}
@@ -449,7 +470,7 @@ export function App({
                   disabled={!currentProject?.available}
                   type="button"
                 >
-                  +
+                  <UiIcon name="plus" />
                 </button>
                 <PopupSelect
                   ariaLabel="权限模式"
@@ -750,9 +771,33 @@ function contextCompactionLabel(compaction: SessionState["contextCompaction"]): 
 
 function ContextWindowControl({ state }: { state: SessionState }) {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const usage = contextWindowCardSummary(state.tokenUsage);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
   return (
-    <div className={`context-window-control ${open ? "open" : ""}`}>
+    <div className={`context-window-control ${open ? "open" : ""}`} ref={rootRef}>
       <button
         aria-expanded={open}
         aria-label="背景信息窗口"
@@ -851,7 +896,9 @@ function EnvironmentPopover({
         type="button"
         onClick={() => onOpenChange(!open)}
       >
-        <span aria-hidden="true">☷</span>
+        <span aria-hidden="true">
+          <UiIcon name="menu" />
+        </span>
       </button>
       {open && (
         <section aria-label="环境信息" className="environment-popover">

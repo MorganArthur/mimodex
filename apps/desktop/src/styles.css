@@ -62,13 +62,13 @@ button {
 
 .ui-icon {
   display: block;
-  width: 1em;
-  height: 1em;
+  width: var(--ui-icon-size, 16px);
+  height: var(--ui-icon-size, 16px);
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.7px;
+  stroke-width: var(--ui-icon-stroke, 1.85px);
   vector-effect: non-scaling-stroke;
 }
 
@@ -1513,13 +1513,20 @@ button {
 
 .popup-select-chevron {
   display: block;
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
   border-right: 1.5px solid #777d74;
   border-bottom: 1.5px solid #777d74;
   transform: rotate(45deg);
   transition: transform 140ms ease;
+}
+
+.composer-popup-select .popup-select-chevron {
+  width: 7px;
+  height: 7px;
+  flex-basis: 7px;
+  margin-top: -2px;
 }
 
 .popup-select.open .popup-select-chevron {
@@ -2123,10 +2130,10 @@ body {
 .nav-command {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
-  height: 30px;
-  padding: 0 4px;
+  height: 32px;
+  padding: 0 5px;
   color: #2f392f;
   background: transparent;
   border: 0;
@@ -2137,12 +2144,16 @@ body {
 
 .nav-command span {
   display: grid;
-  width: 16px;
-  height: 16px;
+  width: 19px;
+  height: 19px;
   flex: 0 0 auto;
   place-items: center;
   color: #536051;
-  font-size: 13px;
+}
+
+.nav-command .ui-icon {
+  --ui-icon-size: 17px;
+  --ui-icon-stroke: 1.9px;
 }
 
 .nav-command:hover:not(:disabled),
@@ -2150,6 +2161,22 @@ body {
 .thread-row:hover:not(:disabled),
 .sidebar-footer button:hover {
   background: rgba(255, 255, 255, 0.58);
+}
+
+.nav-command:focus-visible,
+.section-heading button:focus-visible,
+.project-row:focus-visible,
+.thread-row:focus-visible,
+.sidebar-footer button:focus-visible,
+.refresh-project:focus-visible,
+.stop-button:focus-visible,
+.environment-toggle:focus-visible,
+.environment-popover header button:focus-visible,
+.composer-icon-button:focus-visible,
+.context-window-trigger:focus-visible,
+.send-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(123, 148, 102, 0.16);
 }
 
 .nav-command:disabled,
@@ -2185,14 +2212,15 @@ body {
 
 .section-heading button {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   place-items: center;
   color: #687365;
   background: transparent;
   border: 0;
   border-radius: 6px;
-  font-size: 15px;
+  font-size: 17px;
+  line-height: 1;
 }
 
 .section-heading button:hover:not(:disabled) {
@@ -2208,10 +2236,10 @@ body {
 .project-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  min-height: 28px;
-  padding: 3px 4px;
+  min-height: 30px;
+  padding: 4px 5px;
   color: #485347;
   background: transparent;
   border: 0;
@@ -2226,16 +2254,21 @@ body {
 
 .project-icon {
   display: grid !important;
-  width: 17px;
-  height: 17px;
+  width: 19px;
+  height: 19px;
   flex: 0 0 auto;
   place-items: center;
   margin: 0 !important;
   color: #657160 !important;
   background: transparent;
   border-radius: 0;
-  font-size: 14px !important;
+  font-size: 15px !important;
   font-weight: 500;
+}
+
+.project-icon .ui-icon {
+  --ui-icon-size: 17px;
+  --ui-icon-stroke: 1.9px;
 }
 
 .project-copy {
@@ -2267,7 +2300,7 @@ body {
 .project-thread-list {
   display: grid;
   gap: 1px;
-  margin: 1px 0 6px 25px;
+  margin: 1px 0 6px 27px;
 }
 
 .thread-list-item {
@@ -2481,10 +2514,15 @@ body {
 
 .sidebar-footer button span {
   display: grid;
-  width: 17px;
-  height: 17px;
+  width: 19px;
+  height: 19px;
   place-items: center;
   color: #536051;
+}
+
+.sidebar-footer button .ui-icon {
+  --ui-icon-size: 17px;
+  --ui-icon-stroke: 1.9px;
 }
 
 .app-version {
@@ -2559,9 +2597,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 28px;
-  gap: 6px;
-  padding: 0 10px;
+  height: 30px;
+  min-height: 30px;
+  gap: 7px;
+  padding: 0 11px;
   color: #4f5a4c;
   background: #f8f8f6;
   border: 1px solid #e0e2dc;
@@ -2569,6 +2608,20 @@ body {
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.refresh-project span {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  place-items: center;
+  color: #43503f;
+}
+
+.refresh-project .ui-icon {
+  --ui-icon-size: 16px;
+  --ui-icon-stroke: 2px;
 }
 
 .refresh-project:hover:not(:disabled) {
@@ -2610,14 +2663,23 @@ body {
 
 .environment-toggle {
   display: grid;
-  width: 30px;
-  height: 28px;
+  width: 34px;
+  height: 30px;
   place-items: center;
   color: #4f5a4c;
   background: #f8f8f6;
   border: 1px solid #e0e2dc;
   border-radius: 8px;
-  font-size: 15px;
+}
+
+.environment-toggle span {
+  display: grid;
+  place-items: center;
+}
+
+.environment-toggle .ui-icon {
+  --ui-icon-size: 18px;
+  --ui-icon-stroke: 2px;
 }
 
 .environment-toggle:hover,
@@ -2654,14 +2716,18 @@ body {
 
 .environment-popover header button {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   color: #7a8178;
   background: transparent;
   border: 0;
   border-radius: 6px;
-  font-size: 14px;
+}
+
+.environment-popover header button .ui-icon {
+  --ui-icon-size: 17px;
+  --ui-icon-stroke: 1.9px;
 }
 
 .environment-popover header button:hover {
@@ -2698,21 +2764,25 @@ body {
 
 .environment-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
+  gap: 9px;
+  min-height: 32px;
   color: #414840;
   font-size: 12px;
 }
 
 .environment-row > span {
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   place-items: center;
   color: #5e675c;
-  font-size: 13px;
+}
+
+.environment-row > span .ui-icon {
+  --ui-icon-size: 16px;
+  --ui-icon-stroke: 1.9px;
 }
 
 .environment-row strong {
@@ -3147,9 +3217,9 @@ body {
 .composer-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 5px 8px 7px;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 10px 8px;
 }
 
 .composer-spacer {
@@ -3160,8 +3230,8 @@ body {
 .composer-icon-button,
 .send-button {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 50%;
@@ -3170,12 +3240,18 @@ body {
 
 .composer-icon-button {
   color: #626b60;
-  background: transparent;
-  border: 0;
+  background: #f8f9f6;
+  border: 1px solid transparent;
+}
+
+.composer-icon-button .ui-icon {
+  --ui-icon-size: 19px;
+  --ui-icon-stroke: 2px;
 }
 
 .composer-icon-button:hover:not(:disabled) {
   background: #f0f2ef;
+  border-color: #e5e8e0;
 }
 
 .composer-icon-button:disabled {
@@ -3203,8 +3279,8 @@ body {
 
 .send-icon {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 19px;
+  height: 19px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -3232,31 +3308,32 @@ body {
   position: relative;
   z-index: 8;
   display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   place-items: center;
 }
 
 .context-window-trigger {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   place-items: center;
   color: #777f74;
-  background: transparent;
-  border: 0;
+  background: #f8f9f6;
+  border: 1px solid transparent;
   border-radius: 50%;
 }
 
 .context-window-trigger:hover,
 .context-window-control.open .context-window-trigger {
   background: #f0f2ef;
+  border-color: #e5e8e0;
 }
 
 .context-window-trigger span {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   border: 2px solid #b6bbb2;
   border-top-color: #5e665c;
   border-radius: 50%;
@@ -3386,12 +3463,17 @@ body {
 .project-meta-select .popup-select-label,
 .project-meta-empty span {
   display: grid;
-  width: 13px;
-  height: 13px;
-  flex: 0 0 13px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   place-items: center;
   color: #8a9187;
-  font-size: 12px;
+}
+
+.project-meta-select .popup-select-label .ui-icon,
+.project-meta-empty .ui-icon {
+  --ui-icon-size: 16px;
+  --ui-icon-stroke: 1.9px;
 }
 
 .project-meta-select .popup-select-trigger strong {
@@ -3442,13 +3524,21 @@ body {
 
 .popup-select-chevron {
   display: block;
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
   border-right: 1.5px solid #777d74;
   border-bottom: 1.5px solid #777d74;
   transform: rotate(45deg);
   transition: transform 140ms ease;
+}
+
+.composer-popup-select .popup-select-chevron {
+  display: none;
+}
+
+.project-meta-select .popup-select-chevron {
+  display: none;
 }
 
 .popup-select.open .popup-select-chevron {
@@ -3460,18 +3550,19 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  min-width: 118px;
-  height: 30px;
-  padding: 0 11px;
+  min-width: 112px;
+  height: 34px;
+  padding: 0 13px;
   color: #394037;
-  background: transparent;
-  border: 0;
+  background: #f8f9f6;
+  border: 1px solid transparent;
   border-radius: 999px;
   text-align: center;
 }
 
 .composer-popup-select .popup-select-trigger:hover {
   background: #f0f2ef;
+  border-color: #e5e8e0;
 }
 
 .composer-popup-select .popup-select-label {
@@ -3481,18 +3572,18 @@ body {
 .composer-popup-select .popup-select-trigger strong {
   display: inline-flex;
   min-width: 0;
-  height: auto;
+  height: 100%;
   align-items: center;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .composer-popup-select.sandbox-popup-select .popup-select-trigger {
-  min-width: 126px;
+  min-width: 118px;
 }
 
 .settings-popup-select .popup-select-trigger {
