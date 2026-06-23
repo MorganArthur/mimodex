@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
 
 export type PopupSelectOption = {
   description?: string;
@@ -43,7 +43,7 @@ export function PopupSelect({
   ariaLabel: string;
   className?: string;
   disabled?: boolean;
-  label: string;
+  label: ReactNode;
   onChange: (value: string) => void;
   options: PopupSelectOption[];
   placement?: "bottom" | "top";
@@ -98,8 +98,9 @@ export function PopupSelect({
         type="button"
         onClick={() => setOpen((current) => !disabled && !current)}
       >
-        <span>{label}</span>
+        <span className="popup-select-label">{label}</span>
         <strong>{selected?.label ?? value}</strong>
+        <span aria-hidden="true" className="popup-select-chevron" />
       </button>
       <div
         aria-hidden={!open}

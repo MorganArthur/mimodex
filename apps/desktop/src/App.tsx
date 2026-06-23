@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 
 import {
@@ -53,6 +54,89 @@ const statusLabels: Record<SessionState["connection"], string> = {
   connecting: "正在连接",
   ready: "Runtime 已连接",
   error: "连接异常",
+};
+
+type UiIconName =
+  | "branch"
+  | "commit"
+  | "diff"
+  | "folder"
+  | "github"
+  | "laptop"
+  | "settings"
+  | "square-pen";
+
+function UiIcon({ name }: { name: UiIconName }) {
+  return (
+    <svg aria-hidden="true" className="ui-icon" focusable="false" viewBox="0 0 20 20">
+      {iconPaths[name]}
+    </svg>
+  );
+}
+
+const iconPaths: Record<UiIconName, ReactNode> = {
+  branch: (
+    <>
+      <circle cx="5.5" cy="4.5" r="1.6" />
+      <circle cx="5.5" cy="15.5" r="1.6" />
+      <circle cx="14.5" cy="8" r="1.6" />
+      <path d="M5.5 6.1v7.8" />
+      <path d="M7.1 4.5h2.4a3 3 0 0 1 3 3v.5" />
+    </>
+  ),
+  commit: (
+    <>
+      <path d="M3.5 10h4" />
+      <circle cx="10" cy="10" r="2.3" />
+      <path d="M12.3 10h4.2" />
+    </>
+  ),
+  diff: (
+    <>
+      <rect x="4.5" y="4" width="11" height="12" rx="1.8" />
+      <path d="M10 7.5v5" />
+      <path d="M7.5 10h5" />
+    </>
+  ),
+  folder: (
+    <>
+      <path d="M3 6.6h5l1.6 1.8H17" />
+      <path d="M3 6.6v8.8a1.4 1.4 0 0 0 1.4 1.4h11.2a1.4 1.4 0 0 0 1.4-1.4V8.4a1.4 1.4 0 0 0-1.4-1.4H9.1" />
+    </>
+  ),
+  github: (
+    <>
+      <path d="M8.2 16.8c-4.1 1.2-4.1-1.8-5.7-2.2" />
+      <path d="M11.8 18v-3.1c0-.8-.3-1.4-.8-1.8 2.7-.3 5.5-1.3 5.5-5.8a4.6 4.6 0 0 0-1.2-3.2c.1-.3.5-1.6-.1-3.1 0 0-1-.3-3.3 1.2a11.1 11.1 0 0 0-6 0C3.6.7 2.6 1 2.6 1c-.6 1.5-.2 2.8-.1 3.1a4.6 4.6 0 0 0-1.2 3.2c0 4.5 2.8 5.5 5.5 5.8-.4.4-.7 1-.8 1.8V18" />
+    </>
+  ),
+  laptop: (
+    <>
+      <rect x="4" y="5" width="12" height="8.5" rx="1.3" />
+      <path d="M2.8 16h14.4" />
+      <path d="M7.7 13.5h4.6" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="10" cy="10" r="2.4" />
+      <path d="M10 2.8v2" />
+      <path d="M10 15.2v2" />
+      <path d="M4.9 4.9l1.4 1.4" />
+      <path d="M13.7 13.7l1.4 1.4" />
+      <path d="M2.8 10h2" />
+      <path d="M15.2 10h2" />
+      <path d="M4.9 15.1l1.4-1.4" />
+      <path d="M13.7 6.3l1.4-1.4" />
+    </>
+  ),
+  "square-pen": (
+    <>
+      <rect x="3.8" y="3.8" width="12.4" height="12.4" rx="2.4" />
+      <path d="M8.3 12.4l.5-2.4 4.4-4.4a1.2 1.2 0 0 1 1.7 1.7l-4.4 4.4-2.2.7Z" />
+      <path d="M12.2 6.6l1.2 1.2" />
+    </>
+  ),
 };
 
 export function App({
@@ -182,7 +266,9 @@ export function App({
             type="button"
             onClick={() => void onNewThread()}
           >
-            <span aria-hidden="true">+</span>
+            <span aria-hidden="true">
+              <UiIcon name="square-pen" />
+            </span>
             新对话
           </button>
         </nav>
@@ -220,7 +306,9 @@ export function App({
                     type="button"
                     onClick={() => void onSelectProject(project.id)}
                   >
-                    <span className="project-icon" aria-hidden="true">▱</span>
+                    <span className="project-icon" aria-hidden="true">
+                      <UiIcon name="folder" />
+                    </span>
                     <span className="project-copy">
                       <strong>{project.name}</strong>
                       {project.git.dirty && <i>{project.git.changedFiles + project.git.untrackedFiles}</i>}
@@ -299,7 +387,6 @@ export function App({
                   {projectBusy ? "刷新中" : "刷新 Git"}
                 </button>
               )}
-              <span className="model-pill">{model}</span>
               {sandbox === "danger-full-access" && <span className="danger-pill">完全访问</span>}
               <span className={`run-status ${state.turnStatus}`}>
                 {state.turnStatus === "inProgress" ? "执行中" : "就绪"}
@@ -770,7 +857,9 @@ function EnvironmentPopover({
         <section aria-label="环境信息" className="environment-popover">
           <header>
             <span>环境信息</span>
-            <button aria-label="环境设置" type="button">⚙</button>
+            <button aria-label="环境设置" type="button">
+              <UiIcon name="settings" />
+            </button>
           </header>
           {contextPanel === "changes" ? (
             <>
@@ -784,13 +873,6 @@ function EnvironmentPopover({
                 state={state}
                 onOpenProgress={() => onPanelChange("progress")}
               />
-              <div className="environment-divider" />
-              <EnvironmentRow icon="◎" label="浏览器" value="Mimodex 127.0.0.1:1420" />
-              <div className="environment-divider" />
-              <div className="environment-source">
-                <span>来源</span>
-                <strong>暂无来源</strong>
-              </div>
             </>
           ) : (
             <EnvironmentProgressView state={state} onBack={() => onPanelChange("changes")} />
@@ -824,14 +906,14 @@ function EnvironmentChangesView({
     <div className="environment-view">
       <EnvironmentRow
         accent
-        icon="±"
+        icon={<UiIcon name="diff" />}
         label="变更"
         value={diffCount}
       />
-      <EnvironmentRow icon="▱" label="本地" value={sandboxLabel(sandbox)} />
-      <EnvironmentRow icon="⌁" label="分支" value={branch} />
-      <EnvironmentRow icon="↗" label="提交或推送" value={diffFiles > 0 ? "可审阅" : "等待变更"} />
-      <EnvironmentRow icon="◌" label="GitHub CLI" value="不可用" muted />
+      <EnvironmentRow icon={<UiIcon name="laptop" />} label="本地" value={sandboxLabel(sandbox)} />
+      <EnvironmentRow icon={<UiIcon name="branch" />} label="分支" value={branch} />
+      <EnvironmentRow icon={<UiIcon name="commit" />} label="提交或推送" value={diffFiles > 0 ? "可审阅" : "等待变更"} />
+      <EnvironmentRow icon={<UiIcon name="github" />} label="GitHub CLI" value="不可用" muted />
       {diffFiles > 0 && (
         <>
           <div className="environment-divider" />
@@ -1003,7 +1085,7 @@ function EnvironmentRow({
   value,
 }: {
   accent?: boolean;
-  icon: string;
+  icon: ReactNode;
   label: string;
   muted?: boolean;
   value: string;
@@ -1369,7 +1451,9 @@ function ProjectPicker({
   if (options.length === 0) {
     return (
       <button className="project-meta-empty" disabled type="button">
-        <span aria-hidden="true">▱</span>
+        <span aria-hidden="true">
+          <UiIcon name="folder" />
+        </span>
         未选择项目
       </button>
     );
@@ -1380,7 +1464,7 @@ function ProjectPicker({
       ariaLabel="切换项目"
       className="project-meta-select"
       disabled={disabled}
-      label="▱"
+      label={<UiIcon name="folder" />}
       options={options}
       placement="top"
       value={currentProject?.id ?? options[0]?.value ?? ""}

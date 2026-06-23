@@ -60,6 +60,18 @@ button {
   cursor: pointer;
 }
 
+.ui-icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7px;
+  vector-effect: non-scaling-stroke;
+}
+
 .setup-screen {
   display: grid;
   min-height: 100vh;
@@ -813,7 +825,6 @@ button {
   opacity: 0.6;
 }
 
-.model-pill,
 .run-status {
   padding: 6px 9px;
   color: #5a6057;
@@ -1433,7 +1444,7 @@ button {
 }
 
 .composer-options label span,
-.composer-popup-select .popup-select-trigger > span {
+.composer-popup-select .popup-select-label {
   color: #8b8f87;
   font-size: 8px;
   font-weight: 700;
@@ -1483,32 +1494,43 @@ button {
 
 .popup-select-trigger {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex-wrap: nowrap;
   width: 100%;
   color: #2e322d;
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
 }
 
 .popup-select-trigger::after {
-  position: absolute;
-  top: 50%;
-  right: 11px;
+  display: none;
+  content: none;
+}
+
+.popup-select-chevron {
+  display: block;
   width: 6px;
   height: 6px;
+  flex: 0 0 6px;
   border-right: 1.5px solid #777d74;
   border-bottom: 1.5px solid #777d74;
-  content: "";
-  transform: translateY(-70%) rotate(45deg);
+  transform: rotate(45deg);
   transition: transform 140ms ease;
 }
 
-.popup-select.open .popup-select-trigger::after {
-  transform: translateY(-25%) rotate(225deg);
+.popup-select.open .popup-select-chevron {
+  transform: rotate(225deg);
 }
 
 .composer-popup-select .popup-select-trigger {
+  flex-direction: row;
   min-width: 104px;
-  padding-right: 25px;
+  height: 30px;
+  padding: 0 11px;
 }
 
 .composer-popup-select.sandbox-popup-select .popup-select-trigger {
@@ -1516,7 +1538,12 @@ button {
 }
 
 .composer-popup-select .popup-select-trigger strong {
+  min-width: 0;
+  overflow: hidden;
   font-size: 9px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-popup-select .popup-select-trigger {
@@ -1529,7 +1556,7 @@ button {
   font-size: 11px;
 }
 
-.settings-popup-select .popup-select-trigger > span {
+.settings-popup-select .popup-select-label {
   display: none;
 }
 
@@ -2526,7 +2553,6 @@ body {
 }
 
 .refresh-project,
-.model-pill,
 .danger-pill,
 .run-status,
 .stop-button {
@@ -2789,14 +2815,12 @@ body {
   padding: 1px 0 0;
 }
 
-.environment-detail > span,
-.environment-source span {
+.environment-detail > span {
   color: #8a8f86;
   font-size: 12px;
 }
 
-.environment-detail > strong,
-.environment-source strong {
+.environment-detail > strong {
   color: #202620;
   font-size: 12px;
   font-weight: 650;
@@ -2949,11 +2973,6 @@ body {
 
 .empty-progress p {
   max-width: 210px;
-}
-
-.environment-source {
-  display: grid;
-  gap: 7px;
 }
 
 .workspace-stage {
@@ -3364,7 +3383,7 @@ body {
   background: #ecefeb;
 }
 
-.project-meta-select .popup-select-trigger > span,
+.project-meta-select .popup-select-label,
 .project-meta-empty span {
   display: grid;
   width: 13px;
@@ -3417,24 +3436,28 @@ body {
 }
 
 .popup-select-trigger::after {
+  display: none;
+  content: none;
+}
+
+.popup-select-chevron {
   display: block;
-  position: static;
   width: 6px;
   height: 6px;
   flex: 0 0 6px;
   border-right: 1.5px solid #777d74;
   border-bottom: 1.5px solid #777d74;
-  content: "";
   transform: rotate(45deg);
   transition: transform 140ms ease;
 }
 
-.popup-select.open .popup-select-trigger::after {
+.popup-select.open .popup-select-chevron {
   transform: rotate(225deg);
 }
 
 .composer-popup-select .popup-select-trigger {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   min-width: 118px;
@@ -3447,19 +3470,11 @@ body {
   text-align: center;
 }
 
-.composer-popup-select .popup-select-trigger::after {
-  transform: translateY(5px) rotate(45deg);
-}
-
-.composer-popup-select.open .popup-select-trigger::after {
-  transform: translateY(5px) rotate(225deg);
-}
-
 .composer-popup-select .popup-select-trigger:hover {
   background: #f0f2ef;
 }
 
-.composer-popup-select .popup-select-trigger > span {
+.composer-popup-select .popup-select-label {
   display: none;
 }
 
@@ -3471,9 +3486,8 @@ body {
   overflow: hidden;
   font-size: 12px;
   font-weight: 600;
-  line-height: 30px;
+  line-height: 1;
   text-overflow: ellipsis;
-  transform: translateY(5px);
   white-space: nowrap;
 }
 
@@ -3505,7 +3519,7 @@ body {
   opacity: 0.55;
 }
 
-.settings-popup-select .popup-select-trigger > span {
+.settings-popup-select .popup-select-label {
   display: none;
 }
 
@@ -4400,7 +4414,6 @@ body {
     padding: 8px 12px;
   }
 
-  .model-pill,
   .run-status,
   .refresh-project {
     display: none;
