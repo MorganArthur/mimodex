@@ -2,6 +2,14 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 
 import type { DesktopSessionController, SessionState } from "@mimodex/desktop-core";
 import { App } from "./App.js";
+import {
+  createAutomationService,
+  nextAutomationRunAt,
+  type AutomationDraft,
+  type AutomationRecord,
+  type AutomationService,
+  type AutomationState,
+} from "./automation.js";
 import { ConfirmationDialog } from "./ConfirmationDialog.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
 import { MIMO_MODEL_OPTIONS, PopupSelect, SANDBOX_OPTIONS } from "./PopupSelect.js";
@@ -20,6 +28,7 @@ import type {
 import { APP_VERSION } from "./version.js";
 
 export type DesktopRootProps = {
+  automationService?: AutomationService;
   credentialService: CredentialService;
   createSession: () => DesktopSessionController;
   projectService: ProjectService;
@@ -39,7 +48,13 @@ type ManagedSession = {
   writeQueue: Promise<void>;
 };
 
+type RunningAutomation = {
+  automationId: string;
+  startedAt: number;
+};
+
 export function DesktopRoot({
+  automationService = createAutomationService(),
   credentialService,
   createSession,
   projectService,
@@ -60,10 +75,17 @@ export function DesktopRoot({
   const [threadBusy, setThreadBusy] = useState(false);
   const [activityEvents, setActivityEvents] = useState<ThreadActivityEvent[]>([]);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [automationState, setAutomationState] = useState<AutomationState | null>(null);
+  const [automationError, setAutomationError] = useState<string | null>(null);
+  const [automationBusy, setAutomationBusy] = useState(false);
+  const [runningAutomationIds, setRunningAutomationIds] = useState<string[]>([]);
   const activityThreadIdRef = useRef<string | null>(null);
+  const automationStateRef = useRef<AutomationState | null>(null);
   const managedSessionsRef = useRef(new Map<DesktopSessionController, ManagedSession>());
   const projectRefreshInFlight = useRef(false);
   const projectStateRef = useRef<ProjectState | null>(null);
+  const runningAutomationsRef = useRef(new Map<DesktopSessionController, RunningAutomation>());
+  const runningAutomationIdsRef = useRef(new Set<string>());
   const selectedSessionRef = useRef<DesktopSessionController | null>(null);
   const sessionByThreadIdRef = useRef(new Map<string, DesktopSessionController>());
   const threadStateRef = useRef<ThreadState | null>(null);
@@ -75,6 +97,14 @@ export function DesktopRoot({
   useEffect(() => {
     threadStateRef.current = threadState;
   }, [threadState]);
+
+  useEffect(() => {
+    automationStateRef.current = automationState;
+  }, [automationState]);
+
+  useEffect(() => {
+    runningAutomationIdsRef.current = new Set(runningAutomationIds);
+  }, [runningAutomationIds]);
 
   useEffect(() => {
     void settingsService
@@ -109,6 +139,19 @@ export function DesktopRoot({
       .then(setThreadState)
       .catch((error) => setThreadError(errorMessage(error)));
   }, [credentialStatus?.configured, threadService]);
+
+  useEffect(() => {
+    if (!credentialStatus?.configured) {
+      return;
+    }
+    void automationService
+      .list()
+      .then(setAutomationState)
+      .catch((error) => {
+        setAutomationError(errorMessage(error));
+        setAutomationState({ automations: [] });
+      });
+  }, [automationService, credentialStatus?.configured]);
 
   const syncSelectedActivity = useCallback((force = false) => {
     const threadId = selectedSessionRef.current?.getSnapshot().threadId ?? null;
@@ -153,6 +196,53 @@ export function DesktopRoot({
       projectRefreshInFlight.current = false;
     }
   }, [projectService]);
+
+  const completeAutomationRun = useCallback(async (
+    completedSession: DesktopSessionController,
+    state: SessionState,
+  ) => {
+    const running = runningAutomationsRef.current.get(completedSession);
+    if (!running) {
+      return;
+    }
+    runningAutomationsRef.current.delete(completedSession);
+    runningAutomationIdsRef.current.delete(running.automationId);
+    setRunningAutomationIds((current) =>
+      current.filter((automationId) => automationId !== running.automationId),
+    );
+
+    const automation = automationStateRef.current?.automations.find(
+      (candidate) => candidate.id === running.automationId,
+    );
+    const status =
+      state.turnStatus === "completed"
+        ? "completed"
+        : state.turnStatus === "interrupted"
+          ? "interrupted"
+          : "failed";
+    const completedAt = Date.now();
+    const nextRunAt = automation?.enabled ? nextAutomationRunAt(automation, completedAt) : null;
+    const error =
+      status === "completed"
+        ? null
+        : state.error ?? state.structuredError?.message ?? "自动化任务未完成。";
+
+    try {
+      const nextState = await automationService.recordRun({
+        automationId: running.automationId,
+        completedAt,
+        error,
+        lastRunAt: running.startedAt,
+        nextRunAt,
+        status,
+        threadId: state.threadId,
+      });
+      setAutomationState(nextState);
+      setAutomationError(null);
+    } catch (error) {
+      setAutomationError(errorMessage(error));
+    }
+  }, [automationService]);
 
   const attachSession = useCallback((nextSession: DesktopSessionController) => {
     const existing = managedSessionsRef.current.get(nextSession);
@@ -245,6 +335,7 @@ export function DesktopRoot({
         managed.previousTurnStatus === "inProgress" && state.turnStatus !== "inProgress";
       if (justFinished) {
         void refreshProjectForSession(state);
+        void completeAutomationRun(nextSession, state);
       }
       schedulePersist(justFinished && selectedSessionRef.current !== nextSession);
       managed.previousTurnStatus = state.turnStatus;
@@ -268,7 +359,7 @@ export function DesktopRoot({
     void nextSession.connect().catch((error) => setThreadError(errorMessage(error)));
     schedulePersist();
     return nextSession;
-  }, [refreshProjectForSession, syncSelectedActivity, threadService]);
+  }, [completeAutomationRun, refreshProjectForSession, syncSelectedActivity, threadService]);
 
   const selectSession = useCallback((nextSession: DesktopSessionController) => {
     selectedSessionRef.current = nextSession;
@@ -279,6 +370,121 @@ export function DesktopRoot({
   const createManagedSession = useCallback(() => {
     return attachSession(createSession());
   }, [attachSession, createSession]);
+
+  const createAutomation = async (draft: AutomationDraft) => {
+    setAutomationBusy(true);
+    setAutomationError(null);
+    try {
+      const nextState = await automationService.create(draft);
+      setAutomationState(nextState);
+    } catch (error) {
+      setAutomationError(errorMessage(error));
+    } finally {
+      setAutomationBusy(false);
+    }
+  };
+
+  const updateAutomation = async (automationId: string, draft: AutomationDraft) => {
+    setAutomationBusy(true);
+    setAutomationError(null);
+    try {
+      const nextState = await automationService.update(automationId, draft);
+      setAutomationState(nextState);
+    } catch (error) {
+      setAutomationError(errorMessage(error));
+    } finally {
+      setAutomationBusy(false);
+    }
+  };
+
+  const deleteAutomation = async (automationId: string) => {
+    setAutomationBusy(true);
+    setAutomationError(null);
+    try {
+      const nextState = await automationService.delete(automationId);
+      setAutomationState(nextState);
+    } catch (error) {
+      setAutomationError(errorMessage(error));
+    } finally {
+      setAutomationBusy(false);
+    }
+  };
+
+  const runAutomation = useCallback(async (automationId: string) => {
+    if (runningAutomationIdsRef.current.has(automationId) || !settings) {
+      return;
+    }
+    const automation = automationStateRef.current?.automations.find(
+      (candidate) => candidate.id === automationId,
+    );
+    const project = projectStateRef.current?.projects.find(
+      (candidate) => candidate.id === automation?.projectId,
+    );
+    if (!automation || !project) {
+      setAutomationError("自动化任务或项目记录不存在。");
+      return;
+    }
+    if (!project.available) {
+      setAutomationError(`项目“${project.name}”当前不可访问，自动化未运行。`);
+      return;
+    }
+
+    const startedAt = Date.now();
+    runningAutomationIdsRef.current.add(automationId);
+    setRunningAutomationIds((current) =>
+      current.includes(automationId) ? current : [...current, automationId],
+    );
+    const automationSession = createManagedSession();
+    runningAutomationsRef.current.set(automationSession, { automationId, startedAt });
+    try {
+      automationSession.newThread(project.path);
+      await automationSession.connect();
+      await automationSession.startTask({
+        model: automation.model ?? settings.defaultModel,
+        projectPath: project.path,
+        sandbox: automation.sandbox ?? settings.defaultSandbox,
+        text: automationTaskPrompt(automation, project.name),
+      });
+      const snapshot = automationSession.getSnapshot();
+      const nextState = await automationService.recordRun({
+        automationId,
+        completedAt: null,
+        error: null,
+        lastRunAt: startedAt,
+        nextRunAt: automation.nextRunAt,
+        status: "running",
+        threadId: snapshot.threadId,
+      });
+      setAutomationState(nextState);
+      setAutomationError(null);
+      if (snapshot.turnStatus !== "inProgress") {
+        await completeAutomationRun(automationSession, snapshot);
+      }
+    } catch (error) {
+      runningAutomationsRef.current.delete(automationSession);
+      runningAutomationIdsRef.current.delete(automationId);
+      setRunningAutomationIds((current) =>
+        current.filter((candidate) => candidate !== automationId),
+      );
+      const completedAt = Date.now();
+      const nextRunAt = automation.enabled ? nextAutomationRunAt(automation, completedAt) : null;
+      try {
+        const nextState = await automationService.recordRun({
+          automationId,
+          completedAt,
+          error: errorMessage(error),
+          lastRunAt: startedAt,
+          nextRunAt,
+          status: "failed",
+          threadId: automationSession.getSnapshot().threadId,
+        });
+        setAutomationState(nextState);
+      } catch (recordError) {
+        setAutomationError(errorMessage(recordError));
+      }
+      setAutomationError(errorMessage(error));
+    }
+  }, [automationService, completeAutomationRun, createManagedSession, settings]);
 
   useEffect(() => {
     if (!credentialStatus?.configured || !settings) {
@@ -302,6 +508,34 @@ export function DesktopRoot({
       sessionByThreadIdRef.current.clear();
     };
   }, [createManagedSession, credentialStatus?.configured, selectSession, settings]);
+
+  useEffect(() => {
+    if (!credentialStatus?.configured || !automationState || !projectState || !settings) {
+      return;
+    }
+    const runDueAutomations = () => {
+      const now = Date.now();
+      for (const automation of automationStateRef.current?.automations ?? []) {
+        if (
+          automation.enabled &&
+          automation.nextRunAt !== null &&
+          automation.nextRunAt <= now &&
+          !runningAutomationIdsRef.current.has(automation.id)
+        ) {
+          void runAutomation(automation.id);
+        }
+      }
+    };
+    runDueAutomations();
+    const timer = window.setInterval(runDueAutomations, 30_000);
+    return () => window.clearInterval(timer);
+  }, [
+    automationState,
+    credentialStatus?.configured,
+    projectState,
+    runAutomation,
+    settings,
+  ]);
 
   const saveCredential = async (apiKey: string, nextSettings?: AppSettings) => {
     const diagnostic = await settingsService.diagnose({
@@ -564,7 +798,7 @@ export function DesktopRoot({
   if (!credentialStatus.configured) {
     return <CredentialSetup settings={settings} status={credentialStatus} onSave={saveCredential} />;
   }
-  if (!session || !projectState || !threadState) {
+  if (!session || !projectState || !threadState || !automationState) {
     return <LoadingPanel />;
   }
 
@@ -582,19 +816,27 @@ export function DesktopRoot({
       <App
         activityError={activityError}
         activityEvents={activityEvents}
+        automationBusy={automationBusy}
+        automationError={automationError}
+        automations={automationState.automations}
         archivedThreads={archivedThreads}
         currentProject={currentProject}
+        onCreateAutomation={createAutomation}
         onAddProject={addProject}
+        onDeleteAutomation={deleteAutomation}
         onDeleteThread={deleteThread}
         onNewThread={newThread}
         onOpenSettings={() => setSettingsOpen(true)}
         onRefreshProject={refreshProject}
+        onRunAutomation={runAutomation}
         onSelectProject={selectProject}
         onSelectThread={selectThread}
         onSetThreadArchived={setThreadArchived}
+        onUpdateAutomation={updateAutomation}
         projectBusy={projectBusy}
         projectError={projectError}
         projects={projectState.projects}
+        runningAutomationIds={runningAutomationIds}
         session={session}
         settings={settings}
         threadBusy={threadBusy}
@@ -664,6 +906,15 @@ function threadRecordFromSession(
     archived: options.existingThread?.archived ?? false,
     unread: options.unread,
   };
+}
+
+function automationTaskPrompt(automation: AutomationRecord, projectName: string): string {
+  return [
+    `[Mimodex 自动化任务：${automation.title}]`,
+    `项目：${projectName}`,
+    "",
+    automation.prompt,
+  ].join("\n");
 }
 
 function compactTitle(value: string): string {

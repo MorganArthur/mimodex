@@ -169,6 +169,63 @@ struct ThreadActivityEvent {
     occurred_at: i64,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationRecord {
+    id: String,
+    project_id: String,
+    title: String,
+    prompt: String,
+    enabled: bool,
+    cadence: String,
+    time_of_day: String,
+    day_of_week: Option<i64>,
+    model: String,
+    sandbox: String,
+    next_run_at: Option<i64>,
+    last_run_at: Option<i64>,
+    last_completed_at: Option<i64>,
+    last_status: String,
+    last_error: Option<String>,
+    last_thread_id: Option<String>,
+    run_count: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationDraft {
+    project_id: String,
+    title: String,
+    prompt: String,
+    enabled: bool,
+    cadence: String,
+    time_of_day: String,
+    day_of_week: Option<i64>,
+    model: String,
+    sandbox: String,
+    next_run_at: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationRunRecord {
+    automation_id: String,
+    status: String,
+    last_run_at: i64,
+    completed_at: Option<i64>,
+    next_run_at: Option<i64>,
+    thread_id: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationState {
+    automations: Vec<AutomationRecord>,
+}
+
 #[tauri::command]
 fn get_mimo_credential_status() -> Result<CredentialStatus, String> {
     if stored_api_key()?.is_some() {
@@ -559,6 +616,138 @@ async fn delete_thread(app: AppHandle, thread_id: String) -> Result<ThreadState,
     .await
 }
 
+#[tauri::command]
+async fn list_automations(app: AppHandle) -> Result<AutomationState, String> {
+    run_background(move || {
+        let connection = open_thread_database(&app)?;
+        load_automation_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn create_automation(
+    app: AppHandle,
+    automation: AutomationDraft,
+) -> Result<AutomationState, String> {
+    run_background(move || {
+        validate_automation_draft(&automation)?;
+        let connection = open_thread_database(&app)?;
+        let now = unix_timestamp_ms();
+        let record = AutomationRecord {
+            id: automation_id(),
+            project_id: automation.project_id,
+            title: automation.title,
+            prompt: automation.prompt,
+            enabled: automation.enabled,
+            cadence: automation.cadence,
+            time_of_day: automation.time_of_day,
+            day_of_week: automation.day_of_week,
+            model: automation.model,
+            sandbox: automation.sandbox,
+            next_run_at: automation.next_run_at,
+            last_run_at: None,
+            last_completed_at: None,
+            last_status: "idle".to_string(),
+            last_error: None,
+            last_thread_id: None,
+            run_count: 0,
+            created_at: now,
+            updated_at: now,
+        };
+        upsert_automation(&connection, &record)?;
+        load_automation_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn update_automation(
+    app: AppHandle,
+    automation_id: String,
+    automation: AutomationDraft,
+) -> Result<AutomationState, String> {
+    run_background(move || {
+        validate_automation_draft(&automation)?;
+        let connection = open_thread_database(&app)?;
+        let mut record = load_automation(&connection, &automation_id)?
+            .ok_or_else(|| "自动化任务不存在。".to_string())?;
+        record.project_id = automation.project_id;
+        record.title = automation.title;
+        record.prompt = automation.prompt;
+        record.enabled = automation.enabled;
+        record.cadence = automation.cadence;
+        record.time_of_day = automation.time_of_day;
+        record.day_of_week = automation.day_of_week;
+        record.model = automation.model;
+        record.sandbox = automation.sandbox;
+        record.next_run_at = automation.next_run_at;
+        record.updated_at = unix_timestamp_ms();
+        upsert_automation(&connection, &record)?;
+        load_automation_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn delete_automation(app: AppHandle, automation_id: String) -> Result<AutomationState, String> {
+    run_background(move || {
+        let connection = open_thread_database(&app)?;
+        let deleted = connection
+            .execute("DELETE FROM automations WHERE id = ?1", [&automation_id])
+            .map_err(|_| thread_database_error("删除自动化任务"))?;
+        if deleted == 0 {
+            return Err("自动化任务不存在。".to_string());
+        }
+        load_automation_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn record_automation_run(
+    app: AppHandle,
+    run: AutomationRunRecord,
+) -> Result<AutomationState, String> {
+    run_background(move || {
+        validate_automation_run(&run)?;
+        let connection = open_thread_database(&app)?;
+        let terminal = run.status != "running";
+        let updated = connection
+            .execute(
+                "
+                UPDATE automations
+                SET last_run_at = ?2,
+                    last_completed_at = ?3,
+                    last_status = ?4,
+                    last_error = ?5,
+                    last_thread_id = ?6,
+                    next_run_at = ?7,
+                    run_count = run_count + ?8,
+                    updated_at = ?9
+                WHERE id = ?1
+                ",
+                params![
+                    run.automation_id,
+                    run.last_run_at,
+                    run.completed_at,
+                    run.status,
+                    run.error,
+                    run.thread_id,
+                    run.next_run_at,
+                    if terminal { 1 } else { 0 },
+                    unix_timestamp_ms()
+                ],
+            )
+            .map_err(|_| thread_database_error("记录自动化运行"))?;
+        if updated == 0 {
+            return Err("自动化任务不存在。".to_string());
+        }
+        load_automation_state(&connection)
+    })
+    .await
+}
+
 async fn run_background<T, F>(task: F) -> Result<T, String>
 where
     T: Send + 'static,
@@ -589,20 +778,25 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             add_project,
             append_runtime_events,
+            create_automation,
+            delete_automation,
             delete_thread,
             delete_mimo_credential,
             diagnose_mimo_connection,
             get_app_settings,
             get_mimo_credential_status,
+            list_automations,
             list_projects,
             list_thread_activity,
             list_threads,
+            record_automation_run,
             refresh_project,
             save_app_settings,
             save_mimo_credential,
             select_project,
             select_thread,
             set_thread_archived,
+            update_automation,
             upsert_thread
         ])
         .run(tauri::generate_context!())
@@ -830,6 +1024,29 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
             );
             CREATE INDEX IF NOT EXISTS idx_threads_project_updated
                 ON threads(project_id, archived, updated_at DESC);
+            CREATE TABLE IF NOT EXISTS automations (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                enabled INTEGER NOT NULL,
+                cadence TEXT NOT NULL,
+                time_of_day TEXT NOT NULL,
+                day_of_week INTEGER,
+                model TEXT NOT NULL,
+                sandbox TEXT NOT NULL,
+                next_run_at INTEGER,
+                last_run_at INTEGER,
+                last_completed_at INTEGER,
+                last_status TEXT NOT NULL,
+                last_error TEXT,
+                last_thread_id TEXT,
+                run_count INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_automations_next_run
+                ON automations(enabled, next_run_at);
             CREATE TABLE IF NOT EXISTS app_state (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -867,9 +1084,11 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
             "
             INSERT OR IGNORE INTO schema_migrations(version, applied_at)
                 VALUES (3, unixepoch('subsec') * 1000);
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                VALUES (4, unixepoch('subsec') * 1000);
             ",
         )
-        .map_err(|_| thread_database_error("执行线程未读迁移"))?;
+        .map_err(|_| thread_database_error("执行本地数据库迁移"))?;
     Ok(())
 }
 
@@ -1199,6 +1418,128 @@ fn thread_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadRecord> {
     })
 }
 
+fn load_automation_state(connection: &Connection) -> Result<AutomationState, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id, project_id, title, prompt, enabled, cadence, time_of_day,
+                   day_of_week, model, sandbox, next_run_at, last_run_at,
+                   last_completed_at, last_status, last_error, last_thread_id,
+                   run_count, created_at, updated_at
+            FROM automations
+            ORDER BY created_at DESC, id ASC
+            ",
+        )
+        .map_err(|_| thread_database_error("准备自动化列表查询"))?;
+    let automations = statement
+        .query_map([], automation_from_row)
+        .map_err(|_| thread_database_error("查询自动化列表"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| thread_database_error("读取自动化列表"))?;
+    Ok(AutomationState { automations })
+}
+
+fn load_automation(
+    connection: &Connection,
+    automation_id: &str,
+) -> Result<Option<AutomationRecord>, String> {
+    connection
+        .query_row(
+            "
+            SELECT id, project_id, title, prompt, enabled, cadence, time_of_day,
+                   day_of_week, model, sandbox, next_run_at, last_run_at,
+                   last_completed_at, last_status, last_error, last_thread_id,
+                   run_count, created_at, updated_at
+            FROM automations WHERE id = ?1
+            ",
+            [automation_id],
+            automation_from_row,
+        )
+        .optional()
+        .map_err(|_| thread_database_error("读取自动化任务"))
+}
+
+fn upsert_automation(connection: &Connection, automation: &AutomationRecord) -> Result<(), String> {
+    validate_automation_record(automation)?;
+    connection
+        .execute(
+            "
+            INSERT INTO automations(
+                id, project_id, title, prompt, enabled, cadence, time_of_day,
+                day_of_week, model, sandbox, next_run_at, last_run_at,
+                last_completed_at, last_status, last_error, last_thread_id,
+                run_count, created_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+            ON CONFLICT(id) DO UPDATE SET
+                project_id = excluded.project_id,
+                title = excluded.title,
+                prompt = excluded.prompt,
+                enabled = excluded.enabled,
+                cadence = excluded.cadence,
+                time_of_day = excluded.time_of_day,
+                day_of_week = excluded.day_of_week,
+                model = excluded.model,
+                sandbox = excluded.sandbox,
+                next_run_at = excluded.next_run_at,
+                last_run_at = excluded.last_run_at,
+                last_completed_at = excluded.last_completed_at,
+                last_status = excluded.last_status,
+                last_error = excluded.last_error,
+                last_thread_id = excluded.last_thread_id,
+                run_count = excluded.run_count,
+                updated_at = excluded.updated_at
+            ",
+            params![
+                automation.id,
+                automation.project_id,
+                automation.title,
+                automation.prompt,
+                automation.enabled,
+                automation.cadence,
+                automation.time_of_day,
+                automation.day_of_week,
+                automation.model,
+                automation.sandbox,
+                automation.next_run_at,
+                automation.last_run_at,
+                automation.last_completed_at,
+                automation.last_status,
+                automation.last_error,
+                automation.last_thread_id,
+                automation.run_count,
+                automation.created_at,
+                automation.updated_at
+            ],
+        )
+        .map_err(|_| thread_database_error("更新自动化任务"))?;
+    Ok(())
+}
+
+fn automation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRecord> {
+    Ok(AutomationRecord {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        title: row.get(2)?,
+        prompt: row.get(3)?,
+        enabled: row.get(4)?,
+        cadence: row.get(5)?,
+        time_of_day: row.get(6)?,
+        day_of_week: row.get(7)?,
+        model: row.get(8)?,
+        sandbox: row.get(9)?,
+        next_run_at: row.get(10)?,
+        last_run_at: row.get(11)?,
+        last_completed_at: row.get(12)?,
+        last_status: row.get(13)?,
+        last_error: row.get(14)?,
+        last_thread_id: row.get(15)?,
+        run_count: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
+    })
+}
+
 fn set_app_state(connection: &Connection, key: &str, value: Option<&str>) -> Result<(), String> {
     connection
         .execute(
@@ -1264,6 +1605,111 @@ fn validate_runtime_event(event: &RuntimeEventRecord) -> Result<(), String> {
         return Err("Runtime 原始事件超出本地存储限制。".to_string());
     }
     Ok(())
+}
+
+fn validate_automation_draft(automation: &AutomationDraft) -> Result<(), String> {
+    validate_automation_fields(
+        &automation.project_id,
+        &automation.title,
+        &automation.prompt,
+        &automation.cadence,
+        &automation.time_of_day,
+        automation.day_of_week,
+        &automation.model,
+        &automation.sandbox,
+    )
+}
+
+fn validate_automation_record(automation: &AutomationRecord) -> Result<(), String> {
+    if automation.id.trim().is_empty() || automation.id.len() > 512 {
+        return Err("自动化任务标识无效。".to_string());
+    }
+    validate_automation_fields(
+        &automation.project_id,
+        &automation.title,
+        &automation.prompt,
+        &automation.cadence,
+        &automation.time_of_day,
+        automation.day_of_week,
+        &automation.model,
+        &automation.sandbox,
+    )?;
+    if !automation_run_status(&automation.last_status) {
+        return Err("自动化任务运行状态无效。".to_string());
+    }
+    Ok(())
+}
+
+fn validate_automation_run(run: &AutomationRunRecord) -> Result<(), String> {
+    if run.automation_id.trim().is_empty() || run.automation_id.len() > 512 {
+        return Err("自动化任务标识无效。".to_string());
+    }
+    if !automation_run_status(&run.status) {
+        return Err("自动化任务运行状态无效。".to_string());
+    }
+    if run.error.as_ref().is_some_and(|error| error.len() > 8_192) {
+        return Err("自动化运行错误信息过长。".to_string());
+    }
+    Ok(())
+}
+
+fn validate_automation_fields(
+    project_id: &str,
+    title: &str,
+    prompt: &str,
+    cadence: &str,
+    time_of_day: &str,
+    day_of_week: Option<i64>,
+    model: &str,
+    sandbox: &str,
+) -> Result<(), String> {
+    if project_id.trim().is_empty() || title.trim().is_empty() || prompt.trim().is_empty() {
+        return Err("自动化任务缺少必要字段。".to_string());
+    }
+    if project_id.len() > 32_768 || title.len() > 1_024 || prompt.len() > 200_000 {
+        return Err("自动化任务超过本地存储限制。".to_string());
+    }
+    if !matches!(cadence, "manual" | "hourly" | "daily" | "weekly") {
+        return Err("自动化任务频率无效。".to_string());
+    }
+    if !valid_time_of_day(time_of_day) {
+        return Err("自动化任务时间无效。".to_string());
+    }
+    if cadence == "weekly" && !day_of_week.is_some_and(|day| (1..=7).contains(&day)) {
+        return Err("自动化任务星期无效。".to_string());
+    }
+    if !matches!(model, "mimo-v2.5" | "mimo-v2.5-pro") {
+        return Err("自动化任务模型无效。".to_string());
+    }
+    if !matches!(sandbox, "danger-full-access" | "read-only" | "workspace-write") {
+        return Err("自动化任务权限无效。".to_string());
+    }
+    Ok(())
+}
+
+fn automation_run_status(status: &str) -> bool {
+    matches!(status, "idle" | "running" | "completed" | "failed" | "interrupted")
+}
+
+fn valid_time_of_day(value: &str) -> bool {
+    let Some((hours, minutes)) = value.split_once(':') else {
+        return false;
+    };
+    let Ok(hours) = hours.parse::<u8>() else {
+        return false;
+    };
+    let Ok(minutes) = minutes.parse::<u8>() else {
+        return false;
+    };
+    hours <= 23 && minutes <= 59
+}
+
+fn automation_id() -> String {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("automation-{suffix}")
 }
 
 fn normalize_project_path(path: &str) -> Result<PathBuf, String> {
@@ -1722,7 +2168,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 3);
+        assert_eq!(migration_count, 4);
     }
 
     #[test]
@@ -1757,7 +2203,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 3);
+        assert_eq!(migration_count, 4);
     }
 
     #[test]

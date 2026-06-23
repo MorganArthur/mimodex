@@ -17,6 +17,13 @@ import {
   type SessionState,
   type TimelineEntry,
 } from "@mimodex/desktop-core";
+import {
+  AUTOMATION_CADENCE_OPTIONS,
+  AUTOMATION_WEEKDAY_OPTIONS,
+  type AutomationCadence,
+  type AutomationDraft,
+  type AutomationRecord,
+} from "./automation.js";
 import { ConfirmationDialog } from "./ConfirmationDialog.js";
 import { parseUnifiedDiff, type DiffFile } from "./diff.js";
 import { MarkdownContent } from "./MarkdownContent.js";
@@ -29,19 +36,27 @@ import { APP_VERSION } from "./version.js";
 export type AppProps = {
   activityError: string | null;
   activityEvents: ThreadActivityEvent[];
+  automationBusy?: boolean;
+  automationError?: string | null;
+  automations?: AutomationRecord[];
   archivedThreads: ThreadRecord[];
   currentProject: ProjectSummary | null;
   onAddProject: () => void | Promise<void>;
+  onCreateAutomation?: (draft: AutomationDraft) => void | Promise<void>;
+  onDeleteAutomation?: (automationId: string) => void | Promise<void>;
   onDeleteThread: (threadId: string) => void | Promise<void>;
   onNewThread: () => void | Promise<void>;
   onOpenSettings?: () => void;
   onRefreshProject: () => void | Promise<void>;
+  onRunAutomation?: (automationId: string) => void | Promise<void>;
   onSelectProject: (projectId: string) => void | Promise<void>;
   onSelectThread: (threadId: string) => void | Promise<void>;
   onSetThreadArchived: (threadId: string, archived: boolean) => void | Promise<void>;
+  onUpdateAutomation?: (automationId: string, draft: AutomationDraft) => void | Promise<void>;
   projectBusy: boolean;
   projectError: string | null;
   projects: ProjectSummary[];
+  runningAutomationIds?: string[];
   session: DesktopSessionController;
   settings: AppSettings;
   threadBusy: boolean;
@@ -58,6 +73,7 @@ const statusLabels: Record<SessionState["connection"], string> = {
 
 type UiIconName =
   | "branch"
+  | "clock"
   | "commit"
   | "diff"
   | "folder"
@@ -85,6 +101,12 @@ const iconPaths: Record<UiIconName, ReactNode> = {
       <circle cx="14.5" cy="8" r="1.6" />
       <path d="M5.5 6.1v7.8" />
       <path d="M7.1 4.5h2.4a3 3 0 0 1 3 3v.5" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6.2v4.1l2.7 1.7" />
     </>
   ),
   commit: (
@@ -159,19 +181,27 @@ const iconPaths: Record<UiIconName, ReactNode> = {
 export function App({
   activityError,
   activityEvents,
+  automationBusy = false,
+  automationError = null,
+  automations = [],
   archivedThreads,
   currentProject,
   onAddProject,
+  onCreateAutomation = () => undefined,
+  onDeleteAutomation = () => undefined,
   onDeleteThread,
   onNewThread,
   onOpenSettings = () => undefined,
   onRefreshProject,
+  onRunAutomation = () => undefined,
   onSelectProject,
   onSelectThread,
   onSetThreadArchived,
+  onUpdateAutomation = () => undefined,
   projectBusy,
   projectError,
   projects,
+  runningAutomationIds = [],
   session,
   settings,
   threadBusy,
@@ -179,6 +209,7 @@ export function App({
   threads,
 }: AppProps) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const [activeView, setActiveView] = useState<"automation" | "chat">("chat");
   const [model, setModel] = useState<"mimo-v2.5" | "mimo-v2.5-pro">(settings.defaultModel);
   const [sandbox, setSandbox] = useState<"danger-full-access" | "read-only" | "workspace-write">(
     settings.defaultSandbox,
@@ -278,15 +309,29 @@ export function App({
         <nav className="primary-nav" aria-label="主导航">
           <button
             aria-label="新建线程"
-            className="nav-command"
+            className={`nav-command ${activeView === "chat" ? "active" : ""}`}
             disabled={!currentProject?.available || projectBusy || threadBusy}
             type="button"
-            onClick={() => void onNewThread()}
+            onClick={() => {
+              setActiveView("chat");
+              void onNewThread();
+            }}
           >
             <span aria-hidden="true">
               <UiIcon name="square-pen" />
             </span>
             新对话
+          </button>
+          <button
+            aria-label="自动化"
+            className={`nav-command ${activeView === "automation" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActiveView("automation")}
+          >
+            <span aria-hidden="true">
+              <UiIcon name="clock" />
+            </span>
+            自动化
           </button>
         </nav>
 
@@ -342,7 +387,10 @@ export function App({
                             disabled={projectBusy || threadBusy || !currentProject?.available}
                             key={thread.id}
                             onArchive={() => void onSetThreadArchived(thread.id, true)}
-                            onSelect={() => void onSelectThread(thread.id)}
+                            onSelect={() => {
+                              setActiveView("chat");
+                              void onSelectThread(thread.id);
+                            }}
                             thread={thread}
                           />
                         ))
@@ -385,6 +433,25 @@ export function App({
         </div>
       </aside>
 
+      {activeView === "automation" ? (
+        <main className="workspace automation-workspace-shell">
+          <AutomationWorkspace
+            automations={automations}
+            busy={automationBusy}
+            currentProject={currentProject}
+            error={automationError}
+            projects={projects}
+            runningAutomationIds={runningAutomationIds}
+            settings={settings}
+            onAddProject={onAddProject}
+            onCreateAutomation={onCreateAutomation}
+            onDeleteAutomation={onDeleteAutomation}
+            onRunAutomation={onRunAutomation}
+            onSelectProject={onSelectProject}
+            onUpdateAutomation={onUpdateAutomation}
+          />
+        </main>
+      ) : (
       <main className={`workspace ${hasConversationContent ? "has-thread" : "empty-thread"}`}>
         <section className="codex-window">
           <header className="topbar">
@@ -515,6 +582,7 @@ export function App({
           </div>
         </section>
       </main>
+      )}
       {fullAccessWarningOpen && (
         <ConfirmationDialog
           cancelLabel="保持工作区写入"
@@ -547,6 +615,434 @@ export function App({
       )}
     </div>
   );
+}
+
+function AutomationWorkspace({
+  automations,
+  busy,
+  currentProject,
+  error,
+  onAddProject,
+  onCreateAutomation,
+  onDeleteAutomation,
+  onRunAutomation,
+  onSelectProject,
+  onUpdateAutomation,
+  projects,
+  runningAutomationIds,
+  settings,
+}: {
+  automations: AutomationRecord[];
+  busy: boolean;
+  currentProject: ProjectSummary | null;
+  error: string | null;
+  onAddProject: () => void | Promise<void>;
+  onCreateAutomation: (draft: AutomationDraft) => void | Promise<void>;
+  onDeleteAutomation: (automationId: string) => void | Promise<void>;
+  onRunAutomation: (automationId: string) => void | Promise<void>;
+  onSelectProject: (projectId: string) => void | Promise<void>;
+  onUpdateAutomation: (automationId: string, draft: AutomationDraft) => void | Promise<void>;
+  projects: ProjectSummary[];
+  runningAutomationIds: string[];
+  settings: AppSettings;
+}) {
+  const defaultProject = currentProject ?? projects[0] ?? null;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [fullAccessWarningOpen, setFullAccessWarningOpen] = useState(false);
+  const [draft, setDraft] = useState<AutomationDraft>(() =>
+    defaultAutomationDraft(defaultProject, settings),
+  );
+  const projectOptions = useMemo(
+    () =>
+      projects.map((project) => ({
+        description: project.path,
+        label: project.name,
+        value: project.id,
+      })),
+    [projects],
+  );
+  const weekdayOptions = useMemo(
+    () =>
+      AUTOMATION_WEEKDAY_OPTIONS.map((option) => ({
+        label: option.label,
+        value: String(option.value),
+      })),
+    [],
+  );
+  const runningIds = useMemo(() => new Set(runningAutomationIds), [runningAutomationIds]);
+
+  useEffect(() => {
+    if (draft.projectId || !defaultProject) {
+      return;
+    }
+    setDraft((current) => ({ ...current, projectId: defaultProject.id }));
+  }, [defaultProject, draft.projectId]);
+
+  const selectedProject =
+    projects.find((project) => project.id === draft.projectId) ?? defaultProject;
+  const canSave = Boolean(draft.projectId && draft.title.trim() && draft.prompt.trim()) && !busy;
+
+  const submitAutomation = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canSave) {
+      return;
+    }
+    const action = editingId
+      ? onUpdateAutomation(editingId, draft)
+      : onCreateAutomation(draft);
+    void Promise.resolve(action).then(() => {
+      setEditingId(null);
+      setDraft(defaultAutomationDraft(selectedProject, settings));
+    });
+  };
+
+  const editAutomation = (automation: AutomationRecord) => {
+    setEditingId(automation.id);
+    setDraft(automationDraftFromRecord(automation));
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(defaultAutomationDraft(defaultProject, settings));
+  };
+
+  const updateDraft = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  return (
+    <section className="automation-workspace">
+      <header className="automation-topbar">
+        <div>
+          <p className="eyebrow">自动化</p>
+          <h1>任务调度</h1>
+        </div>
+        {projects.length > 0 ? (
+          <PopupSelect
+            ariaLabel="自动化默认项目"
+            className="automation-project-select"
+            label={<UiIcon name="folder" />}
+            options={projectOptions}
+            value={currentProject?.id ?? projects[0]?.id ?? ""}
+            onChange={(projectId) => void onSelectProject(projectId)}
+          />
+        ) : (
+          <button className="automation-secondary-action" type="button" onClick={() => void onAddProject()}>
+            添加项目
+          </button>
+        )}
+      </header>
+
+      <div className="automation-stage">
+        <form className="automation-form" onSubmit={submitAutomation}>
+          <div className="automation-form-heading">
+            <div>
+              <span>{editingId ? "编辑任务" : "新建任务"}</span>
+              <strong>{selectedProject?.name ?? "未选择项目"}</strong>
+            </div>
+            {editingId && (
+              <button className="automation-link-button" type="button" onClick={cancelEdit}>
+                取消
+              </button>
+            )}
+          </div>
+          <label>
+            <span>名称</span>
+            <input
+              aria-label="自动化名称"
+              disabled={busy}
+              value={draft.title}
+              onChange={(event) => updateDraft("title", event.target.value)}
+            />
+          </label>
+          <label>
+            <span>项目</span>
+            <PopupSelect
+              ariaLabel="自动化项目"
+              className="automation-field-select"
+              disabled={busy || projectOptions.length === 0}
+              label={<UiIcon name="folder" />}
+              options={projectOptions.length > 0 ? projectOptions : [{ label: "无项目", value: "" }]}
+              value={draft.projectId}
+              onChange={(projectId) => updateDraft("projectId", projectId)}
+            />
+          </label>
+          <div className="automation-form-grid">
+            <label>
+              <span>频率</span>
+              <PopupSelect
+                ariaLabel="自动化频率"
+                className="automation-field-select"
+                disabled={busy}
+                label={<UiIcon name="clock" />}
+                options={AUTOMATION_CADENCE_OPTIONS}
+                value={draft.cadence}
+                onChange={(cadence) => {
+                  const nextCadence = cadence as AutomationCadence;
+                  setDraft((current) => ({
+                    ...current,
+                    cadence: nextCadence,
+                    enabled: nextCadence === "manual" ? false : current.enabled,
+                  }));
+                }}
+              />
+            </label>
+            <label>
+              <span>{draft.cadence === "hourly" ? "分钟" : "时间"}</span>
+              <input
+                aria-label="自动化时间"
+                disabled={busy || draft.cadence === "manual"}
+                type="time"
+                value={draft.timeOfDay}
+                onChange={(event) => updateDraft("timeOfDay", event.target.value)}
+              />
+            </label>
+            {draft.cadence === "weekly" && (
+              <label>
+                <span>星期</span>
+                <PopupSelect
+                  ariaLabel="自动化星期"
+                  className="automation-field-select"
+                  disabled={busy}
+                  label={<UiIcon name="clock" />}
+                  options={weekdayOptions}
+                  value={String(draft.dayOfWeek ?? 1)}
+                  onChange={(day) => updateDraft("dayOfWeek", Number(day))}
+                />
+              </label>
+            )}
+          </div>
+          <div className="automation-form-grid">
+            <label>
+              <span>模型</span>
+              <PopupSelect
+                ariaLabel="自动化模型"
+                className="automation-field-select"
+                disabled={busy}
+                label="模型"
+                options={MIMO_MODEL_OPTIONS}
+                value={draft.model}
+                onChange={(model) => updateDraft("model", model as AutomationDraft["model"])}
+              />
+            </label>
+            <label>
+              <span>权限</span>
+              <PopupSelect
+                ariaLabel="自动化权限"
+                className="automation-field-select"
+                disabled={busy}
+                label="权限"
+                options={SANDBOX_OPTIONS}
+                value={draft.sandbox}
+                onChange={(sandbox) => {
+                  if (sandbox === "danger-full-access" && draft.sandbox !== "danger-full-access") {
+                    setFullAccessWarningOpen(true);
+                  } else {
+                    updateDraft("sandbox", sandbox as AutomationDraft["sandbox"]);
+                  }
+                }}
+              />
+            </label>
+          </div>
+          <label className="automation-prompt-field">
+            <span>任务提示词</span>
+            <textarea
+              aria-label="自动化任务提示词"
+              disabled={busy}
+              rows={7}
+              value={draft.prompt}
+              onChange={(event) => updateDraft("prompt", event.target.value)}
+            />
+          </label>
+          <label className="automation-toggle">
+            <input
+              checked={draft.enabled}
+              disabled={busy || draft.cadence === "manual"}
+              type="checkbox"
+              onChange={(event) => updateDraft("enabled", event.target.checked)}
+            />
+            <span>启用定时运行</span>
+          </label>
+          {error && <p className="automation-error">{error}</p>}
+          <button className="automation-primary-action" disabled={!canSave} type="submit">
+            {busy ? "保存中" : editingId ? "保存任务" : "创建任务"}
+          </button>
+        </form>
+        {fullAccessWarningOpen && (
+          <ConfirmationDialog
+            cancelLabel="保持当前权限"
+            confirmLabel="允许完全访问"
+            description="自动化任务会在后台运行。完全访问允许 Agent 访问项目外内容并运行具有系统级副作用的命令。"
+            eyebrow="高风险权限"
+            onCancel={() => setFullAccessWarningOpen(false)}
+            onConfirm={() => {
+              updateDraft("sandbox", "danger-full-access");
+              setFullAccessWarningOpen(false);
+            }}
+            title="允许自动化使用完全访问？"
+            tone="danger"
+          />
+        )}
+
+        <section className="automation-list" aria-label="自动化任务列表">
+          {automations.length === 0 ? (
+            <div className="automation-empty">
+              <strong>暂无自动化任务</strong>
+              <span>创建后会显示运行状态和下次触发时间。</span>
+            </div>
+          ) : (
+            automations.map((automation) => {
+              const project = projects.find((candidate) => candidate.id === automation.projectId);
+              const running = runningIds.has(automation.id) || automation.lastStatus === "running";
+              return (
+                <article className="automation-item" key={automation.id}>
+                  <div className="automation-item-main">
+                    <span className={`automation-state-dot ${automationStatusClass(automation, running)}`} />
+                    <div>
+                      <strong>{automation.title}</strong>
+                      <small>{project?.name ?? "项目已移除"} · {automationScheduleLabel(automation)}</small>
+                    </div>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>下次运行</dt>
+                      <dd>{automation.nextRunAt ? formatDateTime(automation.nextRunAt) : "手动"}</dd>
+                    </div>
+                    <div>
+                      <dt>最近结果</dt>
+                      <dd>{automationLastRunLabel(automation, running)}</dd>
+                    </div>
+                  </dl>
+                  {automation.lastError && <p>{automation.lastError}</p>}
+                  <div className="automation-item-actions">
+                    <button
+                      disabled={busy || running || !project?.available}
+                      type="button"
+                      onClick={() => void onRunAutomation(automation.id)}
+                    >
+                      {running ? "运行中" : "运行"}
+                    </button>
+                    <button disabled={busy || running} type="button" onClick={() => editAutomation(automation)}>
+                      编辑
+                    </button>
+                    <button
+                      disabled={busy}
+                      type="button"
+                      onClick={() =>
+                        void onUpdateAutomation(automation.id, {
+                          ...automationDraftFromRecord(automation),
+                          enabled: !automation.enabled,
+                        })
+                      }
+                    >
+                      {automation.enabled ? "停用" : "启用"}
+                    </button>
+                    <button
+                      className="danger"
+                      disabled={busy || running}
+                      type="button"
+                      onClick={() => void onDeleteAutomation(automation.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function defaultAutomationDraft(
+  project: ProjectSummary | null,
+  settings: AppSettings,
+): AutomationDraft {
+  return {
+    cadence: "daily",
+    dayOfWeek: 1,
+    enabled: true,
+    model: settings.defaultModel,
+    projectId: project?.id ?? "",
+    prompt: "检查当前项目状态，执行必要验证，并报告需要关注的问题。",
+    sandbox: settings.defaultSandbox,
+    timeOfDay: defaultTimeOfDay(),
+    title: "每日项目体检",
+  };
+}
+
+function automationDraftFromRecord(automation: AutomationRecord): AutomationDraft {
+  return {
+    cadence: automation.cadence,
+    dayOfWeek: automation.dayOfWeek,
+    enabled: automation.enabled,
+    model: automation.model,
+    projectId: automation.projectId,
+    prompt: automation.prompt,
+    sandbox: automation.sandbox,
+    timeOfDay: automation.timeOfDay,
+    title: automation.title,
+  };
+}
+
+function defaultTimeOfDay(): string {
+  const date = new Date(Date.now() + 3_600_000);
+  return `${date.getHours().toString().padStart(2, "0")}:00`;
+}
+
+function automationScheduleLabel(automation: AutomationRecord): string {
+  if (automation.cadence === "manual") {
+    return "手动";
+  }
+  if (automation.cadence === "hourly") {
+    const minute = automation.timeOfDay.split(":")[1] ?? "00";
+    return `每小时 ${minute} 分`;
+  }
+  if (automation.cadence === "weekly") {
+    const weekday =
+      AUTOMATION_WEEKDAY_OPTIONS.find((option) => option.value === automation.dayOfWeek)?.label ??
+      "周一";
+    return `每周 ${weekday} ${automation.timeOfDay}`;
+  }
+  return `每天 ${automation.timeOfDay}`;
+}
+
+function automationLastRunLabel(automation: AutomationRecord, running: boolean): string {
+  if (running) {
+    return "运行中";
+  }
+  const status =
+    automation.lastStatus === "completed"
+      ? "已完成"
+      : automation.lastStatus === "failed"
+        ? "失败"
+        : automation.lastStatus === "interrupted"
+          ? "已中断"
+          : "未运行";
+  return automation.lastRunAt ? `${status} · ${relativeTime(automation.lastRunAt)}` : status;
+}
+
+function automationStatusClass(automation: AutomationRecord, running: boolean): string {
+  if (running) {
+    return "running";
+  }
+  if (!automation.enabled && automation.cadence !== "manual") {
+    return "paused";
+  }
+  return automation.lastStatus === "failed" || automation.lastStatus === "interrupted"
+    ? automation.lastStatus
+    : "ready";
+}
+
+function formatDateTime(timestamp: number): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+  }).format(timestamp);
 }
 
 function ProjectWelcome({ onAdd }: { onAdd: () => void }) {

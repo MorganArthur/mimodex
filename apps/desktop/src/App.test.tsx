@@ -25,7 +25,8 @@ import type {
   TurnStartResponse,
 } from "@mimodex/runtime-client";
 import type { RuntimeClientPort } from "@mimodex/desktop-core";
-import { App } from "./App.js";
+import { App, type AppProps } from "./App.js";
+import type { AutomationDraft } from "./automation.js";
 import { DesktopRoot } from "./DesktopRoot.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
 import type { ProjectService, ProjectState, ProjectSummary } from "./projects.js";
@@ -966,12 +967,42 @@ diff --git a/src/app.ts b/src/app.ts
     expect((await screen.findAllByText("等待步骤")).length).toBeGreaterThan(0);
     expect(screen.queryByText("turn/started")).toBeNull();
   });
+
+  it("可以从侧栏打开自动化并创建任务", async () => {
+    const created: AutomationDraft[] = [];
+    const user = userEvent.setup();
+    renderApp(new UiRuntime(), [fixtureProject()], fixtureProject(), {
+      automations: [],
+      onCreateAutomation: (draft) => {
+        created.push(draft);
+      },
+    });
+
+    await user.click(screen.getByRole("button", { name: "自动化" }));
+    expect(screen.getByRole("heading", { name: "任务调度", level: 1 })).toBeTruthy();
+
+    await user.clear(screen.getByLabelText("自动化名称"));
+    await user.type(screen.getByLabelText("自动化名称"), "每日巡检");
+    await user.clear(screen.getByLabelText("自动化任务提示词"));
+    await user.type(screen.getByLabelText("自动化任务提示词"), "检查项目并报告风险。");
+    await user.click(screen.getByRole("button", { name: "创建任务" }));
+
+    expect(created).toEqual([
+      expect.objectContaining({
+        enabled: true,
+        projectId: fixtureProject().id,
+        prompt: "检查项目并报告风险。",
+        title: "每日巡检",
+      }),
+    ]);
+  });
 });
 
 function renderApp(
   runtime: UiRuntime,
   projects: ProjectSummary[] = [fixtureProject()],
   currentProject: ProjectSummary | null = projects[0] ?? null,
+  overrides: Partial<AppProps> = {},
 ) {
   return render(
     <App
@@ -994,6 +1025,7 @@ function renderApp(
       threadBusy={false}
       threadError={null}
       threads={[]}
+      {...overrides}
     />,
   );
 }

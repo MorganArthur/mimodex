@@ -2163,6 +2163,11 @@ body {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.nav-command.active {
+  color: #1f2b20;
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .nav-command:focus-visible,
 .section-heading button:focus-visible,
 .project-row:focus-visible,
@@ -2174,6 +2179,10 @@ body {
 .environment-popover header button:focus-visible,
 .composer-icon-button:focus-visible,
 .context-window-trigger:focus-visible,
+.automation-primary-action:focus-visible,
+.automation-secondary-action:focus-visible,
+.automation-link-button:focus-visible,
+.automation-item-actions button:focus-visible,
 .send-button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(123, 148, 102, 0.16);
@@ -3043,6 +3052,394 @@ body {
 
 .empty-progress p {
   max-width: 210px;
+}
+
+.automation-workspace-shell {
+  padding: 12px 0 0;
+}
+
+.automation-workspace {
+  display: grid;
+  grid-template-rows: 50px minmax(0, 1fr);
+  height: calc(100vh - 12px);
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e2e4df;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 12px 0 0 0;
+  box-shadow: 0 16px 48px rgba(67, 80, 60, 0.08);
+}
+
+.automation-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 50px;
+  padding: 8px 24px 8px 22px;
+}
+
+.automation-topbar h1 {
+  margin: 0;
+  color: #202620;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.automation-topbar .eyebrow {
+  display: none;
+}
+
+.automation-stage {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
+  padding: 18px 24px 24px;
+  overflow: hidden;
+}
+
+.automation-form,
+.automation-list {
+  min-width: 0;
+  min-height: 0;
+}
+
+.automation-form {
+  display: grid;
+  align-content: start;
+  gap: 13px;
+  padding: 16px;
+  overflow-y: auto;
+  background: #fbfbfa;
+  border: 1px solid #e6e6e2;
+  border-radius: 8px;
+}
+
+.automation-form-heading,
+.automation-item-main,
+.automation-item-actions,
+.automation-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.automation-form-heading {
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.automation-form-heading span,
+.automation-form-heading strong,
+.automation-item-main strong,
+.automation-item-main small {
+  display: block;
+}
+
+.automation-form-heading span {
+  color: #7a8277;
+  font-size: 11px;
+}
+
+.automation-form-heading strong {
+  margin-top: 2px;
+  color: #202620;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.automation-form label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.automation-form label > span {
+  color: #66705f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.automation-form input:not([type="checkbox"]),
+.automation-form textarea {
+  width: 100%;
+  min-width: 0;
+  color: #202620;
+  background: #fff;
+  border: 1px solid #dfe3db;
+  border-radius: 8px;
+  outline: none;
+  font-size: 12px;
+}
+
+.automation-form input:not([type="checkbox"]) {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.automation-form textarea {
+  resize: vertical;
+  min-height: 126px;
+  padding: 10px;
+  line-height: 1.55;
+}
+
+.automation-form input:focus,
+.automation-form textarea:focus {
+  border-color: #7b9466;
+  box-shadow: 0 0 0 3px rgba(123, 148, 102, 0.12);
+}
+
+.automation-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.automation-form-grid:has(> :nth-child(3)) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.automation-field-select .popup-select-trigger,
+.automation-project-select .popup-select-trigger {
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 0 10px;
+  background: #fff;
+  border: 1px solid #dfe3db;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.automation-project-select {
+  width: min(260px, 42vw);
+}
+
+.automation-project-select .popup-select-menu,
+.automation-field-select .popup-select-menu {
+  width: max(100%, 245px);
+}
+
+.automation-field-select .popup-select-label,
+.automation-project-select .popup-select-label {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: #74806f;
+}
+
+.automation-toggle {
+  gap: 9px !important;
+  min-height: 28px;
+}
+
+.automation-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: #597b3e;
+}
+
+.automation-toggle span {
+  color: #384137 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+.automation-primary-action,
+.automation-secondary-action,
+.automation-link-button,
+.automation-item-actions button {
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.automation-primary-action {
+  color: #fff;
+  background: #1f2821;
+  border: 0;
+}
+
+.automation-primary-action:disabled,
+.automation-item-actions button:disabled,
+.automation-secondary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.automation-secondary-action,
+.automation-link-button,
+.automation-item-actions button {
+  color: #41513c;
+  background: #f8faf6;
+  border: 1px solid #dbe4d3;
+}
+
+.automation-link-button {
+  padding: 0 10px;
+}
+
+.automation-error {
+  margin: 0;
+  color: #9c423a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.automation-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.automation-empty,
+.automation-item {
+  background: #fbfbfa;
+  border: 1px solid #e6e6e2;
+  border-radius: 8px;
+}
+
+.automation-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  color: #7a8277;
+}
+
+.automation-empty strong {
+  color: #303830;
+  font-size: 14px;
+}
+
+.automation-empty span {
+  font-size: 12px;
+}
+
+.automation-item {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.automation-item-main {
+  gap: 10px;
+  min-width: 0;
+}
+
+.automation-item-main > div {
+  min-width: 0;
+}
+
+.automation-item-main strong {
+  overflow: hidden;
+  color: #202620;
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-item-main small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: #747c71;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-state-dot {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 1.5px solid #83907a;
+  border-radius: 50%;
+}
+
+.automation-state-dot.ready {
+  border-color: #6d8b54;
+  background: #dcebd1;
+}
+
+.automation-state-dot.running {
+  border-color: #527c31;
+  background: #91c75c;
+  box-shadow: 0 0 0 4px rgba(117, 165, 72, 0.14);
+}
+
+.automation-state-dot.failed,
+.automation-state-dot.interrupted {
+  border-color: #c65e55;
+  background: #f2c7c2;
+}
+
+.automation-state-dot.paused {
+  border-color: #9ba393;
+  background: #eef0eb;
+}
+
+.automation-item dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.automation-item dl div {
+  min-width: 0;
+  padding: 9px 10px;
+  background: #f6f7f4;
+  border-radius: 8px;
+}
+
+.automation-item dt,
+.automation-item dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-item dt {
+  color: #7f867b;
+  font-size: 11px;
+}
+
+.automation-item dd {
+  margin-top: 3px;
+  color: #2f382e;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.automation-item p {
+  margin: 0;
+  color: #9c423a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.automation-item-actions {
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.automation-item-actions button {
+  padding: 0 10px;
+}
+
+.automation-item-actions button.danger {
+  color: #9c423a;
+  background: #fff7f4;
+  border-color: #edcfc9;
 }
 
 .workspace-stage {
@@ -4464,6 +4861,10 @@ body {
     grid-template-columns: 230px minmax(0, 1fr);
   }
 
+  .automation-stage {
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  }
+
   .sidebar-chrome {
     gap: 12px;
   }
@@ -4522,6 +4923,29 @@ body {
 
   .composer {
     width: min(730px, calc(100% - 24px));
+  }
+
+  .automation-workspace {
+    height: 100vh;
+    border-radius: 0;
+    border: 0;
+  }
+
+  .automation-stage {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  .automation-form,
+  .automation-list {
+    overflow: visible;
+  }
+
+  .automation-form-grid,
+  .automation-form-grid:has(> :nth-child(3)),
+  .automation-item dl {
+    grid-template-columns: 1fr;
   }
 
   .composer-meta {
