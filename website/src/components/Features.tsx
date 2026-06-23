@@ -1,5 +1,5 @@
 import { useScrollReveal } from "@/hooks/useScrollReveal";
-import { Monitor, FolderGit2, FileEdit, ShieldCheck } from "lucide-react";
+import { Monitor, FolderGit2, FileEdit, ShieldCheck, Clock3 } from "lucide-react";
 
 const features = [
   {
@@ -16,6 +16,11 @@ const features = [
     icon: FileEdit,
     title: "工作区写入 / Diff 审阅",
     description: "改动可追踪，可回看，变更过程清晰可见",
+  },
+  {
+    icon: Clock3,
+    title: "自动化任务",
+    description: "按日、周或月唤醒 Agent，自动执行例行检查和项目维护",
   },
   {
     icon: ShieldCheck,
@@ -49,7 +54,7 @@ export default function Features() {
         </div>
 
         {/* Feature grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
           {features.map((feature, index) => (
             <div
               key={feature.title}

@@ -41,19 +41,19 @@ export default function Hero() {
           像 Codex 一样工作，但更懂你的项目。
         </p>
         <p className="opacity-0-init animate-fade-in-up animate-delay-300 text-base text-dark-500 max-w-xl mx-auto mb-10">
-          由小米 mimo-v2.5 驱动，把对话线程、项目文件、Git 变更、工具执行集中到一个 Windows 桌面应用中
+          由小米 mimo-v2.5 驱动，把对话线程、自动化任务、项目文件、Git 变更和工具执行集中到一个 Windows 桌面应用中
         </p>
 
         {/* CTA Buttons */}
         <div className="opacity-0-init animate-fade-in-up animate-delay-400 flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
           <a
-            href="https://github.com/MorganArthur/mimodex/releases/tag/v0.1.7"
+            href="https://github.com/MorganArthur/mimodex/releases/tag/v0.2.0"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-8 py-4 bg-brand-400 text-dark-950 font-semibold rounded-lg hover:bg-brand-300 transition-colors duration-200 text-base"
           >
             <Download className="w-5 h-5" />
-            下载 v0.1.7
+            下载 v0.2.0
           </a>
           <a
             href="https://github.com/MorganArthur/mimodex"
@@ -76,6 +76,9 @@ export default function Hero() {
           </span>
           <span className="px-3 py-1.5 rounded-full bg-dark-800 text-dark-400 text-sm border border-dark-700">
             本地优先
+          </span>
+          <span className="px-3 py-1.5 rounded-full bg-dark-800 text-dark-400 text-sm border border-dark-700">
+            自动化任务
           </span>
           <span className="px-3 py-1.5 rounded-full bg-dark-800 text-dark-400 text-sm border border-dark-700">
             Pre-release
