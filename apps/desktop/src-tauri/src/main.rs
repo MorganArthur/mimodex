@@ -690,7 +690,10 @@ async fn update_automation(
 }
 
 #[tauri::command]
-async fn delete_automation(app: AppHandle, automation_id: String) -> Result<AutomationState, String> {
+async fn delete_automation(
+    app: AppHandle,
+    automation_id: String,
+) -> Result<AutomationState, String> {
     run_background(move || {
         let connection = open_thread_database(&app)?;
         let deleted = connection
@@ -1681,14 +1684,20 @@ fn validate_automation_fields(
     if !matches!(model, "mimo-v2.5" | "mimo-v2.5-pro") {
         return Err("自动化任务模型无效。".to_string());
     }
-    if !matches!(sandbox, "danger-full-access" | "read-only" | "workspace-write") {
+    if !matches!(
+        sandbox,
+        "danger-full-access" | "read-only" | "workspace-write"
+    ) {
         return Err("自动化任务权限无效。".to_string());
     }
     Ok(())
 }
 
 fn automation_run_status(status: &str) -> bool {
-    matches!(status, "idle" | "running" | "completed" | "failed" | "interrupted")
+    matches!(
+        status,
+        "idle" | "running" | "completed" | "failed" | "interrupted"
+    )
 }
 
 fn valid_time_of_day(value: &str) -> bool {
