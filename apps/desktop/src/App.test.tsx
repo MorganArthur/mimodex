@@ -295,8 +295,44 @@ describe("Mimodex 桌面壳", () => {
     await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
     await user.click(screen.getByRole("button", { name: "打开设置" }));
 
-    expect(screen.getByRole("dialog", { name: "MiMo 设置" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "设置" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /设置模型/ }));
+
+    expect(screen.getByRole("dialog", { name: "模型设置" })).toBeTruthy();
     expect(screen.getByText("已安全保存")).toBeTruthy();
+  });
+
+  it("设置菜单可以打开项目统计仪表盘", async () => {
+    const thread = {
+      ...fixtureThread(),
+      tokenUsage: {
+        inputTokens: 1_000,
+        cachedInputTokens: 100,
+        outputTokens: 500,
+        reasoningOutputTokens: 50,
+        totalTokens: 1_500,
+        contextWindow: 1_000_000,
+      },
+    };
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService([thread])}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByRole("button", { name: /仪表盘/ }));
+
+    expect(screen.getByRole("dialog", { name: "仪表盘" })).toBeTruthy();
+    expect(screen.getByText("项目统计")).toBeTruthy();
+    expect(screen.getByText("Token 消耗")).toBeTruthy();
+    expect(screen.getAllByText("1,500").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("fixture").length).toBeGreaterThan(0);
   });
 
   it("持久化自定义端点与默认模型和权限", async () => {
@@ -314,6 +350,7 @@ describe("Mimodex 桌面壳", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByRole("button", { name: /设置模型/ }));
     await user.clear(screen.getByLabelText("API Base URL"));
     await user.type(screen.getByLabelText("API Base URL"), "https://gateway.example.com/v1/");
     await user.click(screen.getByLabelText("默认模型"));
@@ -348,6 +385,7 @@ describe("Mimodex 桌面壳", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByRole("button", { name: /设置模型/ }));
     await user.click(screen.getByRole("button", { name: "测试端点与已保存 Key" }));
 
     expect(await screen.findByText("测试连接成功。")).toBeTruthy();
@@ -368,6 +406,7 @@ describe("Mimodex 桌面壳", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByRole("button", { name: /设置模型/ }));
     await user.click(screen.getByLabelText("默认权限"));
     await user.click(screen.getByRole("option", { name: /完全访问/ }));
     await user.click(screen.getByRole("button", { name: "保存默认设置并重启" }));

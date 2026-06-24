@@ -1,6 +1,6 @@
 {
   "name": "@mimodex/desktop",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -13,8 +13,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mimodex/desktop-core": "0.2.1",
-    "@mimodex/runtime-client": "0.2.1",
+    "@mimodex/desktop-core": "0.2.2",
+    "@mimodex/runtime-client": "0.2.2",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-process": "^2.3.1",

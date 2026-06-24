@@ -129,6 +129,8 @@ struct ThreadRecord {
     sandbox: String,
     turn_status: String,
     timeline: Vec<TimelineEntry>,
+    #[serde(default)]
+    token_usage: Option<TokenUsage>,
     diff: String,
     created_at: i64,
     updated_at: i64,
@@ -136,6 +138,17 @@ struct ThreadRecord {
     archived: bool,
     #[serde(default)]
     unread: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenUsage {
+    input_tokens: i64,
+    cached_input_tokens: i64,
+    output_tokens: i64,
+    reasoning_output_tokens: i64,
+    total_tokens: i64,
+    context_window: Option<i64>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -1019,6 +1032,7 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
                 sandbox TEXT NOT NULL,
                 turn_status TEXT NOT NULL,
                 timeline_json TEXT NOT NULL,
+                token_usage_json TEXT,
                 diff TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
@@ -1082,6 +1096,11 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|_| thread_database_error("迁移线程未读状态"))?;
     }
+    if !table_has_column(connection, "threads", "token_usage_json")? {
+        connection
+            .execute("ALTER TABLE threads ADD COLUMN token_usage_json TEXT", [])
+            .map_err(|_| thread_database_error("迁移线程 Token 统计"))?;
+    }
     connection
         .execute_batch(
             "
@@ -1089,6 +1108,8 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
                 VALUES (3, unixepoch('subsec') * 1000);
             INSERT OR IGNORE INTO schema_migrations(version, applied_at)
                 VALUES (4, unixepoch('subsec') * 1000);
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                VALUES (5, unixepoch('subsec') * 1000);
             ",
         )
         .map_err(|_| thread_database_error("执行本地数据库迁移"))?;
@@ -1321,14 +1342,21 @@ fn load_thread_activity(
 fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> Result<(), String> {
     let timeline_json = serde_json::to_string(&thread.timeline)
         .map_err(|_| "无法序列化线程时间线。".to_string())?;
+    let token_usage_json = match &thread.token_usage {
+        Some(token_usage) => Some(
+            serde_json::to_string(token_usage)
+                .map_err(|_| "无法序列化 Token 统计。".to_string())?,
+        ),
+        None => None,
+    };
     connection
         .execute(
             "
             INSERT INTO threads(
                 id, project_id, project_path, title, model, sandbox, turn_status,
-                timeline_json, diff, created_at, updated_at, archived, unread
+                timeline_json, token_usage_json, diff, created_at, updated_at, archived, unread
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
             ON CONFLICT(id) DO UPDATE SET
                 project_id = excluded.project_id,
                 project_path = excluded.project_path,
@@ -1337,6 +1365,7 @@ fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> R
                 sandbox = excluded.sandbox,
                 turn_status = excluded.turn_status,
                 timeline_json = excluded.timeline_json,
+                token_usage_json = excluded.token_usage_json,
                 diff = excluded.diff,
                 updated_at = excluded.updated_at,
                 archived = excluded.archived,
@@ -1351,6 +1380,7 @@ fn upsert_thread_projection(connection: &Connection, thread: &ThreadRecord) -> R
                 thread.sandbox,
                 thread.turn_status,
                 timeline_json,
+                token_usage_json,
                 thread.diff,
                 thread.created_at,
                 thread.updated_at,
@@ -1367,7 +1397,7 @@ fn load_thread_state(connection: &Connection) -> Result<ThreadState, String> {
         .prepare(
             "
             SELECT id, project_id, project_path, title, model, sandbox, turn_status,
-                   timeline_json, diff, created_at, updated_at, archived, unread
+                   timeline_json, token_usage_json, diff, created_at, updated_at, archived, unread
             FROM threads
             ORDER BY archived ASC, created_at DESC, id ASC
             ",
@@ -1389,7 +1419,7 @@ fn load_thread(connection: &Connection, thread_id: &str) -> Result<Option<Thread
         .query_row(
             "
             SELECT id, project_id, project_path, title, model, sandbox, turn_status,
-                   timeline_json, diff, created_at, updated_at, archived, unread
+                   timeline_json, token_usage_json, diff, created_at, updated_at, archived, unread
             FROM threads WHERE id = ?1
             ",
             [thread_id],
@@ -1404,6 +1434,19 @@ fn thread_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadRecord> {
     let timeline = serde_json::from_str(&timeline_json).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(error))
     })?;
+    let token_usage_json: Option<String> = row.get(8)?;
+    let token_usage = token_usage_json
+        .as_deref()
+        .map(|payload| {
+            serde_json::from_str(payload).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    8,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        })
+        .transpose()?;
     Ok(ThreadRecord {
         id: row.get(0)?,
         project_id: row.get(1)?,
@@ -1413,11 +1456,12 @@ fn thread_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadRecord> {
         sandbox: row.get(5)?,
         turn_status: row.get(6)?,
         timeline,
-        diff: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
-        archived: row.get(11)?,
-        unread: row.get(12)?,
+        token_usage,
+        diff: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+        archived: row.get(12)?,
+        unread: row.get(13)?,
     })
 }
 
@@ -2101,6 +2145,14 @@ mod tests {
         let mut connection = Connection::open_in_memory().expect("open in-memory SQLite");
         migrate_thread_database(&connection).expect("migrate SQLite");
         let mut thread = fixture_thread();
+        thread.token_usage = Some(TokenUsage {
+            input_tokens: 1_000,
+            cached_input_tokens: 100,
+            output_tokens: 500,
+            reasoning_output_tokens: 50,
+            total_tokens: 1_500,
+            context_window: Some(1_000_000),
+        });
 
         let transaction = connection.transaction().expect("begin transaction");
         record_thread_projection(&transaction, &thread, "threadProjectionRecorded")
@@ -2128,6 +2180,13 @@ mod tests {
         assert_eq!(stored.timeline[0].content, "修复测试");
         assert_eq!(stored.timeline[0].started_at, Some(1_000));
         assert_eq!(stored.timeline[0].completed_at, Some(2_000));
+        assert_eq!(
+            stored
+                .token_usage
+                .as_ref()
+                .map(|token_usage| token_usage.total_tokens),
+            Some(1_500)
+        );
     }
 
     #[test]
@@ -2177,7 +2236,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 4);
+        assert_eq!(migration_count, 5);
     }
 
     #[test]
@@ -2207,12 +2266,16 @@ mod tests {
         assert!(
             table_has_column(&connection, "thread_events", "event_id").expect("check event id")
         );
+        assert!(
+            table_has_column(&connection, "threads", "token_usage_json")
+                .expect("check token usage projection")
+        );
         let migration_count: i64 = connection
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 4);
+        assert_eq!(migration_count, 5);
     }
 
     #[test]
@@ -2350,6 +2413,7 @@ mod tests {
                 started_at: Some(1_000),
                 completed_at: Some(2_000),
             }],
+            token_usage: None,
             diff: String::new(),
             created_at: 1,
             updated_at: 1,

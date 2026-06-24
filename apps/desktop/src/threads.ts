@@ -5,6 +5,7 @@ import type {
   SandboxMode,
   SessionRuntimeEvent,
   TimelineEntry,
+  TokenUsage,
   TurnStatus,
 } from "@mimodex/desktop-core";
 
@@ -17,6 +18,7 @@ export type ThreadRecord = {
   sandbox: SandboxMode;
   turnStatus: TurnStatus;
   timeline: TimelineEntry[];
+  tokenUsage?: TokenUsage | null;
   diff: string;
   createdAt: number;
   updatedAt: number;

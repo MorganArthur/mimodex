@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
-import type { DesktopSessionController, SessionState } from "@mimodex/desktop-core";
+import type { DesktopSessionController, SessionState, TokenUsage } from "@mimodex/desktop-core";
 import { App } from "./App.js";
 import {
   createAutomationService,
@@ -53,6 +62,8 @@ type RunningAutomation = {
   startedAt: number;
 };
 
+type SettingsView = "dashboard" | "menu" | "model";
+
 export function DesktopRoot({
   automationService: providedAutomationService,
   credentialService,
@@ -70,7 +81,7 @@ export function DesktopRoot({
   const [credentialStatus, setCredentialStatus] = useState<CredentialStatus | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [session, setSession] = useState<DesktopSessionController | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsView | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [projectState, setProjectState] = useState<ProjectState | null>(null);
@@ -832,7 +843,7 @@ export function DesktopRoot({
         onDeleteAutomation={deleteAutomation}
         onDeleteThread={deleteThread}
         onNewThread={newThread}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => setSettingsView("menu")}
         onRefreshProject={refreshProject}
         onRunAutomation={runAutomation}
         onSelectProject={selectProject}
@@ -849,11 +860,17 @@ export function DesktopRoot({
         threadError={threadError}
         threads={projectThreads}
       />
-      {settingsOpen && (
-        <CredentialSettings
+      {settingsView && (
+        <SettingsHub
+          automations={automationState.automations}
+          currentProject={currentProject}
+          projects={projectState.projects}
+          session={session}
           status={credentialStatus}
           settings={settings}
-          onClose={() => setSettingsOpen(false)}
+          threads={threadState.threads}
+          view={settingsView}
+          onClose={() => setSettingsView(null)}
           onDelete={deleteCredential}
           onDiagnose={(diagnosticSettings, apiKey) =>
             settingsService.diagnose({
@@ -863,6 +880,7 @@ export function DesktopRoot({
           }
           onSave={saveCredential}
           onSaveSettings={saveSettings}
+          onViewChange={setSettingsView}
         />
       )}
       {settingsError && <div className="global-error">{settingsError}</div>}
@@ -906,6 +924,7 @@ function threadRecordFromSession(
       ...entry,
       content: entry.content.slice(-30_000),
     })),
+    tokenUsage: state.tokenUsage ?? options.existingThread?.tokenUsage ?? null,
     diff: state.diff.slice(-100_000),
     createdAt: options.existingThread?.createdAt ?? now,
     updatedAt: now,
@@ -994,9 +1013,113 @@ function CredentialSetup({
   );
 }
 
-function CredentialSettings({
+function SettingsHub({
+  automations,
+  currentProject,
+  projects,
+  session,
   settings,
   status,
+  threads,
+  view,
+  onClose,
+  onDelete,
+  onDiagnose,
+  onSave,
+  onSaveSettings,
+  onViewChange,
+}: {
+  automations: AutomationRecord[];
+  currentProject: ProjectState["projects"][number] | null;
+  projects: ProjectState["projects"];
+  session: DesktopSessionController;
+  settings: AppSettings;
+  status: CredentialStatus;
+  threads: ThreadRecord[];
+  view: SettingsView;
+  onClose: () => void;
+  onDelete: () => Promise<void>;
+  onDiagnose: (settings: AppSettings, apiKey?: string) => Promise<ConnectionDiagnostic>;
+  onSave: (apiKey: string) => Promise<void>;
+  onSaveSettings: (settings: AppSettings) => Promise<void>;
+  onViewChange: (view: SettingsView) => void;
+}) {
+  if (view === "menu") {
+    return (
+      <SettingsMenu
+        status={status}
+        onClose={onClose}
+        onViewChange={onViewChange}
+      />
+    );
+  }
+
+  if (view === "dashboard") {
+    return (
+      <DashboardSettingsDialog
+        automations={automations}
+        currentProject={currentProject}
+        projects={projects}
+        session={session}
+        threads={threads}
+        onBack={() => onViewChange("menu")}
+        onClose={onClose}
+      />
+    );
+  }
+
+  return (
+    <ModelSettingsDialog
+      status={status}
+      settings={settings}
+      onBack={() => onViewChange("menu")}
+      onClose={onClose}
+      onDelete={onDelete}
+      onDiagnose={onDiagnose}
+      onSave={onSave}
+      onSaveSettings={onSaveSettings}
+    />
+  );
+}
+
+function SettingsMenu({
+  status,
+  onClose,
+  onViewChange,
+}: {
+  status: CredentialStatus;
+  onClose: () => void;
+  onViewChange: (view: SettingsView) => void;
+}) {
+  const credentialReady = status.configured ? credentialStatusLabel(status) : "尚未配置";
+  return (
+    <div className="settings-menu-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        aria-label="设置"
+        aria-modal="true"
+        className="settings-menu-popover"
+        role="dialog"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button className="settings-menu-item" type="button" onClick={() => onViewChange("model")}>
+          <SettingsMenuIcon name="model" />
+          <span>设置模型</span>
+          <small>{credentialReady}</small>
+        </button>
+        <button className="settings-menu-item" type="button" onClick={() => onViewChange("dashboard")}>
+          <SettingsMenuIcon name="dashboard" />
+          <span>仪表盘</span>
+          <small>项目、任务与 Token</small>
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function ModelSettingsDialog({
+  settings,
+  status,
+  onBack,
   onClose,
   onDelete,
   onDiagnose,
@@ -1005,6 +1128,7 @@ function CredentialSettings({
 }: {
   settings: AppSettings;
   status: CredentialStatus;
+  onBack: () => void;
   onClose: () => void;
   onDelete: () => Promise<void>;
   onDiagnose: (settings: AppSettings, apiKey?: string) => Promise<ConnectionDiagnostic>;
@@ -1027,9 +1151,14 @@ function CredentialSettings({
 
   return (
     <div className="settings-backdrop" role="presentation">
-      <section aria-label="MiMo 设置" aria-modal="true" className="settings-dialog" role="dialog">
+      <section aria-label="模型设置" aria-modal="true" className="settings-dialog" role="dialog">
         <header>
-          <div><p className="eyebrow">设置</p><h2>MiMo Provider</h2></div>
+          <div className="settings-title-row">
+            <button aria-label="返回设置" className="settings-back-button" type="button" onClick={onBack}>
+              ‹
+            </button>
+            <div><p className="eyebrow">设置模型</p><h2>MiMo Provider</h2></div>
+          </div>
           <button aria-label="关闭设置" type="button" onClick={onClose}>×</button>
         </header>
         <ProviderSettingsForm settings={settings} onDiagnose={onDiagnose} onSave={onSaveSettings} />
@@ -1060,6 +1189,374 @@ function CredentialSettings({
       </section>
     </div>
   );
+}
+
+function DashboardSettingsDialog({
+  automations,
+  currentProject,
+  projects,
+  session,
+  threads,
+  onBack,
+  onClose,
+}: {
+  automations: AutomationRecord[];
+  currentProject: ProjectState["projects"][number] | null;
+  projects: ProjectState["projects"];
+  session: DesktopSessionController;
+  threads: ThreadRecord[];
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="settings-backdrop" role="presentation">
+      <section aria-label="仪表盘" aria-modal="true" className="settings-dialog dashboard-dialog" role="dialog">
+        <header>
+          <div className="settings-title-row">
+            <button aria-label="返回设置" className="settings-back-button" type="button" onClick={onBack}>
+              ‹
+            </button>
+            <div><p className="eyebrow">仪表盘</p><h2>项目统计</h2></div>
+          </div>
+          <button aria-label="关闭设置" type="button" onClick={onClose}>×</button>
+        </header>
+        <SettingsDashboard
+          automations={automations}
+          currentProject={currentProject}
+          projects={projects}
+          session={session}
+          threads={threads}
+        />
+      </section>
+    </div>
+  );
+}
+
+function SettingsDashboard({
+  automations,
+  currentProject,
+  projects,
+  session,
+  threads,
+}: {
+  automations: AutomationRecord[];
+  currentProject: ProjectState["projects"][number] | null;
+  projects: ProjectState["projects"];
+  session: DesktopSessionController;
+  threads: ThreadRecord[];
+}) {
+  const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const stats = useMemo(
+    () => createDashboardStats({ automations, currentProject, projects, state, threads }),
+    [automations, currentProject, projects, state, threads],
+  );
+
+  return (
+    <div className="settings-dashboard">
+      <div className="dashboard-metric-grid">
+        <DashboardMetric
+          label="项目"
+          value={stats.projectCount.toLocaleString("zh-CN")}
+          detail={`${stats.availableProjectCount.toLocaleString("zh-CN")} 个可用`}
+        />
+        <DashboardMetric
+          label="对话线程"
+          value={stats.conversationCount.toLocaleString("zh-CN")}
+          detail={`${stats.activeConversationCount.toLocaleString("zh-CN")} 个活跃 · ${stats.archivedConversationCount.toLocaleString("zh-CN")} 个归档`}
+        />
+        <DashboardMetric
+          label="任务消息"
+          value={stats.taskCount.toLocaleString("zh-CN")}
+          detail={`${stats.runningCount.toLocaleString("zh-CN")} 个进行中`}
+        />
+        <DashboardMetric
+          label="Token 消耗"
+          value={formatDashboardTokens(stats.totalTokens)}
+          detail={`${stats.tokenThreadCount.toLocaleString("zh-CN")} 个线程有统计`}
+        />
+      </div>
+
+      <section className="dashboard-section">
+        <h3>当前线程 Token</h3>
+        <dl className="dashboard-token-grid">
+          <div>
+            <dt>总量</dt>
+            <dd>{formatDashboardTokens(stats.currentTokenUsage?.totalTokens ?? null)}</dd>
+          </div>
+          <div>
+            <dt>输入</dt>
+            <dd>{formatDashboardTokens(stats.currentTokenUsage?.inputTokens ?? null)}</dd>
+          </div>
+          <div>
+            <dt>输出</dt>
+            <dd>{formatDashboardTokens(stats.currentTokenUsage?.outputTokens ?? null)}</dd>
+          </div>
+          <div>
+            <dt>上下文</dt>
+            <dd>{formatContextRatio(stats.currentTokenUsage)}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="dashboard-section dashboard-columns">
+        <div>
+          <h3>任务状态</h3>
+          <dl className="dashboard-list">
+            <DashboardListItem label="已完成" value={stats.completedCount} />
+            <DashboardListItem label="进行中" value={stats.runningCount} />
+            <DashboardListItem label="失败" value={stats.failedCount} />
+            <DashboardListItem label="已中断" value={stats.interruptedCount} />
+          </dl>
+        </div>
+        <div>
+          <h3>自动化</h3>
+          <dl className="dashboard-list">
+            <DashboardListItem label="任务总数" value={stats.automationCount} />
+            <DashboardListItem label="定时启用" value={stats.enabledAutomationCount} />
+            <DashboardListItem label="已运行次数" value={stats.automationRunCount} />
+            <DashboardListItem label="失败记录" value={stats.automationFailureCount} />
+          </dl>
+        </div>
+      </section>
+
+      <section className="dashboard-section">
+        <h3>项目分布</h3>
+        <div className="dashboard-project-list">
+          {stats.projectRows.length === 0 ? (
+            <p>添加项目后显示统计。</p>
+          ) : (
+            stats.projectRows.map((project) => (
+              <div className="dashboard-project-row" key={project.id}>
+                <div>
+                  <strong>{project.name}</strong>
+                  <span>{project.path}</span>
+                </div>
+                <dl>
+                  <div>
+                    <dt>对话</dt>
+                    <dd>{project.conversations.toLocaleString("zh-CN")}</dd>
+                  </div>
+                  <div>
+                    <dt>任务</dt>
+                    <dd>{project.tasks.toLocaleString("zh-CN")}</dd>
+                  </div>
+                  <div>
+                    <dt>Token</dt>
+                    <dd>{formatDashboardTokens(project.tokens)}</dd>
+                  </div>
+                </dl>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DashboardMetric({
+  detail,
+  label,
+  value,
+}: {
+  detail: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="dashboard-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function DashboardListItem({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value.toLocaleString("zh-CN")}</dd>
+    </div>
+  );
+}
+
+function SettingsMenuIcon({ name }: { name: "dashboard" | "model" }) {
+  const paths: Record<typeof name, ReactNode> = {
+    dashboard: (
+      <>
+        <path d="M4 11.5a6 6 0 1 1 12 0" />
+        <path d="M10 11.5l3-3" />
+        <path d="M5.2 14.5h9.6" />
+      </>
+    ),
+    model: (
+      <>
+        <circle cx="10" cy="10" r="2.4" />
+        <path d="M8.8 2.9h2.4l.4 2.1c.5.1.9.3 1.3.5l1.8-1.2 1.7 1.7-1.2 1.8c.2.4.4.8.5 1.3l2.1.4v2.4l-2.1.4c-.1.5-.3.9-.5 1.3l1.2 1.8-1.7 1.7-1.8-1.2c-.4.2-.8.4-1.3.5l-.4 2.1H8.8l-.4-2.1c-.5-.1-.9-.3-1.3-.5l-1.8 1.2-1.7-1.7 1.2-1.8c-.2-.4-.4-.8-.5-1.3l-2.1-.4V9.5l2.1-.4c.1-.5.3-.9.5-1.3L3.6 6l1.7-1.7 1.8 1.2c.4-.2.8-.4 1.3-.5l.4-2.1Z" />
+      </>
+    ),
+  };
+  return (
+    <svg aria-hidden="true" className="settings-menu-icon" focusable="false" viewBox="0 0 20 20">
+      {paths[name]}
+    </svg>
+  );
+}
+
+type DashboardProjectRow = {
+  conversations: number;
+  id: string;
+  name: string;
+  path: string;
+  tasks: number;
+  tokens: number | null;
+};
+
+type DashboardStats = {
+  activeConversationCount: number;
+  archivedConversationCount: number;
+  automationCount: number;
+  automationFailureCount: number;
+  automationRunCount: number;
+  availableProjectCount: number;
+  completedCount: number;
+  conversationCount: number;
+  currentTokenUsage: TokenUsage | null;
+  enabledAutomationCount: number;
+  failedCount: number;
+  interruptedCount: number;
+  projectCount: number;
+  projectRows: DashboardProjectRow[];
+  runningCount: number;
+  taskCount: number;
+  tokenThreadCount: number;
+  totalTokens: number | null;
+};
+
+function createDashboardStats({
+  automations,
+  currentProject,
+  projects,
+  state,
+  threads,
+}: {
+  automations: AutomationRecord[];
+  currentProject: ProjectState["projects"][number] | null;
+  projects: ProjectState["projects"];
+  state: SessionState;
+  threads: ThreadRecord[];
+}): DashboardStats {
+  const dashboardThreads = mergeCurrentSessionThread(threads, state, currentProject);
+  const activeThreads = dashboardThreads.filter((thread) => !thread.archived);
+  const usageThreads = dashboardThreads.filter((thread) => thread.tokenUsage);
+  const totalTokens = sumTokenUsage(usageThreads.map((thread) => thread.tokenUsage ?? null));
+  const currentThreadUsage =
+    state.tokenUsage ??
+    dashboardThreads.find((thread) => thread.id === state.threadId)?.tokenUsage ??
+    null;
+  const projectRows = projects
+    .map((project) => {
+      const projectThreads = dashboardThreads.filter((thread) => thread.projectId === project.id);
+      const projectTokens = sumTokenUsage(projectThreads.map((thread) => thread.tokenUsage ?? null));
+      return {
+        conversations: projectThreads.length,
+        id: project.id,
+        name: project.name,
+        path: project.path,
+        tasks: projectThreads.reduce((count, thread) => count + taskCountForThread(thread), 0),
+        tokens: projectTokens,
+      };
+    })
+    .sort((left, right) =>
+      (right.tokens ?? 0) - (left.tokens ?? 0) ||
+      right.conversations - left.conversations ||
+      left.name.localeCompare(right.name, "zh-CN"),
+    );
+
+  return {
+    activeConversationCount: activeThreads.length,
+    archivedConversationCount: dashboardThreads.length - activeThreads.length,
+    automationCount: automations.length,
+    automationFailureCount: automations.filter((automation) => automation.lastStatus === "failed").length,
+    automationRunCount: automations.reduce((count, automation) => count + automation.runCount, 0),
+    availableProjectCount: projects.filter((project) => project.available).length,
+    completedCount: dashboardThreads.filter((thread) => thread.turnStatus === "completed").length,
+    conversationCount: dashboardThreads.length,
+    currentTokenUsage: currentThreadUsage,
+    enabledAutomationCount: automations.filter((automation) => automation.enabled).length,
+    failedCount: dashboardThreads.filter((thread) => thread.turnStatus === "failed").length,
+    interruptedCount: dashboardThreads.filter((thread) => thread.turnStatus === "interrupted").length,
+    projectCount: projects.length,
+    projectRows,
+    runningCount: dashboardThreads.filter((thread) => thread.turnStatus === "inProgress").length,
+    taskCount: dashboardThreads.reduce((count, thread) => count + taskCountForThread(thread), 0),
+    tokenThreadCount: usageThreads.length,
+    totalTokens,
+  };
+}
+
+function mergeCurrentSessionThread(
+  threads: ThreadRecord[],
+  state: SessionState,
+  currentProject: ProjectState["projects"][number] | null,
+): ThreadRecord[] {
+  const merged = threads.map((thread) =>
+    thread.id === state.threadId
+      ? { ...thread, tokenUsage: state.tokenUsage ?? thread.tokenUsage ?? null }
+      : thread,
+  );
+  if (!state.threadId || merged.some((thread) => thread.id === state.threadId) || !currentProject) {
+    return merged;
+  }
+  const firstUserMessage = state.timeline.find((entry) => entry.kind === "user")?.content.trim();
+  return [
+    {
+      id: state.threadId,
+      projectId: currentProject.id,
+      projectPath: state.projectPath ?? currentProject.path,
+      title: compactTitle(firstUserMessage || "当前线程"),
+      model: state.model === "mimo-v2.5-pro" ? "mimo-v2.5-pro" : "mimo-v2.5",
+      sandbox: state.sandbox,
+      turnStatus: state.turnStatus,
+      timeline: Array.from(state.timeline),
+      tokenUsage: state.tokenUsage,
+      diff: state.diff,
+      createdAt: state.timeline[0]?.startedAt ?? Date.now(),
+      updatedAt: Date.now(),
+      archived: false,
+      unread: false,
+    },
+    ...merged,
+  ];
+}
+
+function taskCountForThread(thread: ThreadRecord): number {
+  return thread.timeline.filter((entry) => entry.kind === "user").length;
+}
+
+function sumTokenUsage(usages: Array<TokenUsage | null>): number | null {
+  const known = usages.filter((usage): usage is TokenUsage => Boolean(usage));
+  if (known.length === 0) {
+    return null;
+  }
+  return known.reduce((total, usage) => total + usage.totalTokens, 0);
+}
+
+function formatDashboardTokens(value: number | null | undefined): string {
+  return value === null || value === undefined ? "等待统计" : value.toLocaleString("zh-CN");
+}
+
+function formatContextRatio(usage: TokenUsage | null): string {
+  if (!usage) {
+    return "等待统计";
+  }
+  if (!usage.contextWindow || usage.contextWindow <= 0) {
+    return "容量未知";
+  }
+  const ratio = usage.totalTokens / usage.contextWindow;
+  const percent = ratio > 0 && ratio < 0.01 ? "<1%" : `${Math.round(ratio * 100).toLocaleString("zh-CN")}%`;
+  return `${percent} · ${formatDashboardTokens(usage.totalTokens)} / ${formatDashboardTokens(usage.contextWindow)}`;
 }
 
 function CredentialForm({
