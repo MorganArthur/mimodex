@@ -472,10 +472,7 @@ async fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectSt
 }
 
 #[tauri::command]
-async fn list_project_branches(
-    app: AppHandle,
-    project_id: String,
-) -> Result<Vec<String>, String> {
+async fn list_project_branches(app: AppHandle, project_id: String) -> Result<Vec<String>, String> {
     run_background(move || {
         let store = load_project_store(&app)?;
         let project = store
