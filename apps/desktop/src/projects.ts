@@ -35,6 +35,7 @@ export interface ProjectService {
   add(path: string): Promise<ProjectState>;
   select(projectId: string): Promise<ProjectState>;
   refresh(projectId: string): Promise<ProjectState>;
+  openTerminal(path: string): Promise<void>;
 }
 
 export function createProjectService(): ProjectService {
@@ -61,6 +62,10 @@ class TauriProjectService implements ProjectService {
 
   refresh(projectId: string): Promise<ProjectState> {
     return invoke("refresh_project", { projectId });
+  }
+
+  openTerminal(path: string): Promise<void> {
+    return invoke("open_terminal", { path });
   }
 }
 
@@ -97,6 +102,10 @@ class DemoProjectService implements ProjectService {
 
   async refresh(_projectId: string): Promise<ProjectState> {
     return this.#state;
+  }
+
+  async openTerminal(_path: string): Promise<void> {
+    return undefined;
   }
 }
 

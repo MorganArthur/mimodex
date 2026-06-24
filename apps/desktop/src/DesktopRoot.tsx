@@ -806,6 +806,21 @@ export function DesktopRoot({
 
   const refreshProject = () => refreshSelectedProject(false);
 
+  const openTerminal = async () => {
+    const project =
+      projectState?.projects.find((candidate) => candidate.id === projectState.selectedProjectId) ??
+      null;
+    if (!project?.available) {
+      return;
+    }
+    setProjectError(null);
+    try {
+      await projectService.openTerminal(project.path);
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    }
+  };
+
   if (credentialError || (settingsError && !settings)) {
     return <CredentialErrorPanel message={credentialError ?? settingsError ?? "无法读取设置。"} />;
   }
@@ -844,6 +859,7 @@ export function DesktopRoot({
         onDeleteThread={deleteThread}
         onNewThread={newThread}
         onOpenSettings={() => setSettingsView("menu")}
+        onOpenTerminal={openTerminal}
         onRefreshProject={refreshProject}
         onRunAutomation={runAutomation}
         onSelectProject={selectProject}

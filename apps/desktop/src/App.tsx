@@ -47,6 +47,7 @@ export type AppProps = {
   onDeleteThread: (threadId: string) => void | Promise<void>;
   onNewThread: () => void | Promise<void>;
   onOpenSettings?: () => void;
+  onOpenTerminal?: () => void | Promise<void>;
   onRefreshProject: () => void | Promise<void>;
   onRunAutomation?: (automationId: string) => void | Promise<void>;
   onSelectProject: (projectId: string) => void | Promise<void>;
@@ -83,7 +84,8 @@ type UiIconName =
   | "plus"
   | "refresh"
   | "settings"
-  | "square-pen";
+  | "square-pen"
+  | "terminal";
 
 function UiIcon({ name }: { name: UiIconName }) {
   return (
@@ -176,6 +178,13 @@ const iconPaths: Record<UiIconName, ReactNode> = {
       <path d="M12.2 6.6l1.2 1.2" />
     </>
   ),
+  terminal: (
+    <>
+      <rect x="3" y="4.5" width="14" height="11" rx="1.6" />
+      <path d="M6.4 8.4l2.2 1.8-2.2 1.8" />
+      <path d="M10.4 12.6h3.4" />
+    </>
+  ),
 };
 
 export function App({
@@ -192,6 +201,7 @@ export function App({
   onDeleteThread,
   onNewThread,
   onOpenSettings = () => undefined,
+  onOpenTerminal,
   onRefreshProject,
   onRunAutomation = () => undefined,
   onSelectProject,
@@ -472,6 +482,20 @@ export function App({
                     <UiIcon name="refresh" />
                   </span>
                   {projectBusy ? "刷新中" : "刷新 Git"}
+                </button>
+              )}
+              {currentProject?.available && onOpenTerminal && (
+                <button
+                  aria-label="打开终端"
+                  className="refresh-project open-terminal"
+                  title={`在 ${currentProject.path} 打开终端窗口`}
+                  type="button"
+                  onClick={() => void onOpenTerminal()}
+                >
+                  <span aria-hidden="true">
+                    <UiIcon name="terminal" />
+                  </span>
+                  打开终端
                 </button>
               )}
               {sandbox === "danger-full-access" && <span className="danger-pill">完全访问</span>}

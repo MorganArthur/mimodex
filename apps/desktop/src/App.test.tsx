@@ -1007,6 +1007,26 @@ diff --git a/src/app.ts b/src/app.ts
     expect(screen.queryByText("turn/started")).toBeNull();
   });
 
+  it("可以从顶栏按钮在当前项目目录打开终端", async () => {
+    const projects = new FakeProjectService();
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={projects}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "打开终端" }));
+
+    await waitFor(() =>
+      expect(projects.openedTerminalPaths).toEqual([fixtureProject().path]),
+    );
+  });
+
   it("可以从侧栏打开自动化并创建任务", async () => {
     const created: AutomationDraft[] = [];
     const user = userEvent.setup();
@@ -1250,6 +1270,7 @@ class FakeSettingsService implements SettingsService {
 class FakeProjectService implements ProjectService {
   refreshCount = 0;
   selectBarrier: Promise<void> | null = null;
+  readonly openedTerminalPaths: string[] = [];
   #state: ProjectState;
 
   constructor(projects: ProjectSummary[] = [fixtureProject()]) {
@@ -1288,6 +1309,10 @@ class FakeProjectService implements ProjectService {
   async refresh(_projectId: string): Promise<ProjectState> {
     this.refreshCount += 1;
     return this.#state;
+  }
+
+  async openTerminal(path: string): Promise<void> {
+    this.openedTerminalPaths.push(path);
   }
 }
 
