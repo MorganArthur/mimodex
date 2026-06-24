@@ -806,6 +806,34 @@ export function DesktopRoot({
 
   const refreshProject = () => refreshSelectedProject(false);
 
+  const loadProjectBranches = useCallback(
+    async (projectId: string) => {
+      try {
+        return await projectService.listBranches(projectId);
+      } catch (error) {
+        setProjectError(errorMessage(error));
+        return [];
+      }
+    },
+    [projectService],
+  );
+
+  const switchProjectBranch = useCallback(
+    async (projectId: string, branch: string) => {
+      setProjectBusy(true);
+      setProjectError(null);
+      try {
+        const nextState = await projectService.switchBranch(projectId, branch);
+        setProjectState((current) => stabilizeProjectState(current, nextState));
+      } catch (error) {
+        setProjectError(errorMessage(error));
+      } finally {
+        setProjectBusy(false);
+      }
+    },
+    [projectService],
+  );
+
   if (credentialError || (settingsError && !settings)) {
     return <CredentialErrorPanel message={credentialError ?? settingsError ?? "无法读取设置。"} />;
   }
@@ -842,6 +870,7 @@ export function DesktopRoot({
         onAddProject={addProject}
         onDeleteAutomation={deleteAutomation}
         onDeleteThread={deleteThread}
+        onLoadBranches={loadProjectBranches}
         onNewThread={newThread}
         onOpenSettings={() => setSettingsView("menu")}
         onRefreshProject={refreshProject}
@@ -849,6 +878,7 @@ export function DesktopRoot({
         onSelectProject={selectProject}
         onSelectThread={selectThread}
         onSetThreadArchived={setThreadArchived}
+        onSwitchBranch={switchProjectBranch}
         onUpdateAutomation={updateAutomation}
         projectBusy={projectBusy}
         projectError={projectError}

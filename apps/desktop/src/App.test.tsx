@@ -1289,6 +1289,22 @@ class FakeProjectService implements ProjectService {
     this.refreshCount += 1;
     return this.#state;
   }
+
+  async listBranches(_projectId: string): Promise<string[]> {
+    return [];
+  }
+
+  async switchBranch(projectId: string, branch: string): Promise<ProjectState> {
+    this.#state = {
+      ...this.#state,
+      projects: this.#state.projects.map((project) =>
+        project.id === projectId
+          ? { ...project, git: { ...project.git, branch } }
+          : project,
+      ),
+    };
+    return this.#state;
+  }
 }
 
 class FakeThreadService implements ThreadService {

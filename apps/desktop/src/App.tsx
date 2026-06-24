@@ -45,6 +45,7 @@ export type AppProps = {
   onCreateAutomation?: (draft: AutomationDraft) => void | Promise<void>;
   onDeleteAutomation?: (automationId: string) => void | Promise<void>;
   onDeleteThread: (threadId: string) => void | Promise<void>;
+  onLoadBranches?: (projectId: string) => Promise<string[]>;
   onNewThread: () => void | Promise<void>;
   onOpenSettings?: () => void;
   onRefreshProject: () => void | Promise<void>;
@@ -52,6 +53,7 @@ export type AppProps = {
   onSelectProject: (projectId: string) => void | Promise<void>;
   onSelectThread: (threadId: string) => void | Promise<void>;
   onSetThreadArchived: (threadId: string, archived: boolean) => void | Promise<void>;
+  onSwitchBranch?: (projectId: string, branch: string) => void | Promise<void>;
   onUpdateAutomation?: (automationId: string, draft: AutomationDraft) => void | Promise<void>;
   projectBusy: boolean;
   projectError: string | null;
@@ -190,6 +192,7 @@ export function App({
   onCreateAutomation = () => undefined,
   onDeleteAutomation = () => undefined,
   onDeleteThread,
+  onLoadBranches,
   onNewThread,
   onOpenSettings = () => undefined,
   onRefreshProject,
@@ -197,6 +200,7 @@ export function App({
   onSelectProject,
   onSelectThread,
   onSetThreadArchived,
+  onSwitchBranch,
   onUpdateAutomation = () => undefined,
   projectBusy,
   projectError,
@@ -573,9 +577,12 @@ export function App({
                   onSelectProject={onSelectProject}
                 />
                 <span className="meta-chip">本地模式</span>
-                <span className="meta-chip">
-                  {currentProject?.git.branch ?? currentProject?.git.head ?? "无 Git 分支"}
-                </span>
+                <BranchPicker
+                  currentProject={currentProject}
+                  disabled={projectBusy}
+                  onLoadBranches={onLoadBranches}
+                  onSwitchBranch={onSwitchBranch}
+                />
               </div>
             </form>
           </div>
@@ -1958,6 +1965,70 @@ const ModelPicker = memo(function ModelPicker({
     />
   );
 });
+
+function BranchPicker({
+  currentProject,
+  disabled,
+  onLoadBranches,
+  onSwitchBranch,
+}: {
+  currentProject: ProjectSummary | null;
+  disabled: boolean;
+  onLoadBranches: ((projectId: string) => Promise<string[]>) | undefined;
+  onSwitchBranch: ((projectId: string, branch: string) => void | Promise<void>) | undefined;
+}) {
+  const [branches, setBranches] = useState<string[]>([]);
+  const currentBranch = currentProject?.git.branch ?? null;
+  const isRepository = currentProject?.git.isRepository ?? false;
+  const projectId = currentProject?.id ?? null;
+  const interactive = Boolean(
+    onLoadBranches && onSwitchBranch && currentProject?.available && isRepository && currentBranch,
+  );
+
+  useEffect(() => {
+    if (!interactive || !projectId || !onLoadBranches) {
+      setBranches([]);
+      return;
+    }
+    let cancelled = false;
+    void onLoadBranches(projectId).then((next) => {
+      if (!cancelled) {
+        setBranches(next);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch, interactive, onLoadBranches, projectId]);
+
+  if (!interactive || !currentBranch || !currentProject) {
+    return (
+      <span className="meta-chip">
+        {currentProject?.git.branch ?? currentProject?.git.head ?? "无 Git 分支"}
+      </span>
+    );
+  }
+
+  const branchList = Array.from(new Set([currentBranch, ...branches]));
+  const options = branchList.map((branch) => ({ label: branch, value: branch }));
+
+  return (
+    <PopupSelect
+      ariaLabel="切换分支"
+      className="project-meta-select branch-meta-select"
+      disabled={disabled}
+      label={<UiIcon name="branch" />}
+      options={options}
+      placement="top"
+      value={currentBranch}
+      onChange={(next) => {
+        if (next !== currentBranch && onSwitchBranch) {
+          void onSwitchBranch(currentProject.id, next);
+        }
+      }}
+    />
+  );
+}
 
 function ProjectPicker({
   currentProject,
