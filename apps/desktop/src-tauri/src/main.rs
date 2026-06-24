@@ -239,6 +239,55 @@ struct AutomationState {
     automations: Vec<AutomationRecord>,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginRecord {
+    id: String,
+    kind: String,
+    name: String,
+    webhook_url: String,
+    secret: Option<String>,
+    enabled: bool,
+    last_test_status: String,
+    last_tested_at: Option<i64>,
+    last_error: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginDraft {
+    kind: String,
+    name: String,
+    webhook_url: String,
+    secret: Option<String>,
+    enabled: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginState {
+    plugins: Vec<PluginRecord>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginTestResult {
+    ok: bool,
+    status_code: Option<u16>,
+    latency_ms: Option<u64>,
+    message: String,
+    detail: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginTestResponse {
+    result: PluginTestResult,
+    state: PluginState,
+}
+
 #[tauri::command]
 fn get_mimo_credential_status() -> Result<CredentialStatus, String> {
     if stored_api_key()?.is_some() {
@@ -764,6 +813,127 @@ async fn record_automation_run(
     .await
 }
 
+#[tauri::command]
+async fn list_plugins(app: AppHandle) -> Result<PluginState, String> {
+    run_background(move || {
+        let connection = open_thread_database(&app)?;
+        load_plugin_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn create_plugin(app: AppHandle, plugin: PluginDraft) -> Result<PluginState, String> {
+    run_background(move || {
+        validate_plugin_draft(&plugin)?;
+        let connection = open_thread_database(&app)?;
+        let now = unix_timestamp_ms();
+        let record = PluginRecord {
+            id: plugin_id(),
+            kind: plugin.kind,
+            name: plugin.name,
+            webhook_url: plugin.webhook_url,
+            secret: plugin.secret,
+            enabled: plugin.enabled,
+            last_test_status: "idle".to_string(),
+            last_tested_at: None,
+            last_error: None,
+            created_at: now,
+            updated_at: now,
+        };
+        upsert_plugin(&connection, &record)?;
+        load_plugin_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn update_plugin(
+    app: AppHandle,
+    plugin_id: String,
+    plugin: PluginDraft,
+) -> Result<PluginState, String> {
+    run_background(move || {
+        validate_plugin_draft(&plugin)?;
+        let connection = open_thread_database(&app)?;
+        let mut record = load_plugin(&connection, &plugin_id)?
+            .ok_or_else(|| "插件不存在。".to_string())?;
+        record.kind = plugin.kind;
+        record.name = plugin.name;
+        record.webhook_url = plugin.webhook_url;
+        record.secret = plugin.secret;
+        record.enabled = plugin.enabled;
+        record.updated_at = unix_timestamp_ms();
+        upsert_plugin(&connection, &record)?;
+        load_plugin_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn delete_plugin(app: AppHandle, plugin_id: String) -> Result<PluginState, String> {
+    run_background(move || {
+        let connection = open_thread_database(&app)?;
+        let deleted = connection
+            .execute("DELETE FROM plugins WHERE id = ?1", [&plugin_id])
+            .map_err(|_| thread_database_error("删除插件"))?;
+        if deleted == 0 {
+            return Err("插件不存在。".to_string());
+        }
+        load_plugin_state(&connection)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn test_plugin(
+    app: AppHandle,
+    plugin_id: String,
+    content: String,
+) -> Result<PluginTestResponse, String> {
+    let record = {
+        let app = app.clone();
+        let plugin_id = plugin_id.clone();
+        run_background(move || {
+            let connection = open_thread_database(&app)?;
+            load_plugin(&connection, &plugin_id)?.ok_or_else(|| "插件不存在。".to_string())
+        })
+        .await?
+    };
+    let payload = content
+        .trim()
+        .is_empty()
+        .then(|| "Mimodex 插件测试消息".to_string())
+        .unwrap_or_else(|| content.trim().to_string());
+    let result = send_plugin_webhook(&record, &payload).await;
+    let now = unix_timestamp_ms();
+    let last_test_status = if result.ok { "ok" } else { "failed" };
+    let last_error = if result.ok {
+        None
+    } else {
+        Some(result.detail.clone())
+    };
+    let state = run_background(move || {
+        let connection = open_thread_database(&app)?;
+        connection
+            .execute(
+                "
+                UPDATE plugins
+                SET last_test_status = ?2,
+                    last_tested_at = ?3,
+                    last_error = ?4,
+                    updated_at = ?5
+                WHERE id = ?1
+                ",
+                params![plugin_id, last_test_status, now, last_error, now],
+            )
+            .map_err(|_| thread_database_error("更新插件状态"))?;
+        load_plugin_state(&connection)
+    })
+    .await?;
+    Ok(PluginTestResponse { result, state })
+}
+
 async fn run_background<T, F>(task: F) -> Result<T, String>
 where
     T: Send + 'static,
@@ -795,13 +965,16 @@ fn main() {
             add_project,
             append_runtime_events,
             create_automation,
+            create_plugin,
             delete_automation,
+            delete_plugin,
             delete_thread,
             delete_mimo_credential,
             diagnose_mimo_connection,
             get_app_settings,
             get_mimo_credential_status,
             list_automations,
+            list_plugins,
             list_projects,
             list_thread_activity,
             list_threads,
@@ -812,7 +985,9 @@ fn main() {
             select_project,
             select_thread,
             set_thread_archived,
+            test_plugin,
             update_automation,
+            update_plugin,
             upsert_thread
         ])
         .run(tauri::generate_context!())
@@ -1110,6 +1285,23 @@ fn migrate_thread_database(connection: &Connection) -> Result<(), String> {
                 VALUES (4, unixepoch('subsec') * 1000);
             INSERT OR IGNORE INTO schema_migrations(version, applied_at)
                 VALUES (5, unixepoch('subsec') * 1000);
+            CREATE TABLE IF NOT EXISTS plugins (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                webhook_url TEXT NOT NULL,
+                secret TEXT,
+                enabled INTEGER NOT NULL,
+                last_test_status TEXT NOT NULL,
+                last_tested_at INTEGER,
+                last_error TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_plugins_enabled
+                ON plugins(enabled, kind);
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                VALUES (6, unixepoch('subsec') * 1000);
             ",
         )
         .map_err(|_| thread_database_error("执行本地数据库迁移"))?;
@@ -1587,6 +1779,98 @@ fn automation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRe
     })
 }
 
+fn load_plugin_state(connection: &Connection) -> Result<PluginState, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id, kind, name, webhook_url, secret, enabled,
+                   last_test_status, last_tested_at, last_error,
+                   created_at, updated_at
+            FROM plugins
+            ORDER BY created_at DESC, id ASC
+            ",
+        )
+        .map_err(|_| thread_database_error("准备插件列表查询"))?;
+    let plugins = statement
+        .query_map([], plugin_from_row)
+        .map_err(|_| thread_database_error("查询插件列表"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| thread_database_error("读取插件列表"))?;
+    Ok(PluginState { plugins })
+}
+
+fn load_plugin(connection: &Connection, plugin_id: &str) -> Result<Option<PluginRecord>, String> {
+    connection
+        .query_row(
+            "
+            SELECT id, kind, name, webhook_url, secret, enabled,
+                   last_test_status, last_tested_at, last_error,
+                   created_at, updated_at
+            FROM plugins WHERE id = ?1
+            ",
+            [plugin_id],
+            plugin_from_row,
+        )
+        .optional()
+        .map_err(|_| thread_database_error("读取插件"))
+}
+
+fn upsert_plugin(connection: &Connection, plugin: &PluginRecord) -> Result<(), String> {
+    validate_plugin_record(plugin)?;
+    connection
+        .execute(
+            "
+            INSERT INTO plugins(
+                id, kind, name, webhook_url, secret, enabled,
+                last_test_status, last_tested_at, last_error,
+                created_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            ON CONFLICT(id) DO UPDATE SET
+                kind = excluded.kind,
+                name = excluded.name,
+                webhook_url = excluded.webhook_url,
+                secret = excluded.secret,
+                enabled = excluded.enabled,
+                last_test_status = excluded.last_test_status,
+                last_tested_at = excluded.last_tested_at,
+                last_error = excluded.last_error,
+                updated_at = excluded.updated_at
+            ",
+            params![
+                plugin.id,
+                plugin.kind,
+                plugin.name,
+                plugin.webhook_url,
+                plugin.secret,
+                plugin.enabled,
+                plugin.last_test_status,
+                plugin.last_tested_at,
+                plugin.last_error,
+                plugin.created_at,
+                plugin.updated_at
+            ],
+        )
+        .map_err(|_| thread_database_error("更新插件"))?;
+    Ok(())
+}
+
+fn plugin_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginRecord> {
+    Ok(PluginRecord {
+        id: row.get(0)?,
+        kind: row.get(1)?,
+        name: row.get(2)?,
+        webhook_url: row.get(3)?,
+        secret: row.get(4)?,
+        enabled: row.get(5)?,
+        last_test_status: row.get(6)?,
+        last_tested_at: row.get(7)?,
+        last_error: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
 fn set_app_state(connection: &Connection, key: &str, value: Option<&str>) -> Result<(), String> {
     connection
         .execute(
@@ -1742,6 +2026,215 @@ fn automation_run_status(status: &str) -> bool {
         status,
         "idle" | "running" | "completed" | "failed" | "interrupted"
     )
+}
+
+fn validate_plugin_draft(plugin: &PluginDraft) -> Result<(), String> {
+    validate_plugin_fields(&plugin.kind, &plugin.name, &plugin.webhook_url, &plugin.secret)
+}
+
+fn validate_plugin_record(plugin: &PluginRecord) -> Result<(), String> {
+    if plugin.id.trim().is_empty() || plugin.id.len() > 512 {
+        return Err("插件标识无效。".to_string());
+    }
+    if !plugin_test_status(&plugin.last_test_status) {
+        return Err("插件测试状态无效。".to_string());
+    }
+    validate_plugin_fields(&plugin.kind, &plugin.name, &plugin.webhook_url, &plugin.secret)
+}
+
+fn validate_plugin_fields(
+    kind: &str,
+    name: &str,
+    webhook_url: &str,
+    secret: &Option<String>,
+) -> Result<(), String> {
+    if !plugin_kind_valid(kind) {
+        return Err("插件类型无效。".to_string());
+    }
+    if name.trim().is_empty() || name.len() > 256 {
+        return Err("插件名称无效。".to_string());
+    }
+    let url = webhook_url.trim();
+    if url.is_empty() || url.len() > 4096 {
+        return Err("插件 Webhook URL 无效。".to_string());
+    }
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("插件 Webhook URL 必须使用 HTTP 或 HTTPS。".to_string());
+    }
+    if url.chars().any(char::is_whitespace) {
+        return Err("插件 Webhook URL 不能包含空白字符。".to_string());
+    }
+    if secret.as_ref().is_some_and(|value| value.len() > 1024) {
+        return Err("插件密钥过长。".to_string());
+    }
+    Ok(())
+}
+
+fn plugin_kind_valid(kind: &str) -> bool {
+    matches!(kind, "wecom" | "feishu" | "dingtalk" | "wechat" | "webhook")
+}
+
+fn plugin_test_status(status: &str) -> bool {
+    matches!(status, "idle" | "ok" | "failed")
+}
+
+fn plugin_id() -> String {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("plugin-{suffix}")
+}
+
+fn build_plugin_payload(plugin: &PluginRecord, content: &str) -> serde_json::Value {
+    match plugin.kind.as_str() {
+        "wecom" | "dingtalk" => serde_json::json!({
+            "msgtype": "text",
+            "text": { "content": content }
+        }),
+        "feishu" => serde_json::json!({
+            "msg_type": "text",
+            "content": { "text": content }
+        }),
+        "wechat" => serde_json::json!({
+            "title": "Mimodex 通知",
+            "desp": content,
+            "content": content
+        }),
+        _ => serde_json::json!({
+            "source": "mimodex",
+            "text": content
+        }),
+    }
+}
+
+async fn send_plugin_webhook(plugin: &PluginRecord, content: &str) -> PluginTestResult {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            return PluginTestResult {
+                ok: false,
+                status_code: None,
+                latency_ms: None,
+                message: "无法初始化网络客户端".to_string(),
+                detail: "系统网络客户端初始化失败。".to_string(),
+            };
+        }
+    };
+    let payload = build_plugin_payload(plugin, content);
+    let started = std::time::Instant::now();
+    let response = client.post(&plugin.webhook_url).json(&payload).send().await;
+    let latency_ms = Some(started.elapsed().as_millis().min(u64::MAX as u128) as u64);
+    match response {
+        Ok(response) => {
+            let status = response.status();
+            let status_code = Some(status.as_u16());
+            let body = response.text().await.unwrap_or_default();
+            let body_trimmed = body.trim();
+            let body_preview: String = body_trimmed.chars().take(400).collect();
+            if !status.is_success() {
+                return PluginTestResult {
+                    ok: false,
+                    status_code,
+                    latency_ms,
+                    message: format!("Webhook 返回 {status}"),
+                    detail: if body_preview.is_empty() {
+                        format!("HTTP 状态码 {} 表示请求未被接受。", status.as_u16())
+                    } else {
+                        body_preview
+                    },
+                };
+            }
+            if let Some(error_detail) = inspect_plugin_response(&plugin.kind, body_trimmed) {
+                return PluginTestResult {
+                    ok: false,
+                    status_code,
+                    latency_ms,
+                    message: "Webhook 返回业务失败".to_string(),
+                    detail: error_detail,
+                };
+            }
+            PluginTestResult {
+                ok: true,
+                status_code,
+                latency_ms,
+                message: "发送成功".to_string(),
+                detail: if body_preview.is_empty() {
+                    "Webhook 已接受请求。".to_string()
+                } else {
+                    body_preview
+                },
+            }
+        }
+        Err(error) if error.is_timeout() => PluginTestResult {
+            ok: false,
+            status_code: None,
+            latency_ms,
+            message: "请求超时".to_string(),
+            detail: "Webhook 在 15 秒内未响应，请检查网络或服务状态。".to_string(),
+        },
+        Err(error) if error.is_connect() => PluginTestResult {
+            ok: false,
+            status_code: None,
+            latency_ms,
+            message: "无法连接 Webhook".to_string(),
+            detail: "请检查 URL、网络、DNS、代理或防火墙设置。".to_string(),
+        },
+        Err(_) => PluginTestResult {
+            ok: false,
+            status_code: None,
+            latency_ms,
+            message: "Webhook 请求失败".to_string(),
+            detail: "网络层返回了无法完成的响应。".to_string(),
+        },
+    }
+}
+
+fn inspect_plugin_response(kind: &str, body: &str) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    match kind {
+        "wecom" | "dingtalk" | "feishu" => {
+            let code = value
+                .get("errcode")
+                .or_else(|| value.get("code"))
+                .and_then(serde_json::Value::as_i64);
+            let msg = value
+                .get("errmsg")
+                .or_else(|| value.get("msg"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if let Some(code) = code {
+                if code != 0 {
+                    return Some(format!("业务错误码 {code}: {msg}"));
+                }
+            }
+            None
+        }
+        "wechat" => {
+            let code = value
+                .get("code")
+                .or_else(|| value.get("errno"))
+                .and_then(serde_json::Value::as_i64);
+            if let Some(code) = code {
+                if code != 0 && code != 200 {
+                    let msg = value
+                        .get("message")
+                        .or_else(|| value.get("msg"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    return Some(format!("业务错误码 {code}: {msg}"));
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 fn valid_time_of_day(value: &str) -> bool {

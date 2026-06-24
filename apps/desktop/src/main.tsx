@@ -4,6 +4,7 @@ import { DesktopSessionController } from "@mimodex/desktop-core";
 import { createAutomationService } from "./automation.js";
 import { createCredentialService } from "./credentials.js";
 import { DesktopRoot } from "./DesktopRoot.js";
+import { createPluginService } from "./plugins.js";
 import { createProjectService } from "./projects.js";
 import { createDesktopRuntimeClient } from "./runtime/create-runtime.js";
 import { createSettingsService } from "./settings.js";
@@ -17,6 +18,7 @@ if (!root) {
 
 const credentialService = createCredentialService();
 const automationService = createAutomationService();
+const pluginService = createPluginService();
 const projectService = createProjectService();
 const settingsService = createSettingsService();
 const threadService = createThreadService();
@@ -26,6 +28,7 @@ createRoot(root).render(
     automationService={automationService}
     credentialService={credentialService}
     createSession={createSession}
+    pluginService={pluginService}
     projectService={projectService}
     settingsService={settingsService}
     threadService={threadService}
