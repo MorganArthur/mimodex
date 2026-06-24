@@ -856,8 +856,8 @@ async fn update_plugin(
     run_background(move || {
         validate_plugin_draft(&plugin)?;
         let connection = open_thread_database(&app)?;
-        let mut record = load_plugin(&connection, &plugin_id)?
-            .ok_or_else(|| "插件不存在。".to_string())?;
+        let mut record =
+            load_plugin(&connection, &plugin_id)?.ok_or_else(|| "插件不存在。".to_string())?;
         record.kind = plugin.kind;
         record.name = plugin.name;
         record.webhook_url = plugin.webhook_url;
@@ -2029,7 +2029,12 @@ fn automation_run_status(status: &str) -> bool {
 }
 
 fn validate_plugin_draft(plugin: &PluginDraft) -> Result<(), String> {
-    validate_plugin_fields(&plugin.kind, &plugin.name, &plugin.webhook_url, &plugin.secret)
+    validate_plugin_fields(
+        &plugin.kind,
+        &plugin.name,
+        &plugin.webhook_url,
+        &plugin.secret,
+    )
 }
 
 fn validate_plugin_record(plugin: &PluginRecord) -> Result<(), String> {
@@ -2039,7 +2044,12 @@ fn validate_plugin_record(plugin: &PluginRecord) -> Result<(), String> {
     if !plugin_test_status(&plugin.last_test_status) {
         return Err("插件测试状态无效。".to_string());
     }
-    validate_plugin_fields(&plugin.kind, &plugin.name, &plugin.webhook_url, &plugin.secret)
+    validate_plugin_fields(
+        &plugin.kind,
+        &plugin.name,
+        &plugin.webhook_url,
+        &plugin.secret,
+    )
 }
 
 fn validate_plugin_fields(
