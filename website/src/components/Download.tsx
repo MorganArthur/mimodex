@@ -23,7 +23,7 @@ export default function Download() {
             下载 Mimodex
           </h2>
           <p className="text-dark-400 text-lg max-w-xl mx-auto">
-            当前版本 v0.2.0 Windows Pre-release
+            当前版本 v0.2.1 Windows Pre-release
           </p>
         </div>
 
@@ -40,14 +40,14 @@ export default function Download() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-white">Windows 安装包</h3>
-                <p className="text-dark-500 text-sm">Mimodex_0.2.0_x64-setup.exe</p>
+                <p className="text-dark-500 text-sm">Mimodex_0.2.1_x64-setup.exe</p>
               </div>
             </div>
 
             <div className="space-y-4 mb-8">
               <div className="flex justify-between py-2 border-b border-dark-800">
                 <span className="text-dark-500 text-sm">版本</span>
-                <span className="text-white text-sm font-mono">v0.2.0</span>
+                <span className="text-white text-sm font-mono">v0.2.1</span>
               </div>
               <div className="flex justify-between py-2 border-b border-dark-800">
                 <span className="text-dark-500 text-sm">平台</span>
@@ -60,7 +60,7 @@ export default function Download() {
             </div>
 
             <a
-              href="https://github.com/MorganArthur/mimodex/releases/tag/v0.2.0"
+              href="https://github.com/MorganArthur/mimodex/releases/tag/v0.2.1"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 w-full py-4 bg-brand-400 text-dark-950 font-semibold rounded-lg hover:bg-brand-300 transition-colors duration-200"

@@ -980,6 +980,8 @@ diff --git a/src/app.ts b/src/app.ts
 
     await user.click(screen.getByRole("button", { name: "自动化" }));
     expect(screen.getByRole("heading", { name: "任务调度", level: 1 })).toBeTruthy();
+    expect(screen.queryByLabelText("自动化默认项目")).toBeNull();
+    expect((screen.getByLabelText("创建后按计划自动运行") as HTMLInputElement).checked).toBe(true);
 
     await user.clear(screen.getByLabelText("自动化名称"));
     await user.type(screen.getByLabelText("自动化名称"), "每日巡检");

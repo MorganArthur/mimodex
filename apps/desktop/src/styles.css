@@ -3112,6 +3112,7 @@ body {
   align-content: start;
   gap: 13px;
   padding: 16px;
+  overflow-x: hidden;
   overflow-y: auto;
   background: #fbfbfa;
   border: 1px solid #e6e6e2;
@@ -3203,8 +3204,7 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.automation-field-select .popup-select-trigger,
-.automation-project-select .popup-select-trigger {
+.automation-field-select .popup-select-trigger {
   justify-content: space-between;
   min-height: 36px;
   padding: 0 10px;
@@ -3214,17 +3214,13 @@ body {
   font-size: 12px;
 }
 
-.automation-project-select {
-  width: min(260px, 42vw);
-}
-
-.automation-project-select .popup-select-menu,
 .automation-field-select .popup-select-menu {
-  width: max(100%, 245px);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.automation-field-select .popup-select-label,
-.automation-project-select .popup-select-label {
+.automation-field-select .popup-select-label {
   display: grid;
   width: 16px;
   height: 16px;
@@ -3232,21 +3228,28 @@ body {
   color: #74806f;
 }
 
-.automation-toggle {
+.automation-form .automation-toggle {
+  display: flex;
+  grid-template-columns: none;
   gap: 9px !important;
   min-height: 28px;
+  cursor: pointer;
 }
 
-.automation-toggle input {
+.automation-form .automation-toggle input {
   width: 15px;
   height: 15px;
+  flex: 0 0 auto;
+  margin: 0;
   accent-color: #597b3e;
 }
 
-.automation-toggle span {
+.automation-form .automation-toggle span {
+  min-width: 0;
   color: #384137 !important;
   font-size: 12px !important;
   font-weight: 600 !important;
+  line-height: 1.35;
 }
 
 .automation-primary-action,

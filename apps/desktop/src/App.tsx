@@ -447,7 +447,6 @@ export function App({
             onCreateAutomation={onCreateAutomation}
             onDeleteAutomation={onDeleteAutomation}
             onRunAutomation={onRunAutomation}
-            onSelectProject={onSelectProject}
             onUpdateAutomation={onUpdateAutomation}
           />
         </main>
@@ -626,7 +625,6 @@ function AutomationWorkspace({
   onCreateAutomation,
   onDeleteAutomation,
   onRunAutomation,
-  onSelectProject,
   onUpdateAutomation,
   projects,
   runningAutomationIds,
@@ -640,7 +638,6 @@ function AutomationWorkspace({
   onCreateAutomation: (draft: AutomationDraft) => void | Promise<void>;
   onDeleteAutomation: (automationId: string) => void | Promise<void>;
   onRunAutomation: (automationId: string) => void | Promise<void>;
-  onSelectProject: (projectId: string) => void | Promise<void>;
   onUpdateAutomation: (automationId: string, draft: AutomationDraft) => void | Promise<void>;
   projects: ProjectSummary[];
   runningAutomationIds: string[];
@@ -717,16 +714,7 @@ function AutomationWorkspace({
           <p className="eyebrow">自动化</p>
           <h1>任务调度</h1>
         </div>
-        {projects.length > 0 ? (
-          <PopupSelect
-            ariaLabel="自动化默认项目"
-            className="automation-project-select"
-            label={<UiIcon name="folder" />}
-            options={projectOptions}
-            value={currentProject?.id ?? projects[0]?.id ?? ""}
-            onChange={(projectId) => void onSelectProject(projectId)}
-          />
-        ) : (
+        {projects.length === 0 && (
           <button className="automation-secondary-action" type="button" onClick={() => void onAddProject()}>
             添加项目
           </button>
@@ -856,12 +844,13 @@ function AutomationWorkspace({
           </label>
           <label className="automation-toggle">
             <input
+              aria-label="创建后按计划自动运行"
               checked={draft.enabled}
               disabled={busy || draft.cadence === "manual"}
               type="checkbox"
               onChange={(event) => updateDraft("enabled", event.target.checked)}
             />
-            <span>启用定时运行</span>
+            <span>创建后按计划自动运行</span>
           </label>
           {error && <p className="automation-error">{error}</p>}
           <button className="automation-primary-action" disabled={!canSave} type="submit">
