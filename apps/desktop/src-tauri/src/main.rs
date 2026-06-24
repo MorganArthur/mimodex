@@ -106,6 +106,16 @@ struct ProjectState {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ImageAttachment {
+    id: String,
+    name: String,
+    mime_type: String,
+    size_bytes: i64,
+    data_url: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TimelineEntry {
     id: String,
     kind: String,
@@ -116,6 +126,8 @@ struct TimelineEntry {
     started_at: Option<i64>,
     #[serde(default)]
     completed_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    images: Option<Vec<ImageAttachment>>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -2412,6 +2424,7 @@ mod tests {
                 status: None,
                 started_at: Some(1_000),
                 completed_at: Some(2_000),
+                images: None,
             }],
             token_usage: None,
             diff: String::new(),

@@ -13,6 +13,7 @@ import {
 import {
   type ApprovalDecision,
   type DesktopSessionController,
+  type ImageAttachment,
   type PendingApproval,
   type SessionState,
   type TimelineEntry,
@@ -70,6 +71,38 @@ const statusLabels: Record<SessionState["connection"], string> = {
   ready: "Runtime 已连接",
   error: "连接异常",
 };
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_COUNT = 4;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`读取 ${file.name} 失败`));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result);
+      } else {
+        reject(new Error(`读取 ${file.name} 失败`));
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatFileSize(sizeBytes: number): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "0 B";
+  }
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 type UiIconName =
   | "branch"
@@ -220,6 +253,10 @@ export function App({
   const [submitting, setSubmitting] = useState(false);
   const [environmentPanel, setEnvironmentPanel] = useState<"changes" | "progress">("changes");
   const [environmentOpen, setEnvironmentOpen] = useState(false);
+  const [attachedImages, setAttachedImages] = useState<ImageAttachment[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imagePickerBusy, setImagePickerBusy] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const conversationRef = useRef<HTMLElement>(null);
   const submittingRef = useRef(false);
   const gitDiff = currentProject?.git.diff ?? "";
@@ -269,7 +306,7 @@ export function App({
   }, [state.timeline, state.approvals, state.turnStatus]);
 
   const canSubmit =
-    Boolean(message.trim()) &&
+    (Boolean(message.trim()) || attachedImages.length > 0) &&
     Boolean(currentProject?.available) &&
     state.connection === "ready" &&
     state.turnStatus !== "inProgress" &&
@@ -282,12 +319,70 @@ export function App({
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      await session.startTask({ text: message, projectPath: currentProject.path, model, sandbox });
+      await session.startTask({
+        text: message,
+        projectPath: currentProject.path,
+        model,
+        sandbox,
+        images: attachedImages,
+      });
       setMessage("");
+      setAttachedImages([]);
+      setImageError(null);
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
     }
+  };
+
+  const removeAttachedImage = (id: string) => {
+    setAttachedImages((current) => current.filter((image) => image.id !== id));
+  };
+
+  const handleImageInputChange = async (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+    setImagePickerBusy(true);
+    setImageError(null);
+    try {
+      const next: ImageAttachment[] = [];
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith("image/")) {
+          setImageError(`仅支持图片文件：${file.name}`);
+          continue;
+        }
+        if (file.size > MAX_IMAGE_BYTES) {
+          setImageError(`图片体积超出限制（${formatFileSize(MAX_IMAGE_BYTES)}）：${file.name}`);
+          continue;
+        }
+        const dataUrl = await readFileAsDataUrl(file);
+        next.push({
+          id: `image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name,
+          mimeType: file.type || "image/*",
+          sizeBytes: file.size,
+          dataUrl,
+        });
+      }
+      if (next.length > 0) {
+        setAttachedImages((current) => [...current, ...next].slice(0, MAX_IMAGE_COUNT));
+      }
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImagePickerBusy(false);
+      if (imageInputRef.current) {
+        imageInputRef.current.value = "";
+      }
+    }
+  };
+
+  const openImagePicker = () => {
+    if (imagePickerBusy || attachedImages.length >= MAX_IMAGE_COUNT) {
+      return;
+    }
+    imageInputRef.current?.click();
   };
 
   const submit = (event: FormEvent) => {
@@ -520,6 +615,38 @@ export function App({
             </section>
 
             <form className="composer" onSubmit={(event) => void submit(event)}>
+              {attachedImages.length > 0 && (
+                <div className="composer-attachments" role="list" aria-label="已附带的图片">
+                  {attachedImages.map((image) => (
+                    <div className="composer-attachment" key={image.id} role="listitem">
+                      <img alt={image.name} src={image.dataUrl} />
+                      <div className="composer-attachment-meta">
+                        <span title={image.name}>{image.name}</span>
+                        <small>{formatFileSize(image.sizeBytes)}</small>
+                      </div>
+                      <button
+                        aria-label={`移除 ${image.name}`}
+                        className="composer-attachment-remove"
+                        type="button"
+                        onClick={() => removeAttachedImage(image.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {imageError && <p className="composer-attachment-error">{imageError}</p>}
+              <input
+                aria-hidden="true"
+                accept="image/*"
+                className="composer-image-input"
+                multiple
+                ref={imageInputRef}
+                tabIndex={-1}
+                type="file"
+                onChange={(event) => void handleImageInputChange(event.target.files)}
+              />
               <textarea
                 aria-label="任务内容"
                 enterKeyHint="send"
@@ -531,10 +658,20 @@ export function App({
               />
               <div className="composer-toolbar">
                 <button
-                  aria-label="添加上下文"
+                  aria-label="添加图片"
                   className="composer-icon-button"
-                  disabled={!currentProject?.available}
+                  disabled={
+                    !currentProject?.available ||
+                    imagePickerBusy ||
+                    attachedImages.length >= MAX_IMAGE_COUNT
+                  }
+                  title={
+                    attachedImages.length >= MAX_IMAGE_COUNT
+                      ? `最多附带 ${MAX_IMAGE_COUNT} 张图片`
+                      : "添加图片"
+                  }
                   type="button"
+                  onClick={openImagePicker}
                 >
                   <UiIcon name="plus" />
                 </button>
@@ -1766,7 +1903,23 @@ const Timeline = memo(function Timeline({
             {turn.user && (
               <>
                 <article className="user-message">
-                  <p>{turn.user.content}</p>
+                  {turn.user.images && turn.user.images.length > 0 && (
+                    <div className="user-message-images">
+                      {turn.user.images.map((image) => (
+                        <a
+                          className="user-message-image"
+                          href={image.dataUrl}
+                          key={image.id}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                          title={`${image.name} · ${formatFileSize(image.sizeBytes)}`}
+                        >
+                          <img alt={image.name} src={image.dataUrl} />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {turn.user.content && <p>{turn.user.content}</p>}
                 </article>
                 {duration !== null && (
                   <div className="turn-processing">

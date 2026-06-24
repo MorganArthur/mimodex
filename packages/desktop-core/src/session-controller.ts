@@ -70,6 +70,14 @@ export type ContextCompaction = {
   lastInjectedAt: number | null;
 };
 
+export type ImageAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  dataUrl: string;
+};
+
 export type TimelineEntry = {
   id: string;
   kind: TimelineKind;
@@ -78,6 +86,7 @@ export type TimelineEntry = {
   status: string | null;
   startedAt?: number | undefined;
   completedAt?: number | undefined;
+  images?: ImageAttachment[] | undefined;
 };
 
 export type PendingApproval = {
@@ -115,6 +124,7 @@ export type StartTaskInput = {
   projectPath: string;
   model: ModelId;
   sandbox: SandboxMode;
+  images?: readonly ImageAttachment[];
 };
 
 export type ResumeThreadInput = {
@@ -265,7 +275,8 @@ export class DesktopSessionController {
 
   async startTask(input: StartTaskInput): Promise<void> {
     const text = input.text.trim();
-    if (!text) {
+    const images = sanitizeImages(input.images);
+    if (!text && images.length === 0) {
       throw new Error("任务内容不能为空");
     }
     if (this.#state.connection !== "ready") {
@@ -287,6 +298,7 @@ export class DesktopSessionController {
       content: text,
       status: null,
       startedAt: Date.now(),
+      images: images.length > 0 ? images : undefined,
     });
     this.#publish({
       projectPath: input.projectPath,
@@ -313,7 +325,7 @@ export class DesktopSessionController {
         this.#publish({ threadId });
       }
 
-      const turnText = this.#prepareTurnText(text);
+      const turnText = this.#prepareTurnText(composeUserText(text, images));
       const response = await this.#runtime.startTurn({
         threadId,
         input: [{ type: "text", text: turnText, textElements: [] }],
@@ -888,6 +900,55 @@ function fileChangeSummary(value: unknown): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sanitizeImages(images: readonly ImageAttachment[] | undefined): ImageAttachment[] {
+  if (!images || images.length === 0) {
+    return [];
+  }
+  return images
+    .filter(
+      (image) =>
+        typeof image?.id === "string" &&
+        typeof image.dataUrl === "string" &&
+        image.dataUrl.startsWith("data:"),
+    )
+    .map((image) => ({
+      id: image.id,
+      name: image.name || "image",
+      mimeType: image.mimeType || "application/octet-stream",
+      sizeBytes: typeof image.sizeBytes === "number" && image.sizeBytes >= 0 ? image.sizeBytes : 0,
+      dataUrl: image.dataUrl,
+    }));
+}
+
+function composeUserText(text: string, images: readonly ImageAttachment[]): string {
+  if (images.length === 0) {
+    return text;
+  }
+  const lines = images.map(
+    (image, index) =>
+      `${index + 1}. ${image.name}（${image.mimeType}，${formatImageSize(image.sizeBytes)}）`,
+  );
+  const header =
+    images.length === 1
+      ? "用户附带了 1 张图片："
+      : `用户附带了 ${images.length} 张图片：`;
+  const attachmentNote = `${header}\n${lines.join("\n")}`;
+  return text ? `${text}\n\n${attachmentNote}` : attachmentNote;
+}
+
+function formatImageSize(sizeBytes: number): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "未知大小";
+  }
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function classifySessionError(

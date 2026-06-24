@@ -413,6 +413,76 @@ test("线程建立前暂存原始事件并在获得线程 ID 后按序释放", (
   ]);
 });
 
+test("启动任务时将附带的图片记入用户时间线并向 Runtime 输入文本中追加图片摘要", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+
+  await session.connect();
+  await session.startTask({
+    text: "看一下这张截图",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+    images: [
+      {
+        id: "img-1",
+        name: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 2048,
+        dataUrl: "data:image/png;base64,AAAA",
+      },
+    ],
+  });
+
+  const userEntry = session.getSnapshot().timeline.find((entry) => entry.kind === "user");
+  assert.equal(userEntry?.content, "看一下这张截图");
+  assert.equal(userEntry?.images?.length, 1);
+  assert.equal(userEntry?.images?.[0]?.name, "screenshot.png");
+
+  const turnInput = runtime.turnStarts[0]?.input?.[0];
+  assert.equal(turnInput?.type, "text");
+  assert.match(turnInput?.text ?? "", /看一下这张截图/);
+  assert.match(turnInput?.text ?? "", /用户附带了 1 张图片/);
+  assert.match(turnInput?.text ?? "", /screenshot\.png/);
+});
+
+test("仅附带图片时也允许启动任务，并跳过含畸形数据的附件", async () => {
+  const runtime = new FakeRuntimeClient();
+  const session = new DesktopSessionController(runtime);
+
+  await session.connect();
+  await session.startTask({
+    text: "",
+    projectPath: "D:\\project",
+    model: "mimo-v2.5",
+    sandbox: "workspace-write",
+    images: [
+      {
+        id: "img-good",
+        name: "diagram.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 8192,
+        dataUrl: "data:image/jpeg;base64,BBBB",
+      },
+      {
+        id: "img-bad",
+        name: "not-data-url",
+        mimeType: "image/png",
+        sizeBytes: 1024,
+        dataUrl: "https://example.com/img.png",
+      },
+    ],
+  });
+
+  const userEntry = session.getSnapshot().timeline.find((entry) => entry.kind === "user");
+  assert.equal(userEntry?.images?.length, 1);
+  assert.equal(userEntry?.images?.[0]?.id, "img-good");
+
+  const turnText = runtime.turnStarts[0]?.input?.[0]?.text ?? "";
+  assert.match(turnText, /用户附带了 1 张图片/);
+  assert.doesNotMatch(turnText, /not-data-url/);
+});
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
