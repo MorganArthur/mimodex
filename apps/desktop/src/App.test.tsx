@@ -1027,6 +1027,85 @@ diff --git a/src/app.ts b/src/app.ts
     );
   });
 
+  it("可以从项目元信息切换分支", async () => {
+    const projects = new FakeProjectService();
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={projects}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "切换分支" }));
+    await user.click(await screen.findByRole("option", { name: "develop" }));
+
+    await waitFor(() =>
+      expect(projects.switchedBranches).toEqual([
+        { branch: "develop", projectId: fixtureProject().id },
+      ]),
+    );
+    expect(screen.getByRole("button", { name: "切换分支" }).textContent).toContain("develop");
+  });
+
+  it("可以附加图片、预览并随任务发送", async () => {
+    const runtime = new UiRuntime();
+    const user = userEvent.setup();
+    renderApp(runtime);
+    await waitFor(() => expect(screen.getAllByText("Runtime 已连接").length).toBeGreaterThan(0));
+
+    const imageInput = document.querySelector<HTMLInputElement>(".composer-image-input");
+    expect(imageInput).toBeTruthy();
+    const file = new File([new Uint8Array([1, 2, 3])], "fixture.png", { type: "image/png" });
+    await user.upload(imageInput!, file);
+
+    expect(await screen.findByText("fixture.png")).toBeTruthy();
+    expect(screen.getByText("3 B")).toBeTruthy();
+
+    await user.type(screen.getByLabelText("任务内容"), "看图检查");
+    await user.click(screen.getByRole("button", { name: /开始任务/ }));
+
+    await waitFor(() => expect(runtime.turnStarts).toHaveLength(1));
+    expect(runtime.turnStarts[0]?.input[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("用户附带了 1 张图片"),
+    });
+    expect(document.querySelector(".user-message-image img")?.getAttribute("alt")).toBe(
+      "fixture.png",
+    );
+  });
+
+  it("可以在设置中创建插件并发送测试消息", async () => {
+    const user = userEvent.setup();
+    render(
+      <DesktopRoot
+        credentialService={new FakeCredentialService(true)}
+        createSession={() => new DesktopSessionController(new UiRuntime())}
+        projectService={new FakeProjectService()}
+        settingsService={new FakeSettingsService()}
+        threadService={new FakeThreadService()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByRole("button", { name: /插件/ }));
+    await user.type(screen.getByLabelText("名称"), "Smoke Webhook");
+    await user.type(screen.getByLabelText("Webhook URL"), "https://example.com/webhook/smoke");
+    await user.click(screen.getByRole("button", { name: "添加插件" }));
+
+    expect(await screen.findByText("已配置插件（1）")).toBeTruthy();
+    expect(screen.getByText("Smoke Webhook")).toBeTruthy();
+    expect(screen.getByText("https://example.com/webhook/smoke")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "发送测试" }));
+
+    expect(await screen.findByText("演示模式：未发送真实请求")).toBeTruthy();
+    expect(screen.getByText(/最近测试：成功/)).toBeTruthy();
+  });
+
   it("可以从侧栏打开自动化并创建任务", async () => {
     const created: AutomationDraft[] = [];
     const user = userEvent.setup();
@@ -1268,9 +1347,12 @@ class FakeSettingsService implements SettingsService {
 }
 
 class FakeProjectService implements ProjectService {
+  branches = ["main", "develop"];
   refreshCount = 0;
   selectBarrier: Promise<void> | null = null;
   readonly openedTerminalPaths: string[] = [];
+  readonly branchRequests: string[] = [];
+  readonly switchedBranches: Array<{ branch: string; projectId: string }> = [];
   #state: ProjectState;
 
   constructor(projects: ProjectSummary[] = [fixtureProject()]) {
@@ -1315,11 +1397,13 @@ class FakeProjectService implements ProjectService {
     this.openedTerminalPaths.push(path);
   }
 
-  async listBranches(_projectId: string): Promise<string[]> {
-    return [];
+  async listBranches(projectId: string): Promise<string[]> {
+    this.branchRequests.push(projectId);
+    return this.branches;
   }
 
   async switchBranch(projectId: string, branch: string): Promise<ProjectState> {
+    this.switchedBranches.push({ branch, projectId });
     this.#state = {
       ...this.#state,
       projects: this.#state.projects.map((project) =>
