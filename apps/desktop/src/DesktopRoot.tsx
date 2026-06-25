@@ -1526,7 +1526,7 @@ function PluginsSettingsDialog({
       <section
         aria-label="插件设置"
         aria-modal="true"
-        className="settings-dialog dashboard-dialog"
+        className="settings-dialog"
         role="dialog"
       >
         <header>
@@ -1556,30 +1556,28 @@ function PluginsSettingsDialog({
 
         {error && <p className="form-error">{error}</p>}
 
-        <form className="plugin-form" onSubmit={(event) => void submit(event)}>
+        <form className="credential-form plugin-form" onSubmit={(event) => void submit(event)}>
           <fieldset disabled={busy} className="plugin-form-fields">
-            <label className="settings-field">
+            <div className="settings-field">
               <span>类型</span>
-              <select
+              <PopupSelect
+                ariaLabel="插件类型"
+                className="settings-popup-select"
+                label="插件类型"
+                options={PLUGIN_KIND_OPTIONS}
                 value={form.draft.kind}
-                onChange={(event) =>
+                onChange={(value) =>
                   setForm((current) => ({
                     ...current,
-                    draft: { ...current.draft, kind: event.target.value as PluginKind },
+                    draft: { ...current.draft, kind: value as PluginKind },
                   }))
                 }
-              >
-                {PLUGIN_KIND_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
               <small>
                 {PLUGIN_KIND_OPTIONS.find((option) => option.value === form.draft.kind)
                   ?.description ?? ""}
               </small>
-            </label>
+            </div>
 
             <label className="settings-field">
               <span>名称</span>
@@ -1646,11 +1644,11 @@ function PluginsSettingsDialog({
             </label>
 
             <div className="plugin-form-actions">
-              <button type="submit" disabled={busy}>
+              <button className="credential-submit" type="submit" disabled={busy}>
                 {form.editingId ? "保存" : "添加插件"}
               </button>
               {form.editingId && (
-                <button type="button" disabled={busy} onClick={resetForm}>
+                <button className="credential-secondary" type="button" disabled={busy} onClick={resetForm}>
                   取消编辑
                 </button>
               )}

@@ -144,7 +144,8 @@ button {
   font-weight: 750;
 }
 
-.credential-form input {
+.credential-form input,
+.credential-form select {
   width: 100%;
   padding: 11px 12px;
   background: #fff;
@@ -155,12 +156,18 @@ button {
   font-size: 11px;
 }
 
-.credential-form input:focus {
+.credential-form select {
+  appearance: none;
+}
+
+.credential-form input:focus,
+.credential-form select:focus {
   border-color: #7b9466;
   box-shadow: 0 0 0 3px rgba(123, 148, 102, 0.12);
 }
 
-.credential-form input:disabled {
+.credential-form input:disabled,
+.credential-form select:disabled {
   color: #7c8178;
   background: #f1f3ef;
 }
@@ -5312,33 +5319,46 @@ body {
 
 .plugin-form {
   display: grid;
-  gap: 0;
-  margin-bottom: 10px;
+  gap: 13px;
+  margin-bottom: 22px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid #e2e7dd;
 }
 
 .plugin-form-fields {
   display: grid;
-  gap: 10px;
-  padding: 12px;
-  background: #fff;
-  border: 1px solid #e0e5dc;
-  border-radius: 8px;
+  gap: 13px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
 }
 
 .plugin-form-fields[disabled] {
   opacity: 0.6;
 }
 
-.settings-field-checkbox {
+.settings-field.settings-field-checkbox {
+  display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  justify-content: flex-start;
+  width: fit-content;
 }
 
 .settings-field-checkbox > span {
   margin: 0;
-  font-size: 11px;
+  color: #566050;
+  font-size: 10px;
   font-weight: 600;
+}
+
+.settings-field-checkbox input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2f402b;
 }
 
 .plugin-form-actions {
@@ -5353,20 +5373,20 @@ body {
 
 .plugin-list h3 {
   margin: 0;
-  color: #252b23;
-  font-size: 12px;
-  font-weight: 700;
+  color: #666d63;
+  font-size: 10px;
+  font-weight: 750;
 }
 
 .plugin-empty {
   margin: 0;
-  padding: 16px;
-  background: #f7f9f4;
-  border: 1px dashed #d0d6c8;
+  padding: 12px;
+  background: #eef2e7;
+  border: 1px solid #d9e0ce;
   border-radius: 8px;
-  color: #687060;
-  font-size: 11px;
-  text-align: center;
+  color: #6f755f;
+  font-size: 9px;
+  line-height: 1.6;
 }
 
 .plugin-list ul {
@@ -5379,10 +5399,10 @@ body {
 
 .plugin-item {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   padding: 12px;
-  background: #fff;
-  border: 1px solid #e0e5dc;
+  background: #f8faf6;
+  border: 1px solid #e2e9dd;
   border-radius: 8px;
 }
 
@@ -5395,7 +5415,7 @@ body {
 
 .plugin-item-head strong {
   color: #252b23;
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .plugin-item-kind {
@@ -5403,15 +5423,15 @@ body {
   background: #eef4e8;
   border-radius: 999px;
   color: #4d5547;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 9px;
+  font-weight: 750;
 }
 
 .plugin-item-status {
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 9px;
+  font-weight: 750;
 }
 
 .plugin-item-status-on {
@@ -5428,40 +5448,43 @@ body {
   overflow-wrap: anywhere;
   color: #565a52;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .plugin-item-meta {
   color: #858c80;
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .plugin-item-error {
-  padding: 8px;
-  background: #fff1ef;
-  border: 1px solid #f3cdc7;
-  border-radius: 6px;
+  padding: 9px 10px;
+  background: #fff7f4;
+  border: 1px solid #edd4cf;
+  border-radius: 8px;
   color: #7a3026;
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .plugin-item-test {
   display: grid;
   gap: 4px;
-  padding: 8px;
-  border-radius: 6px;
-  font-size: 11px;
+  padding: 11px 12px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 10px;
 }
 
 .plugin-item-test-ok {
-  background: #ecf7e6;
-  border: 1px solid #cbe2bf;
+  background: #eef7e7;
+  border-color: #cde1bd;
   color: #2d5b34;
 }
 
 .plugin-item-test-fail {
-  background: #fff1ef;
-  border: 1px solid #f3cdc7;
+  background: #fff7f4;
+  border-color: #edd4cf;
   color: #7a3026;
 }
 
@@ -5472,12 +5495,13 @@ body {
 }
 
 .plugin-item-actions button {
-  padding: 4px 10px;
-  background: #fff;
-  border: 1px solid #d0d6c8;
-  border-radius: 6px;
-  color: #3d4339;
-  font-size: 11px;
+  padding: 8px 10px;
+  color: #46533e;
+  background: #fafbf8;
+  border: 1px solid #dce3d7;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 750;
   cursor: pointer;
 }
 
@@ -5487,6 +5511,7 @@ body {
 }
 
 .plugin-item-delete {
-  border-color: #e3b9b3 !important;
-  color: #7a3026 !important;
+  color: #8d4038 !important;
+  background: #fff7f4 !important;
+  border-color: #edd4cf !important;
 }
