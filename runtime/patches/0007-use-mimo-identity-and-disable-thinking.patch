@@ -87,7 +87,7 @@ diff --git a/codex-rs/model-provider/src/mimo/catalog.rs b/codex-rs/model-provid
      model.supports_reasoning_summaries = false;
      model.support_verbosity = false;
 @@ -119,9 +133,26 @@
-             assert_eq!(model.input_modalities, vec![InputModality::Text]);
+             assert_eq!(model.input_modalities, vec![InputModality::Text, InputModality::Image]);
              assert!(model.service_tiers.is_empty());
              assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
              assert_eq!(model.max_context_window, Some(MIMO_CONTEXT_WINDOW));

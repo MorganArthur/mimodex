@@ -657,7 +657,7 @@ index bfe8ebe..ae4534e 100644
              assert!(!model.supports_reasoning_summaries);
 -            assert!(!model.supports_parallel_tool_calls);
 +            assert!(model.supports_parallel_tool_calls);
-             assert_eq!(model.input_modalities, vec![InputModality::Text]);
+             assert_eq!(model.input_modalities, vec![InputModality::Text, InputModality::Image]);
              assert!(model.service_tiers.is_empty());
              assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
              assert_eq!(model.max_context_window, Some(MIMO_CONTEXT_WINDOW));

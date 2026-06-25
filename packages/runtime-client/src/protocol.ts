@@ -117,10 +117,26 @@ export type TextUserInput = {
   textElements: JsonValue[];
 };
 
+export type ImageDetail = "auto" | "low" | "high" | "original";
+
+export type ImageUserInput = {
+  type: "image";
+  url: string;
+  detail?: ImageDetail | null;
+};
+
+export type LocalImageUserInput = {
+  type: "localImage";
+  path: string;
+  detail?: ImageDetail | null;
+};
+
+export type UserInput = TextUserInput | ImageUserInput | LocalImageUserInput;
+
 export type TurnStartParams = {
   threadId: string;
   clientUserMessageId?: string | null;
-  input: TextUserInput[];
+  input: UserInput[];
   cwd?: string | null;
   approvalPolicy?: "never" | "on-failure" | "on-request" | "untrusted" | null;
   model?: string | null;

@@ -15,8 +15,9 @@ commit。
 
    增加确定性 Chat 历史消息编码和函数工具定义转换；完整保留
    `reasoning_content`、`tool_call_id` 与串行/并行工具轮次边界；将 Codex
-   `developer` 上下文降级为 `system`；拒绝首版不支持的消息、工具和结构化工具
-   输出，并递归移除 Responses 专属 schema 字段。该补丁加入队列后由 Windows
+   `developer` 上下文降级为 `system`；支持用户图片内容块编码为 Chat Completions
+   `image_url`，仍拒绝首版不支持的工具、非用户图片消息和结构化工具输出，并递归移除
+   Responses 专属 schema 字段。该补丁加入队列后由 Windows
    Runtime CI 验证。
 
 3. `0003-add-mimo-chat-completions-sse-parser.patch`
@@ -32,7 +33,8 @@ commit。
    确定性 Chat 请求并拒绝尚未验证的结构化输出与服务等级；注册使用 `api-key`
    Header 的内置 MiMo Provider 和专属静态模型目录。目录默认展示
    `mimo-v2.5`，将 `mimo-v2.5-pro` 标记为高级隐藏候选，显式声明 MiMo V2.5 系列
-   `1,000,000` token 上下文窗口，并关闭首阶段未验证的图片、搜索和服务等级能力。该补丁已通过 Windows Runtime
+   `1,000,000` token 上下文窗口；开启文本与图片输入，关闭首阶段未验证的图片 original 细节、
+   搜索和服务等级能力。该补丁已通过 Windows Runtime
    CI 验证。验证记录：
    [Runtime CI #27245545541](https://github.com/MorganArthur/mimodex/actions/runs/27245545541)。
 

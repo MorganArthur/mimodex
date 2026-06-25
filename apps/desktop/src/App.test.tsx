@@ -1069,10 +1069,10 @@ diff --git a/src/app.ts b/src/app.ts
     await user.click(screen.getByRole("button", { name: /开始任务/ }));
 
     await waitFor(() => expect(runtime.turnStarts).toHaveLength(1));
-    expect(runtime.turnStarts[0]?.input[0]).toMatchObject({
-      type: "text",
-      text: expect.stringContaining("用户附带了 1 张图片"),
-    });
+    expect(runtime.turnStarts[0]?.input).toEqual([
+      { type: "text", text: "看图检查", textElements: [] },
+      { type: "image", url: "data:image/png;base64,AQID" },
+    ]);
     expect(document.querySelector(".user-message-image img")?.getAttribute("alt")).toBe(
       "fixture.png",
     );

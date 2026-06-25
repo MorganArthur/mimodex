@@ -49,7 +49,10 @@ test("Mimodex Runtime 客户端完成握手并调用首批 thread/turn API", asy
   });
   await client.startTurn({
     threadId: thread.thread.id,
-    input: [{ type: "text", text: "修复测试", textElements: [] }],
+    input: [
+      { type: "text", text: "修复测试", textElements: [] },
+      { type: "image", url: "data:image/png;base64,AA==" },
+    ],
   });
   await client.interruptTurn({ threadId: "thread-1", turnId: "turn-1" });
   await client.resumeThread({ threadId: "thread-1" });
@@ -70,6 +73,13 @@ test("Mimodex Runtime 客户端完成握手并调用首批 thread/turn API", asy
   const initialize = JSON.parse(transport.writes[0] ?? "");
   assert.equal(initialize.params.clientInfo.name, "mimodex_desktop");
   assert.equal(initialize.params.capabilities.experimentalApi, true);
+  const turnStart = transport.writes
+    .map((line) => JSON.parse(line) as { method?: string; params?: { input?: unknown[] } })
+    .find((message) => message.method === "turn/start");
+  assert.deepEqual(turnStart?.params?.input, [
+    { type: "text", text: "修复测试", textElements: [] },
+    { type: "image", url: "data:image/png;base64,AA==" },
+  ]);
 });
 
 test("初始化前拒绝发送 Runtime 业务请求", async () => {

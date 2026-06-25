@@ -18,6 +18,7 @@ import type {
   TurnInterruptResponse,
   TurnStartParams,
   TurnStartResponse,
+  UserInput,
 } from "@mimodex/runtime-client";
 
 export type ConnectionStatus = "error" | "idle" | "ready" | "connecting";
@@ -325,10 +326,10 @@ export class DesktopSessionController {
         this.#publish({ threadId });
       }
 
-      const turnText = this.#prepareTurnText(composeUserText(text, images));
+      const turnText = this.#prepareTurnText(text);
       const response = await this.#runtime.startTurn({
         threadId,
-        input: [{ type: "text", text: turnText, textElements: [] }],
+        input: composeTurnInput(turnText, images),
         model: input.model,
       });
       this.#publish({
@@ -922,33 +923,15 @@ function sanitizeImages(images: readonly ImageAttachment[] | undefined): ImageAt
     }));
 }
 
-function composeUserText(text: string, images: readonly ImageAttachment[]): string {
-  if (images.length === 0) {
-    return text;
+function composeTurnInput(text: string, images: readonly ImageAttachment[]): UserInput[] {
+  const input: UserInput[] = [];
+  if (text) {
+    input.push({ type: "text", text, textElements: [] });
   }
-  const lines = images.map(
-    (image, index) =>
-      `${index + 1}. ${image.name}（${image.mimeType}，${formatImageSize(image.sizeBytes)}）`,
-  );
-  const header =
-    images.length === 1
-      ? "用户附带了 1 张图片："
-      : `用户附带了 ${images.length} 张图片：`;
-  const attachmentNote = `${header}\n${lines.join("\n")}`;
-  return text ? `${text}\n\n${attachmentNote}` : attachmentNote;
-}
-
-function formatImageSize(sizeBytes: number): string {
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-    return "未知大小";
+  for (const image of images) {
+    input.push({ type: "image", url: image.dataUrl });
   }
-  if (sizeBytes < 1024) {
-    return `${sizeBytes} B`;
-  }
-  if (sizeBytes < 1024 * 1024) {
-    return `${(sizeBytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+  return input;
 }
 
 export function classifySessionError(

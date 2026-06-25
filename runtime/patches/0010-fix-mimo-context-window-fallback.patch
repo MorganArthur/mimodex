@@ -75,7 +75,7 @@ index 81a5c6e..f141838 100644
 +    model.context_window = Some(MIMO_CONTEXT_WINDOW);
 +    model.max_context_window = Some(MIMO_CONTEXT_WINDOW);
 +    model.effective_context_window_percent = 100;
-+    model.input_modalities = vec![InputModality::Text];
++    model.input_modalities = vec![InputModality::Text, InputModality::Image];
 +    model.used_fallback_model_metadata = false;
  }
  

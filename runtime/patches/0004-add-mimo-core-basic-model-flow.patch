@@ -633,7 +633,7 @@ index 0000000..bfe8ebe
 +    model.effective_context_window_percent = 100;
 +    model.auto_compact_token_limit = None;
 +    model.experimental_supported_tools.clear();
-+    model.input_modalities = vec![InputModality::Text];
++    model.input_modalities = vec![InputModality::Text, InputModality::Image];
 +    model.supports_search_tool = false;
 +    model.use_responses_lite = false;
 +    model.auto_review_model_override = None;
@@ -670,7 +670,7 @@ index 0000000..bfe8ebe
 +            assert_eq!(model.shell_type, ConfigShellToolType::Disabled);
 +            assert!(!model.supports_reasoning_summaries);
 +            assert!(!model.supports_parallel_tool_calls);
-+            assert_eq!(model.input_modalities, vec![InputModality::Text]);
++            assert_eq!(model.input_modalities, vec![InputModality::Text, InputModality::Image]);
 +            assert!(model.service_tiers.is_empty());
 +            assert_eq!(model.context_window, Some(MIMO_CONTEXT_WINDOW));
 +            assert_eq!(model.max_context_window, Some(MIMO_CONTEXT_WINDOW));
