@@ -21,6 +21,17 @@ import {
 } from "./automation.js";
 import { ConfirmationDialog } from "./ConfirmationDialog.js";
 import type { CredentialService, CredentialStatus } from "./credentials.js";
+import {
+  PLUGIN_KIND_OPTIONS,
+  createPluginService,
+  pluginKindLabel,
+  type PluginDraft,
+  type PluginKind,
+  type PluginRecord,
+  type PluginService,
+  type PluginState,
+  type PluginTestResult,
+} from "./plugins.js";
 import { MIMO_MODEL_OPTIONS, PopupSelect, SANDBOX_OPTIONS } from "./PopupSelect.js";
 import type { ProjectService, ProjectState } from "./projects.js";
 import {
@@ -40,6 +51,7 @@ export type DesktopRootProps = {
   automationService?: AutomationService;
   credentialService: CredentialService;
   createSession: () => DesktopSessionController;
+  pluginService?: PluginService;
   projectService: ProjectService;
   settingsService: SettingsService;
   threadService: ThreadService;
@@ -62,12 +74,13 @@ type RunningAutomation = {
   startedAt: number;
 };
 
-type SettingsView = "dashboard" | "menu" | "model";
+type SettingsView = "dashboard" | "menu" | "model" | "plugins";
 
 export function DesktopRoot({
   automationService: providedAutomationService,
   credentialService,
   createSession,
+  pluginService: providedPluginService,
   projectService,
   settingsService,
   threadService,
@@ -77,6 +90,12 @@ export function DesktopRoot({
     fallbackAutomationServiceRef.current = createAutomationService();
   }
   const automationService = providedAutomationService ?? fallbackAutomationServiceRef.current;
+
+  const fallbackPluginServiceRef = useRef<PluginService | null>(null);
+  if (!fallbackPluginServiceRef.current) {
+    fallbackPluginServiceRef.current = createPluginService();
+  }
+  const pluginService = providedPluginService ?? fallbackPluginServiceRef.current;
 
   const [credentialStatus, setCredentialStatus] = useState<CredentialStatus | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
@@ -96,6 +115,9 @@ export function DesktopRoot({
   const [automationError, setAutomationError] = useState<string | null>(null);
   const [automationBusy, setAutomationBusy] = useState(false);
   const [runningAutomationIds, setRunningAutomationIds] = useState<string[]>([]);
+  const [pluginState, setPluginState] = useState<PluginState | null>(null);
+  const [pluginError, setPluginError] = useState<string | null>(null);
+  const [pluginBusy, setPluginBusy] = useState(false);
   const activityThreadIdRef = useRef<string | null>(null);
   const automationStateRef = useRef<AutomationState | null>(null);
   const managedSessionsRef = useRef(new Map<DesktopSessionController, ManagedSession>());
@@ -169,6 +191,19 @@ export function DesktopRoot({
         setAutomationState({ automations: [] });
       });
   }, [automationService, credentialStatus?.configured]);
+
+  useEffect(() => {
+    if (!credentialStatus?.configured) {
+      return;
+    }
+    void pluginService
+      .list()
+      .then(setPluginState)
+      .catch((error) => {
+        setPluginError(errorMessage(error));
+        setPluginState({ plugins: [] });
+      });
+  }, [credentialStatus?.configured, pluginService]);
 
   const syncSelectedActivity = useCallback((force = false) => {
     const threadId = selectedSessionRef.current?.getSnapshot().threadId ?? null;
@@ -424,6 +459,63 @@ export function DesktopRoot({
       setAutomationError(errorMessage(error));
     } finally {
       setAutomationBusy(false);
+    }
+  };
+
+  const createPlugin = async (draft: PluginDraft) => {
+    setPluginBusy(true);
+    setPluginError(null);
+    try {
+      const nextState = await pluginService.create(draft);
+      setPluginState(nextState);
+    } catch (error) {
+      setPluginError(errorMessage(error));
+      throw error;
+    } finally {
+      setPluginBusy(false);
+    }
+  };
+
+  const updatePlugin = async (pluginId: string, draft: PluginDraft) => {
+    setPluginBusy(true);
+    setPluginError(null);
+    try {
+      const nextState = await pluginService.update(pluginId, draft);
+      setPluginState(nextState);
+    } catch (error) {
+      setPluginError(errorMessage(error));
+      throw error;
+    } finally {
+      setPluginBusy(false);
+    }
+  };
+
+  const deletePlugin = async (pluginId: string) => {
+    setPluginBusy(true);
+    setPluginError(null);
+    try {
+      const nextState = await pluginService.delete(pluginId);
+      setPluginState(nextState);
+    } catch (error) {
+      setPluginError(errorMessage(error));
+      throw error;
+    } finally {
+      setPluginBusy(false);
+    }
+  };
+
+  const testPlugin = async (pluginId: string, content: string): Promise<PluginTestResult> => {
+    setPluginBusy(true);
+    setPluginError(null);
+    try {
+      const { result, state } = await pluginService.test(pluginId, content);
+      setPluginState(state);
+      return result;
+    } catch (error) {
+      setPluginError(errorMessage(error));
+      throw error;
+    } finally {
+      setPluginBusy(false);
     }
   };
 
@@ -910,6 +1002,9 @@ export function DesktopRoot({
         <SettingsHub
           automations={automationState.automations}
           currentProject={currentProject}
+          plugins={pluginState?.plugins ?? []}
+          pluginBusy={pluginBusy}
+          pluginError={pluginError}
           projects={projectState.projects}
           session={session}
           status={credentialStatus}
@@ -917,7 +1012,9 @@ export function DesktopRoot({
           threads={threadState.threads}
           view={settingsView}
           onClose={() => setSettingsView(null)}
+          onCreatePlugin={createPlugin}
           onDelete={deleteCredential}
+          onDeletePlugin={deletePlugin}
           onDiagnose={(diagnosticSettings, apiKey) =>
             settingsService.diagnose({
               settings: diagnosticSettings,
@@ -926,6 +1023,8 @@ export function DesktopRoot({
           }
           onSave={saveCredential}
           onSaveSettings={saveSettings}
+          onTestPlugin={testPlugin}
+          onUpdatePlugin={updatePlugin}
           onViewChange={setSettingsView}
         />
       )}
@@ -1062,6 +1161,9 @@ function CredentialSetup({
 function SettingsHub({
   automations,
   currentProject,
+  plugins,
+  pluginBusy,
+  pluginError,
   projects,
   session,
   settings,
@@ -1069,14 +1171,21 @@ function SettingsHub({
   threads,
   view,
   onClose,
+  onCreatePlugin,
   onDelete,
+  onDeletePlugin,
   onDiagnose,
   onSave,
   onSaveSettings,
+  onTestPlugin,
+  onUpdatePlugin,
   onViewChange,
 }: {
   automations: AutomationRecord[];
   currentProject: ProjectState["projects"][number] | null;
+  plugins: PluginRecord[];
+  pluginBusy: boolean;
+  pluginError: string | null;
   projects: ProjectState["projects"];
   session: DesktopSessionController;
   settings: AppSettings;
@@ -1084,10 +1193,14 @@ function SettingsHub({
   threads: ThreadRecord[];
   view: SettingsView;
   onClose: () => void;
+  onCreatePlugin: (draft: PluginDraft) => Promise<void>;
   onDelete: () => Promise<void>;
+  onDeletePlugin: (pluginId: string) => Promise<void>;
   onDiagnose: (settings: AppSettings, apiKey?: string) => Promise<ConnectionDiagnostic>;
   onSave: (apiKey: string) => Promise<void>;
   onSaveSettings: (settings: AppSettings) => Promise<void>;
+  onTestPlugin: (pluginId: string, content: string) => Promise<PluginTestResult>;
+  onUpdatePlugin: (pluginId: string, draft: PluginDraft) => Promise<void>;
   onViewChange: (view: SettingsView) => void;
 }) {
   if (view === "menu") {
@@ -1110,6 +1223,22 @@ function SettingsHub({
         threads={threads}
         onBack={() => onViewChange("menu")}
         onClose={onClose}
+      />
+    );
+  }
+
+  if (view === "plugins") {
+    return (
+      <PluginsSettingsDialog
+        plugins={plugins}
+        busy={pluginBusy}
+        error={pluginError}
+        onBack={() => onViewChange("menu")}
+        onClose={onClose}
+        onCreate={onCreatePlugin}
+        onDelete={onDeletePlugin}
+        onTest={onTestPlugin}
+        onUpdate={onUpdatePlugin}
       />
     );
   }
@@ -1156,6 +1285,11 @@ function SettingsMenu({
           <SettingsMenuIcon name="dashboard" />
           <span>仪表盘</span>
           <small>项目、任务与 Token</small>
+        </button>
+        <button className="settings-menu-item" type="button" onClick={() => onViewChange("plugins")}>
+          <SettingsMenuIcon name="plugins" />
+          <span>插件</span>
+          <small>企微 / 飞书 / 钉钉 / 微信 Webhook</small>
         </button>
       </section>
     </div>
@@ -1273,6 +1407,330 @@ function DashboardSettingsDialog({
           session={session}
           threads={threads}
         />
+      </section>
+    </div>
+  );
+}
+
+type PluginFormState = {
+  editingId: string | null;
+  draft: PluginDraft;
+};
+
+const EMPTY_PLUGIN_DRAFT: PluginDraft = {
+  kind: "wecom",
+  name: "",
+  webhookUrl: "",
+  secret: null,
+  enabled: true,
+};
+
+function PluginsSettingsDialog({
+  plugins,
+  busy,
+  error,
+  onBack,
+  onClose,
+  onCreate,
+  onDelete,
+  onTest,
+  onUpdate,
+}: {
+  plugins: PluginRecord[];
+  busy: boolean;
+  error: string | null;
+  onBack: () => void;
+  onClose: () => void;
+  onCreate: (draft: PluginDraft) => Promise<void>;
+  onDelete: (pluginId: string) => Promise<void>;
+  onTest: (pluginId: string, content: string) => Promise<PluginTestResult>;
+  onUpdate: (pluginId: string, draft: PluginDraft) => Promise<void>;
+}) {
+  const [form, setForm] = useState<PluginFormState>({
+    editingId: null,
+    draft: { ...EMPTY_PLUGIN_DRAFT },
+  });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{
+    pluginId: string;
+    result: PluginTestResult;
+  } | null>(null);
+
+  const editPlugin = (plugin: PluginRecord) => {
+    setForm({
+      editingId: plugin.id,
+      draft: {
+        kind: plugin.kind,
+        name: plugin.name,
+        webhookUrl: plugin.webhookUrl,
+        secret: plugin.secret,
+        enabled: plugin.enabled,
+      },
+    });
+    setFormError(null);
+  };
+
+  const resetForm = () => {
+    setForm({ editingId: null, draft: { ...EMPTY_PLUGIN_DRAFT } });
+    setFormError(null);
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError(null);
+    try {
+      if (form.editingId) {
+        await onUpdate(form.editingId, form.draft);
+      } else {
+        await onCreate(form.draft);
+      }
+      resetForm();
+    } catch (caught) {
+      setFormError(errorMessage(caught));
+    }
+  };
+
+  const remove = async (pluginId: string) => {
+    if (!window.confirm("确定删除该插件吗？")) {
+      return;
+    }
+    try {
+      await onDelete(pluginId);
+      if (form.editingId === pluginId) {
+        resetForm();
+      }
+      if (testResult?.pluginId === pluginId) {
+        setTestResult(null);
+      }
+    } catch (caught) {
+      setFormError(errorMessage(caught));
+    }
+  };
+
+  const sendTest = async (pluginId: string) => {
+    setTestingId(pluginId);
+    setTestResult(null);
+    try {
+      const result = await onTest(pluginId, "Mimodex 插件测试消息");
+      setTestResult({ pluginId, result });
+    } catch (caught) {
+      setFormError(errorMessage(caught));
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  return (
+    <div className="settings-backdrop" role="presentation">
+      <section
+        aria-label="插件设置"
+        aria-modal="true"
+        className="settings-dialog dashboard-dialog"
+        role="dialog"
+      >
+        <header>
+          <div className="settings-title-row">
+            <button
+              aria-label="返回设置"
+              className="settings-back-button"
+              type="button"
+              onClick={onBack}
+            >
+              ‹
+            </button>
+            <div>
+              <p className="eyebrow">插件</p>
+              <h2>外部工具集成</h2>
+            </div>
+          </div>
+          <button aria-label="关闭设置" type="button" onClick={onClose}>
+            ×
+          </button>
+        </header>
+
+        <p className="settings-description">
+          为 Mimodex 添加 Webhook 插件，可将任务通知、状态变更或自定义消息推送到企业微信、飞书、钉钉、微信等工具。
+          每个插件保存为本地条目，发送时使用对应平台的标准 JSON 报文。
+        </p>
+
+        {error && <p className="form-error">{error}</p>}
+
+        <form className="plugin-form" onSubmit={(event) => void submit(event)}>
+          <fieldset disabled={busy} className="plugin-form-fields">
+            <label className="settings-field">
+              <span>类型</span>
+              <select
+                value={form.draft.kind}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    draft: { ...current.draft, kind: event.target.value as PluginKind },
+                  }))
+                }
+              >
+                {PLUGIN_KIND_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small>
+                {PLUGIN_KIND_OPTIONS.find((option) => option.value === form.draft.kind)
+                  ?.description ?? ""}
+              </small>
+            </label>
+
+            <label className="settings-field">
+              <span>名称</span>
+              <input
+                type="text"
+                value={form.draft.name}
+                placeholder={pluginKindLabel(form.draft.kind)}
+                maxLength={80}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    draft: { ...current.draft, name: event.target.value },
+                  }))
+                }
+              />
+            </label>
+
+            <label className="settings-field">
+              <span>Webhook URL</span>
+              <input
+                type="url"
+                required
+                value={form.draft.webhookUrl}
+                placeholder="https://example.com/webhook/..."
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    draft: { ...current.draft, webhookUrl: event.target.value },
+                  }))
+                }
+              />
+            </label>
+
+            <label className="settings-field">
+              <span>密钥（可选）</span>
+              <input
+                type="text"
+                value={form.draft.secret ?? ""}
+                placeholder="仅钉钉加签等场景使用"
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    draft: {
+                      ...current.draft,
+                      secret: event.target.value.length > 0 ? event.target.value : null,
+                    },
+                  }))
+                }
+              />
+            </label>
+
+            <label className="settings-field settings-field-checkbox">
+              <input
+                type="checkbox"
+                checked={form.draft.enabled}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    draft: { ...current.draft, enabled: event.target.checked },
+                  }))
+                }
+              />
+              <span>启用</span>
+            </label>
+
+            <div className="plugin-form-actions">
+              <button type="submit" disabled={busy}>
+                {form.editingId ? "保存" : "添加插件"}
+              </button>
+              {form.editingId && (
+                <button type="button" disabled={busy} onClick={resetForm}>
+                  取消编辑
+                </button>
+              )}
+            </div>
+          </fieldset>
+        </form>
+
+        {formError && <p className="form-error">{formError}</p>}
+
+        <section aria-label="插件列表" className="plugin-list">
+          <h3>已配置插件（{plugins.length}）</h3>
+          {plugins.length === 0 ? (
+            <p className="plugin-empty">尚未添加插件。填写上方表单可创建第一个 Webhook 集成。</p>
+          ) : (
+            <ul>
+              {plugins.map((plugin) => (
+                <li key={plugin.id} className="plugin-item">
+                  <div className="plugin-item-head">
+                    <strong>{plugin.name}</strong>
+                    <span className="plugin-item-kind">{pluginKindLabel(plugin.kind)}</span>
+                    <span
+                      className={`plugin-item-status plugin-item-status-${plugin.enabled ? "on" : "off"}`}
+                    >
+                      {plugin.enabled ? "启用" : "停用"}
+                    </span>
+                  </div>
+                  <div className="plugin-item-url">{plugin.webhookUrl}</div>
+                  <div className="plugin-item-meta">
+                    最近测试：
+                    {plugin.lastTestStatus === "ok" && "成功"}
+                    {plugin.lastTestStatus === "failed" && "失败"}
+                    {plugin.lastTestStatus === "idle" && "未测试"}
+                    {plugin.lastTestedAt && plugin.lastTestStatus !== "idle"
+                      ? ` · ${new Date(plugin.lastTestedAt).toLocaleString("zh-CN")}`
+                      : null}
+                  </div>
+                  {plugin.lastError && plugin.lastTestStatus === "failed" && (
+                    <div className="plugin-item-error">{plugin.lastError}</div>
+                  )}
+                  {testResult?.pluginId === plugin.id && (
+                    <div
+                      className={`plugin-item-test plugin-item-test-${testResult.result.ok ? "ok" : "fail"}`}
+                    >
+                      <strong>{testResult.result.message}</strong>
+                      <div>{testResult.result.detail}</div>
+                      {testResult.result.statusCode !== null && (
+                        <small>
+                          HTTP {testResult.result.statusCode}
+                          {testResult.result.latencyMs !== null
+                            ? ` · ${testResult.result.latencyMs} ms`
+                            : ""}
+                        </small>
+                      )}
+                    </div>
+                  )}
+                  <div className="plugin-item-actions">
+                    <button
+                      type="button"
+                      disabled={busy || testingId === plugin.id}
+                      onClick={() => void sendTest(plugin.id)}
+                    >
+                      {testingId === plugin.id ? "发送中" : "发送测试"}
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => editPlugin(plugin)}>
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      className="plugin-item-delete"
+                      disabled={busy}
+                      onClick={() => void remove(plugin.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </section>
     </div>
   );
@@ -1427,7 +1885,7 @@ function DashboardListItem({ label, value }: { label: string; value: number }) {
   );
 }
 
-function SettingsMenuIcon({ name }: { name: "dashboard" | "model" }) {
+function SettingsMenuIcon({ name }: { name: "dashboard" | "model" | "plugins" }) {
   const paths: Record<typeof name, ReactNode> = {
     dashboard: (
       <>
@@ -1440,6 +1898,11 @@ function SettingsMenuIcon({ name }: { name: "dashboard" | "model" }) {
       <>
         <circle cx="10" cy="10" r="2.4" />
         <path d="M8.8 2.9h2.4l.4 2.1c.5.1.9.3 1.3.5l1.8-1.2 1.7 1.7-1.2 1.8c.2.4.4.8.5 1.3l2.1.4v2.4l-2.1.4c-.1.5-.3.9-.5 1.3l1.2 1.8-1.7 1.7-1.8-1.2c-.4.2-.8.4-1.3.5l-.4 2.1H8.8l-.4-2.1c-.5-.1-.9-.3-1.3-.5l-1.8 1.2-1.7-1.7 1.2-1.8c-.2-.4-.4-.8-.5-1.3l-2.1-.4V9.5l2.1-.4c.1-.5.3-.9.5-1.3L3.6 6l1.7-1.7 1.8 1.2c.4-.2.8-.4 1.3-.5l.4-2.1Z" />
+      </>
+    ),
+    plugins: (
+      <>
+        <path d="M3.5 7.5h3v-3a1.5 1.5 0 1 1 3 0v3h3a1.5 1.5 0 1 1 0 3h-3v3a1.5 1.5 0 1 1-3 0v-3h-3a1.5 1.5 0 1 1 0-3Z" />
       </>
     ),
   };
