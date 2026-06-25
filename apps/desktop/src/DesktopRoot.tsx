@@ -806,7 +806,7 @@ export function DesktopRoot({
 
   const refreshProject = () => refreshSelectedProject(false);
 
-  const openTerminal = async () => {
+  const openTerminal = useCallback(async () => {
     const project =
       projectState?.projects.find((candidate) => candidate.id === projectState.selectedProjectId) ??
       null;
@@ -819,7 +819,35 @@ export function DesktopRoot({
     } catch (error) {
       setProjectError(errorMessage(error));
     }
-  };
+  }, [projectService, projectState]);
+
+  const loadProjectBranches = useCallback(
+    async (projectId: string) => {
+      try {
+        return await projectService.listBranches(projectId);
+      } catch (error) {
+        setProjectError(errorMessage(error));
+        return [];
+      }
+    },
+    [projectService],
+  );
+
+  const switchProjectBranch = useCallback(
+    async (projectId: string, branch: string) => {
+      setProjectBusy(true);
+      setProjectError(null);
+      try {
+        const nextState = await projectService.switchBranch(projectId, branch);
+        setProjectState((current) => stabilizeProjectState(current, nextState));
+      } catch (error) {
+        setProjectError(errorMessage(error));
+      } finally {
+        setProjectBusy(false);
+      }
+    },
+    [projectService],
+  );
 
   if (credentialError || (settingsError && !settings)) {
     return <CredentialErrorPanel message={credentialError ?? settingsError ?? "无法读取设置。"} />;
@@ -857,6 +885,7 @@ export function DesktopRoot({
         onAddProject={addProject}
         onDeleteAutomation={deleteAutomation}
         onDeleteThread={deleteThread}
+        onLoadBranches={loadProjectBranches}
         onNewThread={newThread}
         onOpenSettings={() => setSettingsView("menu")}
         onOpenTerminal={openTerminal}
@@ -865,6 +894,7 @@ export function DesktopRoot({
         onSelectProject={selectProject}
         onSelectThread={selectThread}
         onSetThreadArchived={setThreadArchived}
+        onSwitchBranch={switchProjectBranch}
         onUpdateAutomation={updateAutomation}
         projectBusy={projectBusy}
         projectError={projectError}

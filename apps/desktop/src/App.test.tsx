@@ -1314,6 +1314,22 @@ class FakeProjectService implements ProjectService {
   async openTerminal(path: string): Promise<void> {
     this.openedTerminalPaths.push(path);
   }
+
+  async listBranches(_projectId: string): Promise<string[]> {
+    return [];
+  }
+
+  async switchBranch(projectId: string, branch: string): Promise<ProjectState> {
+    this.#state = {
+      ...this.#state,
+      projects: this.#state.projects.map((project) =>
+        project.id === projectId
+          ? { ...project, git: { ...project.git, branch } }
+          : project,
+      ),
+    };
+    return this.#state;
+  }
 }
 
 class FakeThreadService implements ThreadService {

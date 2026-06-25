@@ -479,6 +479,57 @@ async fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectSt
 }
 
 #[tauri::command]
+async fn list_project_branches(app: AppHandle, project_id: String) -> Result<Vec<String>, String> {
+    run_background(move || {
+        let store = load_project_store(&app)?;
+        let project = store
+            .projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| "项目记录不存在。".to_string())?;
+        if !project.available {
+            return Err("项目文件夹当前不可访问。".to_string());
+        }
+        if !project.git.is_repository {
+            return Err("项目尚未检测到 Git 仓库。".to_string());
+        }
+        Ok(list_git_branches(Path::new(&project.path)))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn switch_project_branch(
+    app: AppHandle,
+    project_id: String,
+    branch: String,
+) -> Result<ProjectState, String> {
+    run_background(move || {
+        let branch = branch.trim().to_string();
+        if branch.is_empty() || branch.len() > 256 {
+            return Err("分支名无效。".to_string());
+        }
+        let mut store = load_project_store(&app)?;
+        let project = store
+            .projects
+            .iter_mut()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| "项目记录不存在。".to_string())?;
+        if !project.available {
+            return Err("项目文件夹当前不可访问。".to_string());
+        }
+        if !project.git.is_repository {
+            return Err("项目尚未检测到 Git 仓库。".to_string());
+        }
+        switch_git_branch(Path::new(&project.path), &branch)?;
+        refresh_project_summary(project);
+        save_project_store(&app, &store)?;
+        Ok(project_state(store))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn list_threads(app: AppHandle) -> Result<ThreadState, String> {
     run_background(move || {
         let mut connection = open_thread_database(&app)?;
@@ -809,6 +860,7 @@ fn main() {
             get_app_settings,
             get_mimo_credential_status,
             list_automations,
+            list_project_branches,
             list_projects,
             list_thread_activity,
             list_threads,
@@ -820,6 +872,7 @@ fn main() {
             select_project,
             select_thread,
             set_thread_archived,
+            switch_project_branch,
             update_automation,
             upsert_thread
         ])
@@ -1899,6 +1952,45 @@ fn inspect_git_status(path: &Path) -> GitStatus {
         additions,
         deletions,
         diff,
+    }
+}
+
+fn list_git_branches(path: &Path) -> Vec<String> {
+    let output = run_git(
+        path,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)",
+            "refs/heads",
+            "--sort=refname",
+        ],
+    )
+    .unwrap_or_default();
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn switch_git_branch(path: &Path, branch: &str) -> Result<(), String> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(path).args(["switch", branch]);
+    hide_command_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|_| "无法调用 git 切换分支。".to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() { stderr } else { stdout };
+    if detail.is_empty() {
+        Err(format!("切换到分支 {branch} 失败。"))
+    } else {
+        Err(format!("切换到分支 {branch} 失败：{detail}"))
     }
 }
 
