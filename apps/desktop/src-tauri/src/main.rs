@@ -2766,6 +2766,41 @@ mod tests {
     }
 
     #[test]
+    fn git_branch_helpers_list_and_switch_local_branches() {
+        let directory =
+            std::env::temp_dir().join(format!("mimodex-git-branch-{}", unix_timestamp_ms()));
+        fs::create_dir_all(&directory).expect("create temporary repository");
+        run_git(&directory, &["init"]).expect("initialize repository");
+        run_git(
+            &directory,
+            &["config", "user.email", "mimodex@example.test"],
+        )
+        .expect("configure git email");
+        run_git(&directory, &["config", "user.name", "Mimodex Test"]).expect("configure git name");
+        run_git(&directory, &["branch", "-M", "main"]).expect("rename initial branch");
+        fs::write(directory.join("README.md"), "fixture\n").expect("write fixture");
+        run_git(&directory, &["add", "README.md"]).expect("stage fixture");
+        run_git(&directory, &["commit", "-m", "initial"]).expect("commit fixture");
+        run_git(&directory, &["switch", "-c", "develop"]).expect("create develop branch");
+
+        let branches = list_git_branches(&directory);
+
+        assert_eq!(branches, vec!["develop".to_string(), "main".to_string()]);
+        switch_git_branch(&directory, "main").expect("switch to main");
+        assert_eq!(
+            inspect_git_status(&directory).branch.as_deref(),
+            Some("main")
+        );
+        switch_git_branch(&directory, "develop").expect("switch to develop");
+        assert_eq!(
+            inspect_git_status(&directory).branch.as_deref(),
+            Some("develop")
+        );
+
+        fs::remove_dir_all(directory).expect("remove temporary repository");
+    }
+
+    #[test]
     fn project_diff_is_truncated_without_breaking_unicode() {
         let diff = format!("{}结束", "变".repeat(MAX_PROJECT_DIFF_CHARS));
 
