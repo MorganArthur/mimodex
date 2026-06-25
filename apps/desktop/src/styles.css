@@ -1196,9 +1196,11 @@ button {
 
 .user-message {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   min-width: 0;
-  justify-content: flex-end;
   margin: 0 0 28px;
+  gap: 8px;
 }
 
 .user-message p {
@@ -1213,6 +1215,31 @@ button {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.user-message-images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: min(72%, 620px);
+}
+
+.user-message-image {
+  display: block;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid #d6d2c8;
+  background: #f2f0e9;
+}
+
+.user-message-image img {
+  display: block;
+  max-width: 180px;
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  object-fit: cover;
 }
 
 .turn-processing {
@@ -1633,6 +1660,94 @@ button {
   border: 1px solid #d6d2c8;
   border-radius: 13px;
   box-shadow: 0 12px 35px rgba(65, 62, 54, 0.09);
+}
+
+.composer-image-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.composer-attachment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 6px 8px 6px 6px;
+  background: #f2f0e9;
+  border: 1px solid #e0ddd4;
+  border-radius: 10px;
+}
+
+.composer-attachment img {
+  display: block;
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #d6d2c8;
+}
+
+.composer-attachment-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.composer-attachment-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #2d302c;
+  font-weight: 600;
+}
+
+.composer-attachment-meta small {
+  color: #8b8f87;
+  font-size: 9px;
+}
+
+.composer-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: #5b5e58;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.composer-attachment-remove:hover {
+  background: #e0ddd4;
+  color: #2d302c;
+}
+
+.composer-attachment-error {
+  margin: 6px 16px 0;
+  padding: 0;
+  color: #b14a3a;
+  font-size: 10px;
 }
 
 .composer textarea {
@@ -4728,9 +4843,11 @@ body {
 
 .user-message {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   min-width: 0;
-  justify-content: flex-end;
   margin: 0 0 20px;
+  gap: 8px;
 }
 
 .user-message p {
