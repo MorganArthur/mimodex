@@ -25,7 +25,7 @@ index b3c34e6bc..c5dc567ec 100644
          let mut request = json!({
              "model": model_info.slug,
              "messages": messages,
-@@ -1017,6 +1022,81 @@ impl ModelClient {
+@@ -1017,6 +1022,87 @@ impl ModelClient {
      }
  }
  
@@ -47,26 +47,32 @@ index b3c34e6bc..c5dc567ec 100644
 +        return true;
 +    }
 +
-+    let Some(latest_user_text) = input.iter().rev().find_map(|item| {
++    let Some((latest_user_text, latest_user_has_image)) = input.iter().rev().find_map(|item| {
 +        let ResponseItem::Message { role, content, .. } = item else {
 +            return None;
 +        };
 +        if role != "user" {
 +            return None;
 +        }
-+        Some(
-+            content
-+                .iter()
-+                .filter_map(|item| match item {
-+                    ContentItem::InputText { text } => Some(text.as_str()),
-+                    _ => None,
-+                })
-+                .collect::<Vec<_>>()
-+                .join("\n"),
-+        )
++        let text = content
++            .iter()
++            .filter_map(|item| match item {
++                ContentItem::InputText { text } => Some(text.as_str()),
++                _ => None,
++            })
++            .collect::<Vec<_>>()
++            .join("\n");
++        let has_image = content
++            .iter()
++            .any(|item| matches!(item, ContentItem::InputImage { .. }));
++        Some((text, has_image))
 +    }) else {
 +        return true;
 +    };
++
++    if latest_user_has_image {
++        return false;
++    }
 +
 +    !is_simple_conversation(&latest_user_text)
 +}
@@ -121,7 +127,7 @@ index ea8a8c4ee..7d927d20b 100644
  use futures::StreamExt;
  use pretty_assertions::assert_eq;
  use serde_json::json;
-@@ -279,6 +282,67 @@ fn chat_completions_rejects_unverified_request_capabilities() {
+@@ -279,6 +282,98 @@ fn chat_completions_rejects_unverified_request_capabilities() {
      );
  }
  
@@ -137,6 +143,37 @@ index ea8a8c4ee..7d927d20b 100644
 +    let request = client
 +        .build_chat_completions_request(&prompt, &test_model_info(), /*service_tier*/ None)
 +        .expect("simple conversation request should build");
++
++    assert_eq!(request.get("tools"), None);
++    assert_eq!(request.get("tool_choice"), None);
++    assert_eq!(request["thinking"], json!({"type": "disabled"}));
++}
++
++#[test]
++fn chat_completions_skips_tools_for_image_understanding() {
++    let client = test_model_client_with_wire_api(SessionSource::Exec, WireApi::ChatCompletions);
++    let prompt = Prompt {
++        input: vec![ResponseItem::Message {
++            id: None,
++            role: "user".to_string(),
++            content: vec![
++                ContentItem::InputImage {
++                    image_url: "data:image/png;base64,AA==".to_string(),
++                    detail: None,
++                },
++                ContentItem::InputText {
++                    text: "这个图片是什么？".to_string(),
++                },
++            ],
++            phase: None,
++        }],
++        tools: vec![test_function_tool()],
++        ..Prompt::default()
++    };
++
++    let request = client
++        .build_chat_completions_request(&prompt, &test_model_info(), /*service_tier*/ None)
++        .expect("image understanding request should build");
 +
 +    assert_eq!(request.get("tools"), None);
 +    assert_eq!(request.get("tool_choice"), None);
@@ -189,3 +226,103 @@ index ea8a8c4ee..7d927d20b 100644
  fn test_model_info() -> ModelInfo {
      serde_json::from_value(json!({
          "slug": "gpt-test",
+diff --git a/codex-rs/core/tests/suite/chat_completions.rs b/codex-rs/core/tests/suite/chat_completions.rs
+--- a/codex-rs/core/tests/suite/chat_completions.rs
++++ b/codex-rs/core/tests/suite/chat_completions.rs
+@@ -4,9 +4,13 @@
+ use anyhow::Result;
+ use codex_model_provider_info::MIMO_PROVIDER_ID;
+ use codex_model_provider_info::ModelProviderInfo;
++use codex_protocol::protocol::EventMsg;
++use codex_protocol::protocol::Op;
++use codex_protocol::user_input::UserInput;
+ use core_test_support::skip_if_no_network;
+ use core_test_support::test_codex::TestCodexBuilder;
+ use core_test_support::test_codex::test_codex;
++use core_test_support::wait_for_event_match;
+ use pretty_assertions::assert_eq;
+ use serde_json::Value;
+ use serde_json::json;
+@@ -91,6 +95,82 @@ fn assistant_response(id: &str, content: &str) -> String {
+     })])
+ }
+ 
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn mimo_image_turn_uses_minimal_multimodal_chat_request() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = MockServer::start().await;
++    mount_chat_sse_sequence(
++        &server,
++        vec![assistant_response("chat-image", "这是一张测试图片")],
++    )
++    .await;
++
++    let base_url = format!("{}/v1", server.uri());
++    let mut builder = mimo_test_builder(base_url);
++    let test = builder.build(&server).await?;
++
++    test.codex
++        .submit(Op::UserInput {
++            items: vec![
++                UserInput::Image {
++                    image_url: "data:image/png;base64,AA==".to_string(),
++                    detail: None,
++                },
++                UserInput::Text {
++                    text: "这个图片是什么？".to_string(),
++                    text_elements: Vec::new(),
++                },
++            ],
++            final_output_json_schema: None,
++            responsesapi_client_metadata: None,
++            additional_context: Default::default(),
++            thread_settings: Default::default(),
++        })
++        .await?;
++    wait_for_event_match(&test.codex, |event| match event {
++        EventMsg::TurnComplete(_) => Some(()),
++        _ => None,
++    })
++    .await;
++
++    let requests = server
++        .received_requests()
++        .await
++        .expect("mock server should expose requests");
++    assert_eq!(requests.len(), 1);
++    let body: Value =
++        serde_json::from_slice(&requests[0].body).expect("request should be JSON");
++    assert_eq!(body.get("tools"), None);
++    assert_eq!(body.get("tool_choice"), None);
++    assert_eq!(body["thinking"], json!({"type": "disabled"}));
++    assert_eq!(
++        body["messages"].as_array().and_then(|messages| {
++            messages
++                .iter()
++                .find(|message| message["role"] == "user")
++                .cloned()
++        }),
++        Some(json!({
++            "role": "user",
++            "content": [
++                {
++                    "type": "image_url",
++                    "image_url": {
++                        "url": "data:image/png;base64,AA=="
++                    }
++                },
++                {
++                    "type": "text",
++                    "text": "这个图片是什么？"
++                }
++            ]
++        }))
++    );
++
++    Ok(())
++}
++
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+ async fn mimo_tool_loop_replays_reasoning_call_and_tool_output() -> Result<()> {
+     skip_if_no_network!(Ok(()));

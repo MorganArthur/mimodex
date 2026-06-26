@@ -925,11 +925,11 @@ function sanitizeImages(images: readonly ImageAttachment[] | undefined): ImageAt
 
 function composeTurnInput(text: string, images: readonly ImageAttachment[]): UserInput[] {
   const input: UserInput[] = [];
-  if (text) {
-    input.push({ type: "text", text, textElements: [] });
-  }
   for (const image of images) {
     input.push({ type: "image", url: image.dataUrl });
+  }
+  if (text) {
+    input.push({ type: "text", text, textElements: [] });
   }
   return input;
 }
