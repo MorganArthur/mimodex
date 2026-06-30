@@ -31,6 +31,11 @@ import { MarkdownContent } from "./MarkdownContent.js";
 import { MIMO_MODEL_OPTIONS, PopupSelect, SANDBOX_OPTIONS } from "./PopupSelect.js";
 import type { ProjectSummary } from "./projects.js";
 import type { AppSettings } from "./settings.js";
+import {
+  createTerminalService,
+  type EmbeddedTerminalService,
+  type TerminalSnapshot,
+} from "./terminal.js";
 import type { ThreadActivityEvent, ThreadRecord } from "./threads.js";
 import { APP_VERSION } from "./version.js";
 
@@ -49,7 +54,6 @@ export type AppProps = {
   onLoadBranches?: (projectId: string) => Promise<string[]>;
   onNewThread: () => void | Promise<void>;
   onOpenSettings?: () => void;
-  onOpenTerminal?: () => void | Promise<void>;
   onRefreshProject: () => void | Promise<void>;
   onRunAutomation?: (automationId: string) => void | Promise<void>;
   onSelectProject: (projectId: string) => void | Promise<void>;
@@ -63,6 +67,7 @@ export type AppProps = {
   runningAutomationIds?: string[];
   session: DesktopSessionController;
   settings: AppSettings;
+  terminalService?: EmbeddedTerminalService;
   threadBusy: boolean;
   threadError: string | null;
   threads: ThreadRecord[];
@@ -77,6 +82,7 @@ const statusLabels: Record<SessionState["connection"], string> = {
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_IMAGE_COUNT = 4;
+const defaultTerminalService = createTerminalService();
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -237,7 +243,6 @@ export function App({
   onLoadBranches,
   onNewThread,
   onOpenSettings = () => undefined,
-  onOpenTerminal,
   onRefreshProject,
   onRunAutomation = () => undefined,
   onSelectProject,
@@ -251,6 +256,7 @@ export function App({
   runningAutomationIds = [],
   session,
   settings,
+  terminalService = defaultTerminalService,
   threadBusy,
   threadError,
   threads,
@@ -267,6 +273,8 @@ export function App({
   const [submitting, setSubmitting] = useState(false);
   const [environmentPanel, setEnvironmentPanel] = useState<"changes" | "progress">("changes");
   const [environmentOpen, setEnvironmentOpen] = useState(false);
+  const [terminalPanelEnabled, setTerminalPanelEnabled] = useState(false);
+  const [terminalVisible, setTerminalVisible] = useState(false);
   const [attachedImages, setAttachedImages] = useState<ImageAttachment[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [imagePickerBusy, setImagePickerBusy] = useState(false);
@@ -318,6 +326,12 @@ export function App({
       conversation.scrollTop = conversation.scrollHeight;
     }
   }, [state.timeline, state.approvals, state.turnStatus]);
+
+  useEffect(() => {
+    if (!currentProject?.available) {
+      setTerminalVisible(false);
+    }
+  }, [currentProject?.available]);
 
   const canSubmit =
     (Boolean(message.trim()) || attachedImages.length > 0) &&
@@ -583,18 +597,22 @@ export function App({
                   {projectBusy ? "刷新中" : "刷新 Git"}
                 </button>
               )}
-              {currentProject?.available && onOpenTerminal && (
+              {currentProject?.available && (
                 <button
-                  aria-label="打开终端"
-                  className="refresh-project open-terminal"
-                  title={`在 ${currentProject.path} 打开终端窗口`}
+                  aria-label={terminalVisible ? "隐藏终端" : "打开终端"}
+                  aria-pressed={terminalVisible}
+                  className={`refresh-project open-terminal ${terminalVisible ? "active" : ""}`}
+                  title={terminalVisible ? "隐藏底部终端面板" : `在 ${currentProject.path} 打开底部终端面板`}
                   type="button"
-                  onClick={() => void onOpenTerminal()}
+                  onClick={() => {
+                    setTerminalPanelEnabled(true);
+                    setTerminalVisible((visible) => !visible);
+                  }}
                 >
                   <span aria-hidden="true">
                     <UiIcon name="terminal" />
                   </span>
-                  打开终端
+                  {terminalVisible ? "隐藏终端" : "打开终端"}
                 </button>
               )}
               {sandbox === "danger-full-access" && <span className="danger-pill">完全访问</span>}
@@ -621,7 +639,7 @@ export function App({
             </div>
           </header>
 
-          <div className="workspace-stage">
+          <div className={`workspace-stage ${terminalVisible && currentProject?.available ? "with-terminal" : ""}`}>
             <section className="conversation" ref={conversationRef}>
               {!currentProject ? (
                 <ProjectWelcome onAdd={() => void onAddProject()} />
@@ -746,6 +764,15 @@ export function App({
                 />
               </div>
             </form>
+            {terminalPanelEnabled && currentProject?.available && (
+              <EmbeddedTerminalPanel
+                key={currentProject.id}
+                project={currentProject}
+                terminalService={terminalService}
+                visible={terminalVisible}
+                onHide={() => setTerminalVisible(false)}
+              />
+            )}
           </div>
         </section>
       </main>
@@ -782,6 +809,133 @@ export function App({
       )}
     </div>
   );
+}
+
+function EmbeddedTerminalPanel({
+  onHide,
+  project,
+  terminalService,
+  visible,
+}: {
+  onHide: () => void;
+  project: ProjectSummary;
+  terminalService: EmbeddedTerminalService;
+  visible: boolean;
+}) {
+  const [restartToken, setRestartToken] = useState(0);
+  const terminalSession = useMemo(
+    () => terminalService.createSession(project.path),
+    [project.path, restartToken, terminalService],
+  );
+  const [snapshot, setSnapshot] = useState<TerminalSnapshot>(() => terminalSession.getSnapshot());
+  const [command, setCommand] = useState("");
+  const outputRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    setSnapshot(terminalSession.getSnapshot());
+    const unsubscribe = terminalSession.subscribe(() => {
+      setSnapshot(terminalSession.getSnapshot());
+    });
+    void terminalSession.start();
+    return () => {
+      unsubscribe();
+      void terminalSession.stop();
+    };
+  }, [terminalSession]);
+
+  useEffect(() => {
+    if (!visible || !outputRef.current) {
+      return;
+    }
+    outputRef.current.scrollTop = outputRef.current.scrollHeight;
+  }, [snapshot.output, visible]);
+
+  const submitCommand = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (snapshot.status !== "running") {
+      return;
+    }
+    const input = command;
+    setCommand("");
+    await terminalSession.send(input);
+  };
+
+  return (
+    <section
+      aria-label="底部终端"
+      className="embedded-terminal"
+      hidden={!visible}
+    >
+      <header className="embedded-terminal-header">
+        <button
+          aria-current="page"
+          className="embedded-terminal-tab"
+          title={snapshot.projectPath}
+          type="button"
+        >
+          <UiIcon name="terminal" />
+          <span>{project.name}</span>
+        </button>
+        <button
+          aria-label="新建终端"
+          className="embedded-terminal-icon-button"
+          title="重启终端"
+          type="button"
+          onClick={() => setRestartToken((value) => value + 1)}
+        >
+          +
+        </button>
+        <div className="embedded-terminal-spacer" />
+        <span className={`embedded-terminal-status ${snapshot.status}`}>
+          {terminalStatusLabel(snapshot)}
+        </span>
+        <button
+          aria-label="关闭终端"
+          className="embedded-terminal-icon-button"
+          type="button"
+          onClick={onHide}
+        >
+          ×
+        </button>
+      </header>
+      <div className="embedded-terminal-body">
+        <pre className="embedded-terminal-output" ref={outputRef}>
+          {snapshot.output.map((chunk) => (
+            <span className={`terminal-stream ${chunk.stream}`} key={chunk.id}>
+              {chunk.text}
+            </span>
+          ))}
+        </pre>
+        <form className="embedded-terminal-input-row" onSubmit={(event) => void submitCommand(event)}>
+          <span aria-hidden="true">&gt;</span>
+          <input
+            aria-label="终端命令"
+            autoComplete="off"
+            disabled={snapshot.status !== "running"}
+            spellCheck={false}
+            value={command}
+            onChange={(event) => setCommand(event.target.value)}
+          />
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function terminalStatusLabel(snapshot: TerminalSnapshot): string {
+  if (snapshot.status === "starting") {
+    return "启动中";
+  }
+  if (snapshot.status === "running") {
+    return snapshot.shellLabel;
+  }
+  if (snapshot.status === "exited") {
+    return snapshot.exitCode === null ? "已退出" : `已退出 ${snapshot.exitCode}`;
+  }
+  if (snapshot.status === "error") {
+    return snapshot.error ?? "启动失败";
+  }
+  return "待启动";
 }
 
 function AutomationWorkspace({

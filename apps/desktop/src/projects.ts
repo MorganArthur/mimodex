@@ -35,7 +35,6 @@ export interface ProjectService {
   add(path: string): Promise<ProjectState>;
   select(projectId: string): Promise<ProjectState>;
   refresh(projectId: string): Promise<ProjectState>;
-  openTerminal(path: string): Promise<void>;
   listBranches(projectId: string): Promise<string[]>;
   switchBranch(projectId: string, branch: string): Promise<ProjectState>;
 }
@@ -64,10 +63,6 @@ class TauriProjectService implements ProjectService {
 
   refresh(projectId: string): Promise<ProjectState> {
     return invoke("refresh_project", { projectId });
-  }
-
-  openTerminal(path: string): Promise<void> {
-    return invoke("open_terminal", { path });
   }
 
   listBranches(projectId: string): Promise<string[]> {
@@ -112,10 +107,6 @@ class DemoProjectService implements ProjectService {
 
   async refresh(_projectId: string): Promise<ProjectState> {
     return this.#state;
-  }
-
-  async openTerminal(_path: string): Promise<void> {
-    return undefined;
   }
 
   async listBranches(_projectId: string): Promise<string[]> {

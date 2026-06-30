@@ -517,13 +517,6 @@ async fn select_project(app: AppHandle, project_id: String) -> Result<ProjectSta
 }
 
 #[tauri::command]
-async fn open_terminal(path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || open_terminal_at(&path))
-        .await
-        .map_err(|_| "终端启动任务异常终止。".to_string())?
-}
-
-#[tauri::command]
 async fn refresh_project(app: AppHandle, project_id: String) -> Result<ProjectState, String> {
     run_background(move || {
         let mut store = load_project_store(&app)?;
@@ -1049,7 +1042,6 @@ fn main() {
             list_projects,
             list_thread_activity,
             list_threads,
-            open_terminal,
             record_automation_run,
             refresh_project,
             save_app_settings,
@@ -2347,27 +2339,6 @@ fn normalize_project_path(path: &str) -> Result<PathBuf, String> {
         return Err("请选择存在的本地文件夹。".to_string());
     }
     dunce::canonicalize(path).map_err(|_| "无法解析所选项目路径。".to_string())
-}
-
-fn open_terminal_at(path: &str) -> Result<(), String> {
-    let canonical = normalize_project_path(path)?;
-    let path_str = canonical.to_string_lossy().to_string();
-    if Command::new("wt.exe")
-        .args(["-d", &path_str])
-        .spawn()
-        .is_ok()
-    {
-        return Ok(());
-    }
-    let powershell_command = format!(
-        "Set-Location -LiteralPath '{}'",
-        path_str.replace('\'', "''"),
-    );
-    Command::new("powershell.exe")
-        .args(["-NoExit", "-Command", &powershell_command])
-        .spawn()
-        .map(|_| ())
-        .map_err(|_| "无法打开终端窗口。".to_string())
 }
 
 fn project_id(path: &Path) -> String {

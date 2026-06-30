@@ -39,6 +39,11 @@ import {
   type SettingsService,
 } from "./settings.js";
 import type {
+  EmbeddedTerminalService,
+  EmbeddedTerminalSession,
+  TerminalSnapshot,
+} from "./terminal.js";
+import type {
   ThreadActivityEvent,
   ThreadRecord,
   ThreadService,
@@ -1007,8 +1012,9 @@ diff --git a/src/app.ts b/src/app.ts
     expect(screen.queryByText("turn/started")).toBeNull();
   });
 
-  it("可以从顶栏按钮在当前项目目录打开终端", async () => {
+  it("可以从顶栏按钮切换当前项目的底部终端面板", async () => {
     const projects = new FakeProjectService();
+    const terminals = new FakeTerminalService();
     const user = userEvent.setup();
     render(
       <DesktopRoot
@@ -1016,15 +1022,21 @@ diff --git a/src/app.ts b/src/app.ts
         createSession={() => new DesktopSessionController(new UiRuntime())}
         projectService={projects}
         settingsService={new FakeSettingsService()}
+        terminalService={terminals}
         threadService={new FakeThreadService()}
       />,
     );
 
     await user.click(await screen.findByRole("button", { name: "打开终端" }));
 
-    await waitFor(() =>
-      expect(projects.openedTerminalPaths).toEqual([fixtureProject().path]),
-    );
+    expect(await screen.findByRole("region", { name: "底部终端" })).toBeTruthy();
+    await waitFor(() => expect(terminals.startedPaths).toEqual([fixtureProject().path]));
+
+    await user.type(screen.getByLabelText("终端命令"), "pwd{enter}");
+    expect(terminals.sessions[0]?.sentCommands).toEqual(["pwd"]);
+
+    await user.click(screen.getByRole("button", { name: "隐藏终端" }));
+    expect(screen.queryByRole("region", { name: "底部终端" })).toBeNull();
   });
 
   it("可以从项目元信息切换分支", async () => {
@@ -1346,11 +1358,99 @@ class FakeSettingsService implements SettingsService {
   }
 }
 
+class FakeTerminalService implements EmbeddedTerminalService {
+  readonly sessions: FakeTerminalSession[] = [];
+  readonly startedPaths: string[] = [];
+
+  createSession(projectPath: string): EmbeddedTerminalSession {
+    const session = new FakeTerminalSession(projectPath, () => {
+      this.startedPaths.push(projectPath);
+    });
+    this.sessions.push(session);
+    return session;
+  }
+}
+
+class FakeTerminalSession implements EmbeddedTerminalSession {
+  readonly sentCommands: string[] = [];
+  readonly #listeners = new Set<() => void>();
+  readonly #projectPath: string;
+  readonly #onStart: () => void;
+  #nextChunkId = 1;
+  #snapshot: TerminalSnapshot;
+
+  constructor(projectPath: string, onStart: () => void) {
+    this.#projectPath = projectPath;
+    this.#onStart = onStart;
+    this.#snapshot = {
+      error: null,
+      exitCode: null,
+      output: [],
+      projectPath,
+      shellLabel: "Fake Shell",
+      status: "idle",
+    };
+  }
+
+  getSnapshot(): TerminalSnapshot {
+    return this.#snapshot;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  async start(): Promise<void> {
+    this.#onStart();
+    this.#snapshot = {
+      ...this.#snapshot,
+      output: [
+        {
+          id: this.#nextChunkId++,
+          stream: "system",
+          text: `Fake Shell · ${this.#projectPath}\r\n`,
+          timestamp: Date.now(),
+        },
+      ],
+      status: "running",
+    };
+    this.#emit();
+  }
+
+  async send(input: string): Promise<void> {
+    this.sentCommands.push(input);
+    this.#snapshot = {
+      ...this.#snapshot,
+      output: [
+        ...this.#snapshot.output,
+        {
+          id: this.#nextChunkId++,
+          stream: "stdin",
+          text: `> ${input}\r\n`,
+          timestamp: Date.now(),
+        },
+      ],
+    };
+    this.#emit();
+  }
+
+  async stop(): Promise<void> {
+    this.#snapshot = { ...this.#snapshot, status: "exited" };
+    this.#emit();
+  }
+
+  #emit(): void {
+    for (const listener of this.#listeners) {
+      listener();
+    }
+  }
+}
+
 class FakeProjectService implements ProjectService {
   branches = ["main", "develop"];
   refreshCount = 0;
   selectBarrier: Promise<void> | null = null;
-  readonly openedTerminalPaths: string[] = [];
   readonly branchRequests: string[] = [];
   readonly switchedBranches: Array<{ branch: string; projectId: string }> = [];
   #state: ProjectState;
@@ -1391,10 +1491,6 @@ class FakeProjectService implements ProjectService {
   async refresh(_projectId: string): Promise<ProjectState> {
     this.refreshCount += 1;
     return this.#state;
-  }
-
-  async openTerminal(path: string): Promise<void> {
-    this.openedTerminalPaths.push(path);
   }
 
   async listBranches(projectId: string): Promise<string[]> {

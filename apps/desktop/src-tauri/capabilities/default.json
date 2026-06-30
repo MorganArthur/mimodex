@@ -15,6 +15,16 @@
         {
           "name": "binaries/mimodex-runtime",
           "sidecar": true
+        },
+        {
+          "name": "embedded-pwsh",
+          "cmd": "pwsh.exe",
+          "args": ["-NoLogo", "-NoProfile", "-NoExit"]
+        },
+        {
+          "name": "embedded-powershell",
+          "cmd": "powershell.exe",
+          "args": ["-NoLogo", "-NoProfile", "-NoExit"]
         }
       ]
     }

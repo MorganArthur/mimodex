@@ -39,6 +39,7 @@ import {
   type ConnectionDiagnostic,
   type SettingsService,
 } from "./settings.js";
+import { createTerminalService, type EmbeddedTerminalService } from "./terminal.js";
 import type {
   ThreadActivityEvent,
   ThreadRecord,
@@ -54,6 +55,7 @@ export type DesktopRootProps = {
   pluginService?: PluginService;
   projectService: ProjectService;
   settingsService: SettingsService;
+  terminalService?: EmbeddedTerminalService;
   threadService: ThreadService;
 };
 
@@ -83,6 +85,7 @@ export function DesktopRoot({
   pluginService: providedPluginService,
   projectService,
   settingsService,
+  terminalService: providedTerminalService,
   threadService,
 }: DesktopRootProps) {
   const fallbackAutomationServiceRef = useRef<AutomationService | null>(null);
@@ -96,6 +99,12 @@ export function DesktopRoot({
     fallbackPluginServiceRef.current = createPluginService();
   }
   const pluginService = providedPluginService ?? fallbackPluginServiceRef.current;
+
+  const fallbackTerminalServiceRef = useRef<EmbeddedTerminalService | null>(null);
+  if (!fallbackTerminalServiceRef.current) {
+    fallbackTerminalServiceRef.current = createTerminalService();
+  }
+  const terminalService = providedTerminalService ?? fallbackTerminalServiceRef.current;
 
   const [credentialStatus, setCredentialStatus] = useState<CredentialStatus | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
@@ -898,21 +907,6 @@ export function DesktopRoot({
 
   const refreshProject = () => refreshSelectedProject(false);
 
-  const openTerminal = useCallback(async () => {
-    const project =
-      projectState?.projects.find((candidate) => candidate.id === projectState.selectedProjectId) ??
-      null;
-    if (!project?.available) {
-      return;
-    }
-    setProjectError(null);
-    try {
-      await projectService.openTerminal(project.path);
-    } catch (error) {
-      setProjectError(errorMessage(error));
-    }
-  }, [projectService, projectState]);
-
   const loadProjectBranches = useCallback(
     async (projectId: string) => {
       try {
@@ -980,7 +974,6 @@ export function DesktopRoot({
         onLoadBranches={loadProjectBranches}
         onNewThread={newThread}
         onOpenSettings={() => setSettingsView("menu")}
-        onOpenTerminal={openTerminal}
         onRefreshProject={refreshProject}
         onRunAutomation={runAutomation}
         onSelectProject={selectProject}
@@ -994,6 +987,7 @@ export function DesktopRoot({
         runningAutomationIds={runningAutomationIds}
         session={session}
         settings={settings}
+        terminalService={terminalService}
         threadBusy={threadBusy}
         threadError={threadError}
         threads={projectThreads}
